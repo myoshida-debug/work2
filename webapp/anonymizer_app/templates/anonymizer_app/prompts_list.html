@@ -18,8 +18,8 @@
           </div>
         </div>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" onclick="importPromptToEditor({{ p.pk }}, {{ p.content|escapejs }})">このプロンプトを取り込む</button>
-          <button type="button" onclick="copyPromptToClipboard({{ p.content|escapejs }})">ChatGPTにコピー</button>
+          <button type="button" onclick="importPromptToEditor({{ p.pk }}, {{ p.content|escapejs }})">このプロンプトをOpenSideに取り込む</button>
+          <button type="button" onclick="copyPromptToClipboard({{ p.content|escapejs }})">ChatGPTに貼り付けて起動</button>
         </div>
       </li>
     {% empty %}

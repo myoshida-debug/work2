@@ -199,7 +199,11 @@ def dmz_export(request):
                 messages.error(request, f'アップロードに失敗しました: {e}')
                 return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
     else:
-        form = DMZExportForm()
+        initial = {}
+        source_id = request.GET.get('source_id')
+        if source_id:
+            initial['source_id'] = source_id
+        form = DMZExportForm(initial=initial)
 
     # GET: 保存されている source_id の一覧を渡す
     saved = RestoreMetadata.objects.all().order_by('-id')[:50]

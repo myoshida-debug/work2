@@ -109,6 +109,7 @@
   <p>
     <a href="{% url 'download_prompt' source_id=source_id %}">prompt JSON をダウンロード</a>
     | <a href="{% url 'download_restore' source_id=source_id %}">復元マッピング JSON をダウンロード</a>
+    | <a href="{% url 'dmz_export' %}?source_id={{ source_id }}">DMZ フォルダへ移動</a>
   </p>
   <p><a href="/">新規入力に戻る</a></p>
 </body>
