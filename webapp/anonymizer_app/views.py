@@ -1,6 +1,7 @@
 import difflib
 import json
 import uuid
+import datetime
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, JsonResponse
 from django.utils.html import escape
@@ -19,7 +20,7 @@ try:
 except Exception:
     paramiko = None
 from django.views.decorators.http import require_http_methods
-from .forms import DMZExportForm, DMZImportForm
+from .forms import DMZExportForm, DMZImportForm, DMZListForm
 from django.template import loader
 
 
@@ -118,30 +119,24 @@ def dmz_import(request):
     if request.method == 'POST':
         form = DMZImportForm(request.POST)
         if form.is_valid():
-            host = form.cleaned_data['host']
-            port = form.cleaned_data.get('port') or 22
-            username = form.cleaned_data['username']
-            password = form.cleaned_data.get('password') or None
-            remote_path = form.cleaned_data['remote_path']
-            target_filename = form.cleaned_data.get('target_filename') or os.path.basename(remote_path)
-
-            if paramiko is None:
-                messages.error(request, 'paramikoがインストールされていません。requirements.txtを更新してください。')
-                return render(request, 'anonymizer_app/dmz_import.html', {'form': form})
-
+            filename = form.cleaned_data['filename']
+            dmz_dir = Path(__file__).parent.parent.parent.parent / 'dmz' / 'close_to_open'
+            
             try:
-                transport = paramiko.Transport((host, int(port)))
-                transport.connect(username=username, password=password)
-                sftp = paramiko.SFTPClient.from_transport(transport)
-                local_dir = os.path.join(os.path.dirname(__file__), 'logs')
-                local_dir = os.path.normpath(local_dir)
-                os.makedirs(local_dir, exist_ok=True)
-                local_path = os.path.join(local_dir, target_filename)
-                sftp.get(remote_path, local_path)
-                sftp.close()
-                transport.close()
-                messages.success(request, f'ファイルを取り込みました: {local_path}')
-                return render(request, 'anonymizer_app/dmz_import.html', {'form': DMZImportForm(), 'downloaded_path': local_path})
+                local_path = dmz_dir / filename
+                if not local_path.exists():
+                    messages.error(request, f'ファイルが見つかりません: {filename}')
+                    return render(request, 'anonymizer_app/dmz_import.html', {'form': form})
+                
+                content = local_path.read_text(encoding='utf-8')
+                # ローカルlogsフォルダーにコピー
+                logs_dir = Path(__file__).parent / 'logs'
+                logs_dir.mkdir(exist_ok=True)
+                local_copy = logs_dir / filename
+                local_copy.write_text(content, encoding='utf-8')
+                
+                messages.success(request, f'ファイルを取り込みました: {filename}')
+                return render(request, 'anonymizer_app/dmz_import.html', {'form': DMZImportForm(), 'downloaded_path': str(local_copy)})
             except Exception as e:
                 messages.error(request, f'ファイル取り込みに失敗しました: {e}')
                 return render(request, 'anonymizer_app/dmz_import.html', {'form': form})
@@ -150,25 +145,62 @@ def dmz_import(request):
     return render(request, 'anonymizer_app/dmz_import.html', {'form': form})
 
 
+def dmz_list(request):
+    files = None
+    dmz_dir = Path(__file__).parent.parent.parent.parent / 'dmz' / 'close_to_open'
+    
+    if request.method == 'POST':
+        form = DMZListForm(request.POST)
+        if form.is_valid():
+            try:
+                if not dmz_dir.exists():
+                    messages.error(request, f'DMZディレクトリが見つかりません: {dmz_dir}')
+                else:
+                    entries = sorted(dmz_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                    files = []
+                    for entry in entries:
+                        if entry.is_file():
+                            stat = entry.stat()
+                            modified = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                            files.append({
+                                'name': entry.name,
+                                'size': stat.st_size,
+                                'modified': modified,
+                            })
+            except Exception as e:
+                messages.error(request, f'DMZ ファイル一覧の取得に失敗しました: {e}')
+    else:
+        form = DMZListForm()
+        # GET時は自動で一覧を表示
+        try:
+            if dmz_dir.exists():
+                entries = sorted(dmz_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                files = []
+                for entry in entries:
+                    if entry.is_file():
+                        stat = entry.stat()
+                        modified = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                        files.append({
+                            'name': entry.name,
+                            'size': stat.st_size,
+                            'modified': modified,
+                        })
+        except Exception as e:
+            messages.warning(request, f'DMZ ファイル一覧の取得に失敗: {e}')
+
+    return render(request, 'anonymizer_app/dmz_list.html', {'form': form, 'files': files, 'dmz_path': str(dmz_dir)})
+
+
 @require_http_methods(["GET", "POST"])
 def dmz_export(request):
-    # エクスポート: 保存済みの prompt_json を DMZ の指定パスにアップロードする
+    # エクスポート: 保存済みの prompt_json をローカルDMZフォルダーに出力
     if request.method == 'POST':
         form = DMZExportForm(request.POST)
         if form.is_valid():
-            host = form.cleaned_data['host']
-            port = form.cleaned_data.get('port') or 22
-            username = form.cleaned_data['username']
-            password = form.cleaned_data.get('password') or None
-            remote_path = form.cleaned_data['remote_path']
-            source_id = form.cleaned_data.get('source_id') or None
-
-            if paramiko is None:
-                messages.error(request, 'paramikoがインストールされていません。requirements.txtを更新してください。')
-                return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
+            source_id = form.cleaned_data.get('source_id')
+            dmz_dir = Path(__file__).parent.parent.parent.parent / 'dmz' / 'close_to_open'
 
             try:
-                # 送信データを準備
                 if source_id:
                     metadata = RestoreMetadata.objects.filter(source_id=source_id).first()
                     if not metadata:
@@ -180,21 +212,14 @@ def dmz_export(request):
                     messages.error(request, 'source_id を指定してください')
                     return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
 
-                # 一時ファイルに書き出してSFTPでアップロード
-                tmp_path = os.path.join('/tmp', f'export_{uuid.uuid4().hex}.json')
-                with open(tmp_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-
-                transport = paramiko.Transport((host, int(port)))
-                transport.connect(username=username, password=password)
-                sftp = paramiko.SFTPClient.from_transport(transport)
-                # リモートディレクトリがない場合はエラーになるため、単純にputする
-                sftp.put(tmp_path, remote_path)
-                sftp.close()
-                transport.close()
-                os.remove(tmp_path)
-                messages.success(request, f'DMZへアップロードしました: {remote_path}')
-                return render(request, 'anonymizer_app/dmz_export.html', {'form': DMZExportForm(), 'uploaded_path': remote_path})
+                # DMZディレクトリに出力
+                dmz_dir.mkdir(parents=True, exist_ok=True)
+                filename = f'prompt_{source_id}.json'
+                output_path = dmz_dir / filename
+                output_path.write_text(content, encoding='utf-8')
+                
+                messages.success(request, f'DMZへアップロードしました: {output_path}')
+                return render(request, 'anonymizer_app/dmz_export.html', {'form': DMZExportForm(), 'uploaded_path': str(output_path)})
             except Exception as e:
                 messages.error(request, f'アップロードに失敗しました: {e}')
                 return render(request, 'anonymizer_app/dmz_export.html', {'form': form})

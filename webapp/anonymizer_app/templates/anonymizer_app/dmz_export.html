@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>DMZ へファイル出力 (OpenSide)</title>
+  <title>DMZ へファイル出力 (CloseSide)</title>
 </head>
 <body>
   <h1>DMZ へファイルを出力する</h1>
-  <p>保存済みの prompt JSON を DMZ サーバ上の指定パスへアップロードします。</p>
+  <p>保存済みの prompt JSON をローカル DMZ フォルダー (work2/dmz/close_to_open) へ出力します。</p>
   {% if messages %}
     <ul>
       {% for m in messages %}
@@ -25,10 +25,10 @@
         <li>保存済みデータはありません。</li>
       {% endfor %}
     </ul>
-    <button type="submit">アップロード</button>
+    <button type="submit">DMZ へ出力</button>
   </form>
   {% if uploaded_path %}
-    <p>アップロード先: {{ uploaded_path }}</p>
+    <p>出力先: {{ uploaded_path }}</p>
   {% endif %}
   <p><a href="/">戻る</a></p>
 </body>

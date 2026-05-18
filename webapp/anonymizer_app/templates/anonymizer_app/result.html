@@ -50,6 +50,9 @@
 <body>
   {% load anonymize_tags %}
   <h1>匿名化 JSON 生成結果</h1>
+  <div style="margin-bottom:16px;">
+    <a href="{% url 'dmz_list' %}"><button type="button">OpenSide：DMZファイル一覧を確認</button></a>
+  </div>
   <section>
     <h2>入力情報</h2>
     <p><strong>テンプレート:</strong> {{ template_type }}</p>

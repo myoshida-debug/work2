@@ -32,23 +32,18 @@ class AnonymizeForm(forms.Form):
 
 
 class DMZImportForm(forms.Form):
-    host = forms.CharField(label='ホスト名 / IP', required=True)
-    port = forms.IntegerField(label='ポート', required=False, initial=22)
-    username = forms.CharField(label='ユーザー名', required=True)
-    password = forms.CharField(label='パスワード（省略可）', required=False, widget=forms.PasswordInput(render_value=False))
-    remote_path = forms.CharField(label='リモートファイルパス', required=True)
-    target_filename = forms.CharField(label='保存時のファイル名（省略可）', required=False)
-    # 将来的に鍵認証対応を追加できます
+    filename = forms.CharField(label='取り込むファイル名', required=True, help_text='例: prompt_20260518_0830.json')
+    # テスト用：ローカルDMZフォルダーから読み込み
+
+
+class DMZListForm(forms.Form):
+    # テスト用：ローカルDMZフォルダーを使用するため入力不要
+    pass
 
 
 class DMZExportForm(forms.Form):
-    host = forms.CharField(label='ホスト名 / IP', required=True)
-    port = forms.IntegerField(label='ポート', required=False, initial=22)
-    username = forms.CharField(label='ユーザー名', required=True)
-    password = forms.CharField(label='パスワード（省略可）', required=False, widget=forms.PasswordInput(render_value=False))
-    remote_path = forms.CharField(label='保存するリモートパス（例: /dmz/prompt.json）', required=True)
-    source_id = forms.CharField(label='送るデータの source_id（省略可）', required=False)
-    # source_idが指定されない場合は生のテキストを手動で貼る運用にする
+    source_id = forms.CharField(label='送るデータの source_id', required=True)
+    # テスト用：ローカルDMZフォルダーへ書き込み
 
 
 class PromptForm(forms.Form):

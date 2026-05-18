@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>DMZ ファイル一覧</title>
+</head>
+<body>
+  <h1>DMZ ファイル一覧</h1>
+  <p>ローカル DMZ フォルダーのファイル一覧を表示します。</p>
+  {% if messages %}
+    <ul>
+      {% for m in messages %}
+        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit">一覧を更新</button>
+  </form>
+
+  {% if files is not None %}
+    <h2>一覧</h2>
+    {% if files %}
+      <table border="1" cellpadding="6" cellspacing="0">
+        <thead>
+          <tr>
+            <th>ファイル名</th>
+            <th>サイズ（バイト）</th>
+            <th>更新日時</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for file in files %}
+            <tr>
+              <td>{{ file.name }}</td>
+              <td>{{ file.size }}</td>
+              <td>{{ file.modified }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>指定されたディレクトリにファイルがありません。</p>
+    {% endif %}
+  {% endif %}
+
+  <p><a href="/">匿名化画面へ戻る</a></p>
+</body>
+</html>
