@@ -6,7 +6,8 @@ from django.http import HttpResponse
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from .forms import AnonymizeForm
-from .models import RestoreMetadata
+from .models import RestoreMetadata, Prompt, Template
+from .forms import PromptForm, TemplateForm
 from anonymizer.modules.anonymize import anonymize_text, build_prompt_payload
 import os
 from django.contrib import messages
@@ -201,3 +202,71 @@ def dmz_export(request):
     # GET: 保存されている source_id の一覧を渡す
     saved = RestoreMetadata.objects.all().order_by('-id')[:50]
     return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
+
+
+def prompts_list(request):
+    prompts = Prompt.objects.all().order_by('-updated_at')
+    return render(request, 'anonymizer_app/prompts_list.html', {'prompts': prompts})
+
+
+def prompt_create(request):
+    if request.method == 'POST':
+        form = PromptForm(request.POST)
+        if form.is_valid():
+            Prompt.objects.create(
+                name=form.cleaned_data['name'],
+                content=form.cleaned_data['content']
+            )
+            return redirect('prompts_list')
+    else:
+        form = PromptForm()
+    return render(request, 'anonymizer_app/prompt_form.html', {'form': form, 'create': True})
+
+
+def prompt_edit(request, pk):
+    prompt = get_object_or_404(Prompt, pk=pk)
+    if request.method == 'POST':
+        form = PromptForm(request.POST)
+        if form.is_valid():
+            prompt.name = form.cleaned_data['name']
+            prompt.content = form.cleaned_data['content']
+            prompt.save()
+            return redirect('prompts_list')
+    else:
+        form = PromptForm(initial={'name': prompt.name, 'content': prompt.content})
+    return render(request, 'anonymizer_app/prompt_form.html', {'form': form, 'create': False, 'prompt': prompt})
+
+
+def templates_list(request):
+    templates = Template.objects.all().order_by('template_type', '-updated_at')
+    return render(request, 'anonymizer_app/templates_list.html', {'templates': templates})
+
+
+def template_create(request):
+    if request.method == 'POST':
+        form = TemplateForm(request.POST)
+        if form.is_valid():
+            Template.objects.create(
+                template_type=form.cleaned_data['template_type'],
+                name=form.cleaned_data['name'],
+                content=form.cleaned_data['content'],
+            )
+            return redirect('templates_list')
+    else:
+        form = TemplateForm()
+    return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': True})
+
+
+def template_edit(request, pk):
+    tpl = get_object_or_404(Template, pk=pk)
+    if request.method == 'POST':
+        form = TemplateForm(request.POST)
+        if form.is_valid():
+            tpl.template_type = form.cleaned_data['template_type']
+            tpl.name = form.cleaned_data['name']
+            tpl.content = form.cleaned_data['content']
+            tpl.save()
+            return redirect('templates_list')
+    else:
+        form = TemplateForm(initial={'template_type': tpl.template_type, 'name': tpl.name, 'content': tpl.content})
+    return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})

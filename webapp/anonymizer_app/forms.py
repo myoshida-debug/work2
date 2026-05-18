@@ -35,3 +35,14 @@ class DMZExportForm(forms.Form):
     remote_path = forms.CharField(label='保存するリモートパス（例: /dmz/prompt.json）', required=True)
     source_id = forms.CharField(label='送るデータの source_id（省略可）', required=False)
     # source_idが指定されない場合は生のテキストを手動で貼る運用にする
+
+
+class PromptForm(forms.Form):
+    name = forms.CharField(label='プロンプト名', max_length=255)
+    content = forms.CharField(label='プロンプト内容', widget=forms.Textarea(attrs={'rows':8}))
+
+
+class TemplateForm(forms.Form):
+    template_type = forms.ChoiceField(choices=TEMPLATE_CHOICES, label='テンプレート種別')
+    name = forms.CharField(label='テンプレート名', max_length=255)
+    content = forms.CharField(label='テンプレート内容', widget=forms.Textarea(attrs={'rows':10}))

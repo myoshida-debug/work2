@@ -6,11 +6,35 @@
 </head>
 <body>
   <h1>匿名化 JSON 生成</h1>
+  <button id="closeside-toggle" style="position:fixed;right:16px;top:16px;z-index:999">CloseSide</button>
+  <div id="closeside" style="position:fixed;right:0;top:0;height:100%;width:420px;max-width:90%;background:#fff;border-left:1px solid #ccc;box-shadow:-2px 0 8px rgba(0,0,0,0.1);transform:translateX(100%);transition:transform 200ms ease;z-index:1000;overflow:auto;">
+    <div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+      <strong>Prompts</strong>
+      <button id="closeside-close">×</button>
+    </div>
+    <div id="closeside-content" style="padding:8px"></div>
+  </div>
   <p>1つの本文を入力し、送信後に匿名化されたテキストを表示します。</p>
   <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
     <button type="submit">匿名化して JSON 生成</button>
   </form>
+
+  <script>
+    async function loadCloseSide(){
+      const res = await fetch('/prompts/');
+      const html = await res.text();
+      document.getElementById('closeside-content').innerHTML = html;
+    }
+    const panel = document.getElementById('closeside');
+    document.getElementById('closeside-toggle').addEventListener('click', async ()=>{
+      panel.style.transform = 'translateX(0)';
+      await loadCloseSide();
+    });
+    document.getElementById('closeside-close').addEventListener('click', ()=>{
+      panel.style.transform = 'translateX(100%)';
+    });
+  </script>
 </body>
 </html>

@@ -1,0 +1,20 @@
+<div>
+  <p><a href="/templates/new/">新しいテンプレートを作成</a></p>
+  <ul style="list-style:none;padding:0">
+    {% for t in templates %}
+      <li style="padding:8px;border-bottom:1px solid #eee">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>{{ t.template_type }}</strong> — {{ t.name }}<br/>
+            <small>{{ t.updated_at }}</small>
+          </div>
+          <div>
+            <a href="/templates/{{ t.pk }}/edit/">編集</a>
+          </div>
+        </div>
+      </li>
+    {% empty %}
+      <li>テンプレートがありません。</li>
+    {% endfor %}
+  </ul>
+</div>

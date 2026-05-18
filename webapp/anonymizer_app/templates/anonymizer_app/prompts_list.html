@@ -1,0 +1,25 @@
+{% load static %}
+<div>
+  <p>
+    <a href="/prompts/new/">新しいプロンプトを作成</a>
+    &nbsp;|&nbsp;
+    <a href="/templates/">テンプレート管理</a>
+  </p>
+  <ul style="list-style:none;padding:0">
+    {% for p in prompts %}
+      <li style="padding:8px;border-bottom:1px solid #eee">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>{{ p.name }}</strong><br/>
+            <small>{{ p.updated_at }}</small>
+          </div>
+          <div>
+            <a href="/prompts/{{ p.pk }}/edit/">編集</a>
+          </div>
+        </div>
+      </li>
+    {% empty %}
+      <li>プロンプトがありません。</li>
+    {% endfor %}
+  </ul>
+</div>
