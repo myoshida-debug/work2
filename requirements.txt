@@ -1,0 +1,5 @@
+Django>=4.2
+PyYAML>=6.0
+faker>=21.0
+pandas>=2.0
+paramiko>=2.11

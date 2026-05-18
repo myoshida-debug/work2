@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>DMZ ファイル取込</title>
+</head>
+<body>
+  <h1>DMZ からファイルを取り込む</h1>
+  <p>SFTP 経由で DMZ サーバからファイルを取り込みます。接続情報を入力してください。</p>
+  {% if messages %}
+    <ul>
+      {% for m in messages %}
+        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">取り込む</button>
+  </form>
+  {% if downloaded_path %}
+    <p>取り込んだファイル: {{ downloaded_path }}</p>
+  {% endif %}
+  <p><a href="/">戻る</a></p>
+</body>
+</html>

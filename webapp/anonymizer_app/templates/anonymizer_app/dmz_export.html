@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>DMZ へファイル出力 (CloseSide)</title>
+</head>
+<body>
+  <h1>DMZ へファイルを出力する</h1>
+  <p>保存済みの prompt JSON を DMZ サーバ上の指定パスへアップロードします。</p>
+  {% if messages %}
+    <ul>
+      {% for m in messages %}
+        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p>保存済みデータ一覧（source_id）:</p>
+    <ul>
+      {% for item in saved %}
+        <li>{{ item.source_id }} ({{ item.template_type }})</li>
+      {% empty %}
+        <li>保存済みデータはありません。</li>
+      {% endfor %}
+    </ul>
+    <button type="submit">アップロード</button>
+  </form>
+  {% if uploaded_path %}
+    <p>アップロード先: {{ uploaded_path }}</p>
+  {% endif %}
+  <p><a href="/">戻る</a></p>
+</body>
+</html>

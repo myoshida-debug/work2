@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>匿名化フロー</title>
+</head>
+<body>
+  <h1>匿名化 JSON 生成</h1>
+  <p>1つの本文を入力し、送信後に匿名化されたテキストを表示します。</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">匿名化して JSON 生成</button>
+  </form>
+</body>
+</html>

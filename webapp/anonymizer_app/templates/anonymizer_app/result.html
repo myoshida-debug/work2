@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>匿名化結果</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      margin: 24px;
+      color: #222;
+    }
+    .anonymized-label {
+      color: #9c1d1d;
+      background: #ffe6e6;
+      border: 1px solid #f5c2c2;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-weight: 700;
+    }
+    .anonymized-label.changed {
+      color: #3d3d3d;
+      background: #fff3bf;
+      border-color: #ffe8a1;
+    }
+    section {
+      margin-bottom: 24px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 100%;
+    }
+    table th,
+    table td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      vertical-align: top;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f9f9f9;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  {% load anonymize_tags %}
+  <h1>匿名化 JSON 生成結果</h1>
+  <section>
+    <h2>入力情報</h2>
+    <p><strong>テンプレート:</strong> {{ template_type }}</p>
+  </section>
+  <section>
+    <h2>匿名化されたテキスト</h2>
+    {% if text_items %}
+      <pre>{{ text_items.0.anonymized_html|safe }}</pre>
+    {% else %}
+      <p>匿名化テキストはありません。</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>匿名化前後の比較</h2>
+    {% if text_items %}
+      <table border="1" cellpadding="6" cellspacing="0">
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>匿名化前</th>
+            <th>匿名化後</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in text_items %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td><pre>{{ item.original_html|safe }}</pre></td>
+              <td><pre>{{ item.anonymized_html|safe }}</pre></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>入力テキストがありません。</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>匿名化箇所</h2>
+    {% if restore_map_items %}
+      <ul>
+        {% for label, original in restore_map_items %}
+          <li><strong><span class="anonymized-label">{{ label }}</span></strong>: {{ original }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>匿名化された箇所はありません。</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>出力 JSON</h2>
+    <p>下記 JSON を DMZ に出力できます。</p>
+    <pre>{{ prompt_json }}</pre>
+    <p>復元用メタデータ:</p>
+    <pre>{{ restore_json }}</pre>
+  </section>
+  <p>
+    <a href="{% url 'download_prompt' source_id=source_id %}">prompt JSON をダウンロード</a>
+    | <a href="{% url 'download_restore' source_id=source_id %}">復元マッピング JSON をダウンロード</a>
+  </p>
+  <p><a href="/">新規入力に戻る</a></p>
+</body>
+</html>
