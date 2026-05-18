@@ -1,5 +1,5 @@
 <div>
-  <p><a href="/templates/new/">新しいテンプレートを作成</a></p>
+  <p><a href="/close/templates/new/">新しいテンプレートを作成</a></p>
   <ul style="list-style:none;padding:0">
     {% for t in templates %}
       <li style="padding:12px;border-bottom:1px solid #eee">
@@ -11,7 +11,7 @@
             <small>{{ t.updated_at }}</small>
           </div>
           <div>
-            <a href="/templates/{{ t.pk }}/edit/" style="margin-right:10px">編集</a>
+            <a href="/close/templates/{{ t.pk }}/edit/" style="margin-right:10px">編集</a>
           </div>
         </div>
         <div id="template-{{ t.pk }}" style="display:none;margin-top:10px;padding:10px;background:#f9f9f9;border:1px solid #ddd">

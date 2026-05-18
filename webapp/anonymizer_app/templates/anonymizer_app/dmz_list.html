@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>DMZ ファイル一覧</title>
+  <title>OpenSide DMZ ファイル一覧</title>
 </head>
 <body>
-  <h1>DMZ ファイル一覧</h1>
-  <p>ローカル DMZ フォルダーのファイル一覧を表示します。</p>
+  <h1>OpenSide DMZ ファイル一覧</h1>
+  <p>CloseSide から出力されたローカル DMZ フォルダーのファイル一覧を表示します。</p>
   {% if messages %}
     <ul>
       {% for m in messages %}
@@ -28,6 +28,7 @@
             <th>ファイル名</th>
             <th>サイズ（バイト）</th>
             <th>更新日時</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -36,6 +37,14 @@
               <td>{{ file.name }}</td>
               <td>{{ file.size }}</td>
               <td>{{ file.modified }}</td>
+              <td>
+                <form method="post" action="{% url 'open_side:dmz_import' %}" style="margin:0">
+                  {% csrf_token %}
+                  <input type="hidden" name="filename" value="{{ file.name }}">
+                  <input type="hidden" name="next" value="list">
+                  <button type="submit">取り込んでプロンプト画面へ</button>
+                </form>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -45,6 +54,9 @@
     {% endif %}
   {% endif %}
 
-  <p><a href="/">匿名化画面へ戻る</a></p>
+  <p>
+    <a href="{% url 'open_side:dmz_import' %}">ファイルを取り込む</a>
+    | <a href="{% url 'close_side:home' %}">CloseSide 匿名化画面へ戻る</a>
+  </p>
 </body>
 </html>

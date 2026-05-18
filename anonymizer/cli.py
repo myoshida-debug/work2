@@ -6,12 +6,7 @@ from .modules.utils import load_json
 
 
 def anonymize_command(args):
-    content = {}
-    for field in ['text1', 'text2', 'text3', 'text4']:
-        value = getattr(args, field, None)
-        if value:
-            content[field] = value
-
+    content = {'text': args.text}
     source_id = f'prompt_{args.template.replace(" ", "_")}_{args.generated_id}'
     payload = build_prompt_payload(args.template, content, source_id)
     write_prompt_file(Path(args.output), payload)
@@ -40,10 +35,7 @@ def main():
     anonymize_parser = subparsers.add_parser('anonymize')
     anonymize_parser.add_argument('--template', required=True)
     anonymize_parser.add_argument('--generated-id', default='0001')
-    anonymize_parser.add_argument('--text1', default='')
-    anonymize_parser.add_argument('--text2', default='')
-    anonymize_parser.add_argument('--text3', default='')
-    anonymize_parser.add_argument('--text4', default='')
+    anonymize_parser.add_argument('--text', required=True)
     anonymize_parser.add_argument('--output', default='prompt.json')
     anonymize_parser.set_defaults(func=anonymize_command)
 

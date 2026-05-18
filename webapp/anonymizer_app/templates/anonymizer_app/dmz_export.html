@@ -30,6 +30,9 @@
   {% if uploaded_path %}
     <p>出力先: {{ uploaded_path }}</p>
   {% endif %}
-  <p><a href="/">戻る</a></p>
+  <p>
+    <a href="{% url 'close_side:home' %}">CloseSide に戻る</a>
+    | <a href="{% url 'open_side:dmz_list' %}">OpenSide の DMZ 一覧へ</a>
+  </p>
 </body>
 </html>

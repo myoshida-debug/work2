@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>OpenSide プロンプト貼り付け</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      margin: 24px;
+      color: #222;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0;
+    }
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 320px;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenSide プロンプト貼り付け</h1>
+  <p>取り込んだファイルから ChatGPT に貼り付けるプロンプトを抽出しました。</p>
+
+  {% if messages %}
+    <ul>
+      {% for m in messages %}
+        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <section>
+    <h2>取り込み情報</h2>
+    <p><strong>ファイル:</strong> {{ filename }}</p>
+    {% if source_id %}<p><strong>source_id:</strong> {{ source_id }}</p>{% endif %}
+    {% if template_type %}<p><strong>文書種別:</strong> {{ template_type }}</p>{% endif %}
+    <p><strong>保存先:</strong> {{ imported_path }}</p>
+  </section>
+
+  <section>
+    <h2>ChatGPT 貼り付け用プロンプト</h2>
+    <div class="actions">
+      <button type="button" onclick="copyPrompt()">コピー</button>
+      <button type="button" onclick="openChatGPT()">ChatGPT を開く</button>
+      <button type="button" onclick="copyAndOpen()">コピーして ChatGPT を開く</button>
+    </div>
+    <textarea id="prompt-text">{{ prompt_text }}</textarea>
+  </section>
+
+  <details>
+    <summary>取り込み元 JSON / 原文を表示</summary>
+    <pre>{{ raw_text }}</pre>
+  </details>
+
+  <p>
+    <a href="{% url 'open_side:dmz_list' %}">DMZ 一覧へ戻る</a>
+    | <a href="{% url 'open_side:dmz_import' %}">別ファイルを取り込む</a>
+    | <a href="{% url 'close_side:home' %}">CloseSide へ戻る</a>
+  </p>
+
+  <script>
+    const chatgptUrl = 'https://chatgpt.com/';
+
+    async function copyPrompt() {
+      const textarea = document.getElementById('prompt-text');
+      textarea.focus();
+      textarea.select();
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(textarea.value);
+        } else {
+          document.execCommand('copy');
+        }
+        alert('プロンプトをコピーしました。ChatGPT に貼り付けてください。');
+      } catch (err) {
+        alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
+      }
+    }
+
+    function openChatGPT() {
+      window.open(chatgptUrl, '_blank', 'noopener');
+    }
+
+    async function copyAndOpen() {
+      await copyPrompt();
+      openChatGPT();
+    }
+  </script>
+</body>
+</html>

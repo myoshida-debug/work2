@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>匿名化フロー</title>
+  <title>CloseSide 匿名化フロー</title>
   <style>
     .template-preview {
       background: #f5f5f5;
@@ -31,9 +31,9 @@
   </style>
 </head>
 <body>
-  <h1>匿名化 JSON 生成</h1>
+  <h1>CloseSide 匿名化 JSON 生成</h1>
   <div style="margin-bottom:16px;">
-    <a href="{% url 'dmz_list' %}"><button type="button">DMZファイル一覧を確認</button></a>
+    <a href="{% url 'open_side:dmz_list' %}"><button type="button">OpenSide：DMZファイル一覧を確認</button></a>
   </div>
   <button id="closeside-toggle" style="position:fixed;right:16px;top:16px;z-index:999">OpenSide</button>
   <div id="closeside" style="position:fixed;right:0;top:0;height:100%;width:420px;max-width:90%;background:#fff;border-left:1px solid #ccc;box-shadow:-2px 0 8px rgba(0,0,0,0.1);transform:translateX(100%);transition:transform 200ms ease;z-index:1000;overflow:auto;">
@@ -66,7 +66,7 @@
           return;
         }
         try {
-          const res = await fetch(`/api/templates/${encodeURIComponent(templateName)}/`);
+          const res = await fetch(`/close/api/templates/${encodeURIComponent(templateName)}/`);
           if (!res.ok) {
             throw new Error('Template not found');
           }
@@ -95,7 +95,7 @@
             // Full content textarea for manual editing / copy
             html += '<div style="margin-top:12px"><strong>テンプレート全文（ChatGPTに貼り付け可能）</strong>';
             html += '<textarea id="template-content" style="width:100%;height:180px;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:3px;font-family:monospace">' + fullContent + '</textarea>';
-            html += '<div style="margin-top:8px"><button type="button" onclick="copyFull()">全文をコピー</button> <button type="button" onclick="openChatGPT()">ChatGPT を開く（貼り付け用）</button> <a href="/templates/' + encodeURIComponent(templateName) + '/" target="_blank">詳細を表示</a></div></div>';
+            html += '<div style="margin-top:8px"><button type="button" onclick="copyFull()">全文をコピー</button> <button type="button" onclick="openChatGPT()">ChatGPT を開く（貼り付け用）</button> <a href="/close/templates/' + encodeURIComponent(templateName) + '/" target="_blank">詳細を表示</a></div></div>';
           } else {
             html += '<p>テンプレート内容がありません</p>';
           }
@@ -164,7 +164,7 @@
 
 
     async function loadCloseSide(){
-      const res = await fetch('/prompts/');
+      const res = await fetch('/close/prompts/');
       const html = await res.text();
       document.getElementById('closeside-content').innerHTML = html;
     }

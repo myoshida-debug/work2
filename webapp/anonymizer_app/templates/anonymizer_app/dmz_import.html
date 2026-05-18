@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>DMZ ファイル取込</title>
+  <title>OpenSide DMZ ファイル取込</title>
 </head>
 <body>
-  <h1>DMZ からファイルを取り込む</h1>
-  <p>ローカル DMZ フォルダー (work2/dmz/close_to_open) からファイルを取り込みます。</p>
+  <h1>OpenSide: DMZ からファイルを取り込む</h1>
+  <p>CloseSide から出力されたローカル DMZ フォルダー (work2/dmz/close_to_open) からファイルを取り込みます。</p>
   {% if messages %}
     <ul>
       {% for m in messages %}
@@ -22,6 +22,9 @@
   {% if downloaded_path %}
     <p>取り込んだファイル: {{ downloaded_path }}</p>
   {% endif %}
-  <p><a href="/">戻る</a></p>
+  <p>
+    <a href="{% url 'open_side:dmz_list' %}">DMZ 一覧へ戻る</a>
+    | <a href="{% url 'close_side:home' %}">CloseSide へ戻る</a>
+  </p>
 </body>
 </html>

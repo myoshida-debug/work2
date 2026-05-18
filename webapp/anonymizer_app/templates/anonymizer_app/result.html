@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>匿名化結果</title>
+  <title>CloseSide 匿名化結果</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -49,9 +49,9 @@
 </head>
 <body>
   {% load anonymize_tags %}
-  <h1>匿名化 JSON 生成結果</h1>
+  <h1>CloseSide 匿名化 JSON 生成結果</h1>
   <div style="margin-bottom:16px;">
-    <a href="{% url 'dmz_list' %}"><button type="button">OpenSide：DMZファイル一覧を確認</button></a>
+    <a href="{% url 'open_side:dmz_list' %}"><button type="button">OpenSide：DMZファイル一覧を確認</button></a>
   </div>
   <section>
     <h2>入力情報</h2>
@@ -110,10 +110,10 @@
     <pre>{{ restore_json }}</pre>
   </section>
   <p>
-    <a href="{% url 'download_prompt' source_id=source_id %}">prompt JSON をダウンロード</a>
-    | <a href="{% url 'download_restore' source_id=source_id %}">復元マッピング JSON をダウンロード</a>
-    | <a href="{% url 'dmz_export' %}?source_id={{ source_id }}">DMZ フォルダへ移動</a>
+    <a href="{% url 'close_side:download_prompt' source_id=source_id %}">prompt JSON をダウンロード</a>
+    | <a href="{% url 'close_side:download_restore' source_id=source_id %}">復元マッピング JSON をダウンロード</a>
+    | <a href="{% url 'close_side:dmz_export' %}?source_id={{ source_id }}">DMZ フォルダへ移動</a>
   </p>
-  <p><a href="/">新規入力に戻る</a></p>
+  <p><a href="{% url 'close_side:home' %}">新規入力に戻る</a></p>
 </body>
 </html>

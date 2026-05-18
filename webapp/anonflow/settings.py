@@ -1,6 +1,11 @@
 from pathlib import Path
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.append(str(REPO_ROOT))
 
 SECRET_KEY = 'django-insecure-anonymizer-demo'
 
@@ -16,6 +21,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'anonymizer_app',
+    'close_side',
+    'open_side',
 ]
 
 MIDDLEWARE = [

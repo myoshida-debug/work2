@@ -33,7 +33,7 @@ python manage.py runserver
 #### 匿名化
 
 ```bash
-python -m anonymizer.cli anonymize --template "入院時サマリー" --text1 "患者は38歳女性..." --output prompt.json
+python -m anonymizer.cli anonymize --template "入院時サマリー" --text "患者は38歳女性..." --output prompt.json
 ```
 
 #### 復元

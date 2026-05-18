@@ -244,7 +244,8 @@ def build_result_payload(source_id: str, result_text: str, reviewer: str = 'unkn
 def create_prompt_text(template_type: str, content: dict) -> str:
     lines = [f'あなたは精神科病棟の看護師です。以下の匿名化された情報をもとに、{template_type}を作成してください。', '']
     for key, value in content.items():
-        lines.append(f'【{key}】')
+        label = '入力本文' if key == 'text' else key
+        lines.append(f'【{label}】')
         lines.append(value)
         lines.append('')
     lines.append('上記の匿名化された入力テキストをテンプレートの最後に追加してください。')

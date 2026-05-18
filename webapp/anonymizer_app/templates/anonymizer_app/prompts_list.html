@@ -1,11 +1,11 @@
 {% load static %}
 <div>
   <p>
-    <button type="button" onclick="window.location.href='/'">インポート画面へ</button>
+    <button type="button" onclick="window.location.href='/close/'">CloseSide 匿名化画面へ</button>
     &nbsp;|&nbsp;
-    <a href="/prompts/new/">新しいプロンプトを作成</a>
+    <a href="/close/prompts/new/">新しいプロンプトを作成</a>
     &nbsp;|&nbsp;
-    <a href="/templates/">テンプレート管理</a>
+    <a href="/close/templates/">テンプレート管理</a>
   </p>
   <ul style="list-style:none;padding:0">
     {% for p in prompts %}
@@ -16,7 +16,7 @@
             <small>{{ p.updated_at }}</small>
           </div>
           <div>
-            <a href="/prompts/{{ p.pk }}/edit/">編集</a>
+            <a href="/close/prompts/{{ p.pk }}/edit/">編集</a>
           </div>
         </div>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
