@@ -3,13 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <title>匿名化フロー</title>
+  <style>
+    .template-preview {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 12px;
+      margin-top: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .template-preview h4 {
+      margin-top: 0;
+      color: #333;
+    }
+    .template-preview pre {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      padding: 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+  </style>
 </head>
 <body>
   <h1>匿名化 JSON 生成</h1>
-  <button id="closeside-toggle" style="position:fixed;right:16px;top:16px;z-index:999">CloseSide</button>
+  <button id="closeside-toggle" style="position:fixed;right:16px;top:16px;z-index:999">OpenSide</button>
   <div id="closeside" style="position:fixed;right:0;top:0;height:100%;width:420px;max-width:90%;background:#fff;border-left:1px solid #ccc;box-shadow:-2px 0 8px rgba(0,0,0,0.1);transform:translateX(100%);transition:transform 200ms ease;z-index:1000;overflow:auto;">
     <div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
-      <strong>Prompts</strong>
+      <div>
+        <strong>Prompts</strong><br>
+        <small>プロンプトを取り込み、ChatGPTへコピーできます</small>
+      </div>
       <button id="closeside-close">×</button>
     </div>
     <div id="closeside-content" style="padding:8px"></div>
@@ -21,7 +50,116 @@
     <button type="submit">匿名化して JSON 生成</button>
   </form>
 
+  <div id="template-preview"></div>
+
   <script>
+    // Template preview on selection
+    const templateSelect = document.querySelector('select[name="template"]');
+    if (templateSelect) {
+      templateSelect.addEventListener('change', async () => {
+        const templateName = templateSelect.value;
+        if (!templateName) {
+          document.getElementById('template-preview').innerHTML = '';
+          return;
+        }
+        try {
+          const res = await fetch(`/api/templates/${encodeURIComponent(templateName)}/`);
+          if (!res.ok) {
+            throw new Error('Template not found');
+          }
+          const data = await res.json();
+          let html = '<div class="template-preview"><h4>テンプレート内容（ChatGPTに貼り付け可能）</h4>';
+          
+          // Combine basic and additional content
+          let fullContent = '';
+          if (data.basic_content) {
+            fullContent += data.basic_content;
+          }
+          if (data.additional_content) {
+            if (fullContent) fullContent += '\n\n';
+            fullContent += data.additional_content;
+          }
+          
+          if (fullContent) {
+            // Show basic and additional separately if present
+            if (data.basic_content) {
+              html += '<div><strong>基本部分</strong><pre style="white-space:pre-wrap;word-wrap:break-word;background:#fff;border:1px solid #e0e0e0;padding:8px;border-radius:3px;margin-top:6px;">' + escapeHtml(data.basic_content) + '</pre><div style="margin-top:6px"><button type="button" onclick="copyText(' + encodeURIComponent(JSON.stringify(data.basic_content)) + ')">基本をコピー</button></div></div>';
+            }
+            if (data.additional_content) {
+              html += '<div style="margin-top:10px"><strong>追加部分</strong><pre style="white-space:pre-wrap;word-wrap:break-word;background:#fff;border:1px solid #e0e0e0;padding:8px;border-radius:3px;margin-top:6px;">' + escapeHtml(data.additional_content) + '</pre><div style="margin-top:6px"><button type="button" onclick="copyText(' + encodeURIComponent(JSON.stringify(data.additional_content)) + ')">追加をコピー</button></div></div>';
+            }
+
+            // Full content textarea for manual editing / copy
+            html += '<div style="margin-top:12px"><strong>テンプレート全文（ChatGPTに貼り付け可能）</strong>';
+            html += '<textarea id="template-content" style="width:100%;height:180px;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:3px;font-family:monospace">' + fullContent + '</textarea>';
+            html += '<div style="margin-top:8px"><button type="button" onclick="copyFull()">全文をコピー</button> <button type="button" onclick="openChatGPT()">ChatGPT を開く（貼り付け用）</button> <a href="/templates/' + encodeURIComponent(templateName) + '/" target="_blank">詳細を表示</a></div></div>';
+          } else {
+            html += '<p>テンプレート内容がありません</p>';
+          }
+          html += '</div>';
+          document.getElementById('template-preview').innerHTML = html;
+        } catch (error) {
+          console.error('Failed to load template preview:', error);
+        }
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        alert('クリップボードにコピーしました');
+      } catch (err) {
+        console.error('Copy failed', err);
+        alert('コピーに失敗しました');
+      }
+    }
+
+    async function copyPromptToClipboard(text) {
+      await copyText(text);
+      window.open('https://chat.openai.com/', '_blank');
+    }
+
+    function importPromptToEditor(id, content) {
+      const textarea = document.querySelector('textarea[name="text"]');
+      if (!textarea) return;
+      textarea.value = content;
+      textarea.focus();
+      alert('プロンプトを入力欄に取り込みました');
+    }
+
+    async function copyFull() {
+      const textarea = document.getElementById('template-content');
+      if (!textarea) return;
+      await copyText(textarea.value);
+    }
+
+    async function openChatGPT() {
+      const textarea = document.getElementById('template-content');
+      if (textarea) {
+        await copyText(textarea.value);
+      }
+      window.open('https://chat.openai.com/', '_blank');
+    }
+
+
     async function loadCloseSide(){
       const res = await fetch('/prompts/');
       const html = await res.text();

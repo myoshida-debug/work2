@@ -12,9 +12,23 @@ TEMPLATE_CHOICES = [
 
 
 class AnonymizeForm(forms.Form):
-    template = forms.ChoiceField(choices=TEMPLATE_CHOICES, label='書類テンプレート')
+    template = forms.ChoiceField(label='書類テンプレート')
     text = forms.CharField(label='入力テキスト', widget=forms.Textarea(attrs={'rows': 8}), required=True)
     reviewer = forms.CharField(label='レビュワー', required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Load available templates from DB, fallback to TEMPLATE_CHOICES
+        try:
+            from .models import Template
+            templates = Template.objects.all().values_list('name', flat=True).distinct()
+            if templates:
+                choices = [(name, name) for name in templates]
+            else:
+                choices = TEMPLATE_CHOICES
+        except Exception:
+            choices = TEMPLATE_CHOICES
+        self.fields['template'].choices = choices
 
 
 class DMZImportForm(forms.Form):
@@ -45,4 +59,13 @@ class PromptForm(forms.Form):
 class TemplateForm(forms.Form):
     template_type = forms.ChoiceField(choices=TEMPLATE_CHOICES, label='テンプレート種別')
     name = forms.CharField(label='テンプレート名', max_length=255)
-    content = forms.CharField(label='テンプレート内容', widget=forms.Textarea(attrs={'rows':10}))
+    basic_content = forms.CharField(
+        label='基本テンプレート',
+        widget=forms.Textarea(attrs={'rows':16}),
+        required=False,
+    )
+    additional_content = forms.CharField(
+        label='追加部分',
+        widget=forms.Textarea(attrs={'rows':8}),
+        required=False,
+    )

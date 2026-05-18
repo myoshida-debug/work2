@@ -2,15 +2,17 @@ import difflib
 import json
 import uuid
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from .forms import AnonymizeForm
 from .models import RestoreMetadata, Prompt, Template
 from .forms import PromptForm, TemplateForm
-from anonymizer.modules.anonymize import anonymize_text, build_prompt_payload
+from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload
+from .template_defaults import load_default_template
 import os
 from django.contrib import messages
+from pathlib import Path
 
 try:
     import paramiko
@@ -131,7 +133,7 @@ def dmz_import(request):
                 transport = paramiko.Transport((host, int(port)))
                 transport.connect(username=username, password=password)
                 sftp = paramiko.SFTPClient.from_transport(transport)
-                local_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'anonymizer', 'logs')
+                local_dir = os.path.join(os.path.dirname(__file__), 'logs')
                 local_dir = os.path.normpath(local_dir)
                 os.makedirs(local_dir, exist_ok=True)
                 local_path = os.path.join(local_dir, target_filename)
@@ -246,14 +248,19 @@ def template_create(request):
     if request.method == 'POST':
         form = TemplateForm(request.POST)
         if form.is_valid():
+            basic = form.cleaned_data.get('basic_content') or ''
+            additional = form.cleaned_data.get('additional_content') or ''
+            content = f"{basic}\n\n{additional}" if additional else basic
             Template.objects.create(
                 template_type=form.cleaned_data['template_type'],
                 name=form.cleaned_data['name'],
-                content=form.cleaned_data['content'],
+                content=content,
+                basic_content=basic,
+                additional_content=additional,
             )
             return redirect('templates_list')
     else:
-        form = TemplateForm()
+        form = TemplateForm(initial={'basic_content': load_default_template()})
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': True})
 
 
@@ -262,11 +269,67 @@ def template_edit(request, pk):
     if request.method == 'POST':
         form = TemplateForm(request.POST)
         if form.is_valid():
+            basic = form.cleaned_data.get('basic_content') or ''
+            additional = form.cleaned_data.get('additional_content') or ''
             tpl.template_type = form.cleaned_data['template_type']
             tpl.name = form.cleaned_data['name']
-            tpl.content = form.cleaned_data['content']
+            tpl.basic_content = basic
+            tpl.additional_content = additional
+            tpl.content = f"{basic}\n\n{additional}" if additional else basic
             tpl.save()
             return redirect('templates_list')
     else:
-        form = TemplateForm(initial={'template_type': tpl.template_type, 'name': tpl.name, 'content': tpl.content})
+        form = TemplateForm(initial={
+            'template_type': tpl.template_type,
+            'name': tpl.name,
+            'basic_content': tpl.basic_content or tpl.content,
+            'additional_content': tpl.additional_content,
+        })
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})
+
+
+def anonymization_rules(request):
+    """Render the anonymization rules markdown as plain text for reference."""
+    # prefer DB-stored rule if exists
+    from .models import AnonymizationRule
+    rule = AnonymizationRule.objects.order_by('-updated_at').first()
+    if rule:
+        text = rule.content
+    else:
+        rules_path = Path(__file__).resolve().parent / 'prompt_templates' / 'anonymization_rules.md'
+        if rules_path.exists():
+            text = rules_path.read_text(encoding='utf-8')
+        else:
+            return HttpResponse('匿名化ルールが見つかりません', status=404)
+
+    try:
+        import markdown
+        html = markdown.markdown(text)
+        return render(request, 'anonymizer_app/anonymization_rules.html', {'rules_html': html})
+    except Exception:
+        return render(request, 'anonymizer_app/anonymization_rules.html', {'rules_text': text})
+
+
+def api_template_preview(request, template_name):
+    """API endpoint to return template content as JSON for AJAX preview."""
+    try:
+        template = Template.objects.get(name=template_name)
+        return JsonResponse({
+            'name': template.name,
+            'template_type': template.template_type,
+            'basic_content': template.basic_content or '',
+            'additional_content': template.additional_content or '',
+        })
+    except Template.DoesNotExist:
+        return JsonResponse({'error': 'Template not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def template_detail(request, template_name):
+    """Display template details on a dedicated page."""
+    try:
+        template = Template.objects.get(name=template_name)
+        return render(request, 'anonymizer_app/template_detail.html', {'template': template})
+    except Template.DoesNotExist:
+        return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)

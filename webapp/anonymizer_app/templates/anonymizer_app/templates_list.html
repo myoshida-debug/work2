@@ -2,19 +2,44 @@
   <p><a href="/templates/new/">新しいテンプレートを作成</a></p>
   <ul style="list-style:none;padding:0">
     {% for t in templates %}
-      <li style="padding:8px;border-bottom:1px solid #eee">
+      <li style="padding:12px;border-bottom:1px solid #eee">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <strong>{{ t.template_type }}</strong> — {{ t.name }}<br/>
+          <div style="flex:1">
+            <strong style="cursor:pointer" onclick="toggleContent('template-{{ t.pk }}')">
+              ▶ {{ t.template_type }} — {{ t.name }}
+            </strong><br/>
             <small>{{ t.updated_at }}</small>
           </div>
           <div>
-            <a href="/templates/{{ t.pk }}/edit/">編集</a>
+            <a href="/templates/{{ t.pk }}/edit/" style="margin-right:10px">編集</a>
           </div>
+        </div>
+        <div id="template-{{ t.pk }}" style="display:none;margin-top:10px;padding:10px;background:#f9f9f9;border:1px solid #ddd">
+          {% if t.basic_content %}
+            <h4 style="margin-top:0">基本テンプレート</h4>
+            <pre style="white-space:pre-wrap;font-size:12px;max-height:200px;overflow-y:auto">{{ t.basic_content }}</pre>
+          {% endif %}
+          {% if t.additional_content %}
+            <h4>追加部分</h4>
+            <pre style="white-space:pre-wrap;font-size:12px;max-height:150px;overflow-y:auto">{{ t.additional_content }}</pre>
+          {% endif %}
+          {% if not t.basic_content and not t.additional_content and t.content %}
+            <pre style="white-space:pre-wrap;font-size:12px;max-height:300px;overflow-y:auto">{{ t.content }}</pre>
+          {% endif %}
         </div>
       </li>
     {% empty %}
       <li>テンプレートがありません。</li>
     {% endfor %}
   </ul>
+  <script>
+    function toggleContent(id) {
+      const elem = document.getElementById(id);
+      if (elem.style.display === 'none') {
+        elem.style.display = 'block';
+      } else {
+        elem.style.display = 'none';
+      }
+    }
+  </script>
 </div>

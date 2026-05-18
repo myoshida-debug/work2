@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.db import models
 
 
 class RestoreMetadata(models.Model):
@@ -39,8 +40,26 @@ class Template(models.Model):
     template_type = models.CharField(max_length=255, choices=TEMPLATE_CHOICES)
     name = models.CharField(max_length=255)
     content = models.TextField()
+    basic_content = models.TextField(blank=True, default='')
+    additional_content = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.template_type} - {self.name}"
+
+    @property
+    def combined_content(self):
+        if self.additional_content:
+            return f"{self.basic_content}\n\n{self.additional_content}"
+        return self.basic_content or self.content
+
+
+class AnonymizationRule(models.Model):
+    """Store editable anonymization rule text for admin editing and runtime display."""
+    name = models.CharField(max_length=255, default='default')
+    content = models.TextField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name

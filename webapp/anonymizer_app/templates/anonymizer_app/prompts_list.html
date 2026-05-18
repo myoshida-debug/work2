@@ -8,7 +8,7 @@
   <ul style="list-style:none;padding:0">
     {% for p in prompts %}
       <li style="padding:8px;border-bottom:1px solid #eee">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
           <div>
             <strong>{{ p.name }}</strong><br/>
             <small>{{ p.updated_at }}</small>
@@ -16,6 +16,10 @@
           <div>
             <a href="/prompts/{{ p.pk }}/edit/">編集</a>
           </div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" onclick="importPromptToEditor({{ p.pk }}, {{ p.content|escapejs }})">このプロンプトを取り込む</button>
+          <button type="button" onclick="copyPromptToClipboard({{ p.content|escapejs }})">ChatGPTにコピー</button>
         </div>
       </li>
     {% empty %}

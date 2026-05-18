@@ -1,0 +1,33 @@
+<div style="max-width:900px;margin:0 auto">
+  <h2>テンプレート詳細</h2>
+  <p><a href="/templates/">一覧に戻る</a></p>
+  
+  <div style="background:#f0f0f0;padding:15px;border-radius:5px;margin-bottom:20px">
+    <h3>{{ template.name }}</h3>
+    <p><strong>種別:</strong> {{ template.template_type }}</p>
+    <p><strong>最終更新:</strong> {{ template.updated_at }}</p>
+  </div>
+
+  {% if template.basic_content %}
+    <div style="margin-bottom:20px">
+      <h4>基本テンプレート</h4>
+      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.basic_content }}</pre>
+    </div>
+  {% endif %}
+
+  {% if template.additional_content %}
+    <div style="margin-bottom:20px">
+      <h4>追加部分</h4>
+      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.additional_content }}</pre>
+    </div>
+  {% endif %}
+
+  {% if not template.basic_content and not template.additional_content and template.content %}
+    <div style="margin-bottom:20px">
+      <h4>テンプレート内容</h4>
+      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.content }}</pre>
+    </div>
+  {% endif %}
+
+  <p><a href="/templates/{{ template.pk }}/edit/">編集する</a> | <a href="/templates/">一覧に戻る</a></p>
+</div>

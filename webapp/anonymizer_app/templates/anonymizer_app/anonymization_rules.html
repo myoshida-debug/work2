@@ -1,0 +1,9 @@
+<div>
+  <h3>匿名化ルール（テンプレート用）</h3>
+  {% if rules_html %}
+    <div>{{ rules_html|safe }}</div>
+  {% else %}
+    <pre style="white-space:pre-wrap;">{{ rules_text }}</pre>
+  {% endif %}
+  <p><a href="/templates/">テンプレート一覧に戻る</a></p>
+</div>
