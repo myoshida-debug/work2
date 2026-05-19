@@ -2,180 +2,956 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>CloseSide 匿名化フロー</title>
+  <title>CloseSide 匿名化画面</title>
   <style>
-    .template-preview {
-      background: #f5f5f5;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 12px;
-      margin-top: 15px;
-      max-height: 300px;
-      overflow-y: auto;
+    * {
+      box-sizing: border-box;
     }
-    .template-preview h4 {
-      margin-top: 0;
-      color: #333;
+
+    :root {
+      --bg: #fff;
+      --surface: #f7f8fb;
+      --panel: #fff;
+      --line: #d6dbe6;
+      --line-strong: #a8b1c2;
+      --text: #1d2433;
+      --muted: #657084;
+      --blue: #1f5eff;
+      --blue-dark: #1747bd;
+      --green: #138a5b;
+      --amber: #a96a00;
+      --danger: #b42318;
+      --shadow: 0 10px 26px rgba(29, 36, 51, 0.08);
     }
-    .template-preview pre {
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 4px;
+    }
+
+    button,
+    select,
+    textarea,
+    input {
+      font: inherit;
+    }
+
+    button {
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+
+    .page {
+      min-height: 100vh;
       background: #fff;
-      border: 1px solid #e0e0e0;
-      padding: 8px;
-      border-radius: 3px;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 18px 28px;
+    }
+
+    .brand-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .top-nav form {
+      margin: 0;
+    }
+
+    .top-nav a,
+    .top-nav button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--blue-dark);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .top-nav a:hover,
+    .top-nav button:hover {
+      border-color: var(--blue);
+      background: #f3f7ff;
+    }
+
+    .content {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .error-list {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid #f0b8b2;
+      border-left: 5px solid var(--danger);
+      border-radius: 6px;
+      background: #fff7f6;
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .workspace-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(380px, 0.82fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 56px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .panel-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .input-panel {
+      display: grid;
+      gap: 20px;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .editor-column {
+      min-width: 0;
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .field-area {
+      width: 100%;
+      min-height: 320px;
+      padding: 12px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.65;
+      resize: vertical;
+      outline: none;
+    }
+
+    .field-area:focus,
+    select:focus,
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .plain-button,
+    .label-action-button,
+    .dmz-button {
+      min-height: 40px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 13px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .plain-button:disabled,
+    .label-action-button:disabled,
+    .dmz-button:disabled {
+      color: #8a94a6;
+      background: #eef1f6;
+      cursor: default;
+      transform: none;
+    }
+
+    .primary-button {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .primary-button:not(:disabled):hover {
+      background: var(--blue-dark);
+      border-color: var(--blue-dark);
+    }
+
+    .green-button {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+
+    .amber-button {
+      border-color: #d99a32;
+      background: #fff8ed;
+      color: var(--amber);
+    }
+
+    .template-row {
+      display: grid;
+      grid-template-columns: minmax(260px, 420px) auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .template-field select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 15px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    .label-panel .panel-body {
+      padding: 0;
+    }
+
+    .label-table-wrap {
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .label-items {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      table-layout: fixed;
+    }
+
+    .label-items th,
+    .label-items td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      vertical-align: top;
+    }
+
+    .label-items th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface);
+      color: var(--muted);
       font-size: 12px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    .label-edit-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 8px;
+      font-size: 14px;
+      line-height: 1.35;
+      outline: none;
+    }
+
+    .label-edit-input:focus {
+      border-color: var(--blue);
+      background: #f8fbff;
+    }
+
+    .label-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 16px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .edit-status {
+      min-height: 22px;
+      margin: 0 16px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .label-delete-button {
+      min-height: 32px;
+      padding: 5px 9px;
+      border-color: #f0b8b2;
+      color: var(--danger);
+    }
+
+    .compare-panel {
+      grid-column: 1 / -1;
+    }
+
+    .diff-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .diff-document {
+      min-width: 0;
+    }
+
+    .diff-output {
+      min-height: 220px;
+      max-height: 420px;
+      margin: 0;
+      overflow: auto;
+      padding: 12px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
       white-space: pre-wrap;
-      word-wrap: break-word;
-      max-height: 150px;
-      overflow-y: auto;
+      word-break: break-word;
+    }
+
+    .anonymized-label.changed {
+      border: 1px solid #ffe08a;
+      border-radius: 4px;
+      background: #fff3bf;
+      color: #3d3d3d;
+      padding: 1px 4px;
+      font-weight: 800;
+    }
+
+    .json-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .json-grid .field-area {
+      min-height: 260px;
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .dmz-form {
+      display: flex;
+      justify-content: flex-end;
+      max-width: 1240px;
+      margin: 20px auto 0;
+      padding: 0 28px 32px;
+    }
+
+    .dmz-button {
+      min-width: 180px;
+      border-color: #29364f;
+      background: #29364f;
+      color: #fff;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 980px) {
+      .header-inner,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .header-inner,
+      .workspace-form,
+      .editor-grid,
+      .diff-grid,
+      .json-grid,
+      .template-row {
+        grid-template-columns: 1fr;
+      }
+
+      .header-inner {
+        display: grid;
+      }
+
+      .top-nav {
+        justify-content: flex-start;
+      }
+
+      .field-area {
+        min-height: 240px;
+      }
+
+      .dmz-form {
+        justify-content: flex-start;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>CloseSide 匿名化 JSON 生成</h1>
-  <div style="margin-bottom:16px;">
-    <a href="{% url 'open_side:dmz_list' %}"><button type="button">OpenSide：DMZファイル一覧を確認</button></a>
-  </div>
-  <button id="closeside-toggle" style="position:fixed;right:16px;top:16px;z-index:999">OpenSide</button>
-  <div id="closeside" style="position:fixed;right:0;top:0;height:100%;width:420px;max-width:90%;background:#fff;border-left:1px solid #ccc;box-shadow:-2px 0 8px rgba(0,0,0,0.1);transform:translateX(100%);transition:transform 200ms ease;z-index:1000;overflow:auto;">
-    <div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <strong>Prompts</strong><br>
-        <small>プロンプトを取り込み、ChatGPTへコピーできます</small>
+  <main class="page">
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="brand">
+          <h1 class="brand-title">CloseSide 匿名化</h1>
+        </div>
+        <nav class="top-nav" aria-label="主要メニュー">
+          <a href="{% url 'close_side:menu' %}">CloseSideメニュー</a>
+          <a href="{% url 'close_side:home' %}">匿名化画面へ</a>
+          <a href="{% url 'close_side:prompts_list' %}">プロンプト一覧</a>
+          <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
+          <a href="{% url 'close_side:result_import_list' %}">生成文章一覧</a>
+          <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>
+            <a href="{% url 'close_side:user_list' %}">ユーザー管理</a>
+          {% endif %}
+          <form method="post" action="{% url 'close_side:logout' %}">
+            {% csrf_token %}
+            <button type="submit">{{ request.user.username }} / ログアウト</button>
+          </form>
+        </nav>
       </div>
-      <button id="closeside-close">×</button>
-    </div>
-    <div id="closeside-content" style="padding:8px"></div>
-  </div>
-  <p>1つの本文を入力し、送信後に匿名化されたテキストを表示します。</p>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">匿名化して JSON 生成</button>
-  </form>
+    </header>
 
-  <div id="template-preview"></div>
+    <div class="content">
+      {% if form.errors %}
+        <div class="error-list">
+          入力内容を確認してください。
+          {{ form.non_field_errors }}
+          {{ form.text.errors }}
+          {{ form.template.errors }}
+        </div>
+      {% endif %}
+
+      <form method="post" id="anonymize-form" class="workspace-form">
+        {% csrf_token %}
+
+        <section class="panel input-panel" aria-labelledby="text-panel-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="text-panel-title">文章編集</h2>
+          </div>
+          <div class="panel-body">
+            <div class="editor-grid">
+              <div class="editor-column input-text">
+                <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
+                {{ form.text }}
+                <div class="actions-row">
+                  <button class="plain-button" type="button" id="clear-text">クリア</button>
+                  <button class="plain-button primary-button" type="submit">匿名化</button>
+                </div>
+              </div>
+
+              <div class="editor-column">
+                <label class="field-label" for="anonymized-output">匿名化文章</label>
+                <textarea class="field-area anonymized-output" id="anonymized-output">{% if text_items %}{{ text_items.0.anonymized }}{% endif %}</textarea>
+                <div class="actions-row">
+                  <button class="plain-button amber-button" type="button" id="reanonymize-from-labels">再匿名化</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="template-row">
+              <div class="template-field">
+                <label class="field-label" for="{{ form.template.id_for_label }}">テンプレート</label>
+                {{ form.template }}
+              </div>
+              <button class="plain-button green-button" type="button" id="build-prompt-button">プロンプト作成</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel label-panel" aria-labelledby="label-panel-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="label-panel-title">匿名ラベル</h2>
+          </div>
+          <div class="panel-body">
+            <div class="label-table-wrap">
+              <table class="label-items">
+                <thead>
+                  <tr>
+                    <th>匿名前文字</th>
+                    <th>匿名後文字</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="label-items-body">
+                  {% for label, original in restore_map_items %}
+                    <tr class="label-row" data-current-label="{{ label }}">
+                      <td>
+                        <input class="label-edit-input original-value" type="text" value="{{ original }}" aria-label="匿名前文字">
+                      </td>
+                      <td>
+                        <input class="label-edit-input label-value" type="text" value="{{ label }}" aria-label="匿名後文字">
+                      </td>
+                      <td>
+                        <button class="label-action-button label-delete-button delete-label-row" type="button">削除</button>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="label-actions">
+              <button class="label-action-button" type="button" id="add-label-row">匿名ラベル追加</button>
+              <button class="label-action-button primary-button" type="button" id="apply-label-edits" {% if not restore_map_items %}disabled{% endif %}>ラベル反映</button>
+            </div>
+            <div class="edit-status" id="edit-status" aria-live="polite"></div>
+          </div>
+        </section>
+
+        {% if text_items %}
+          <section class="panel compare-panel" aria-labelledby="compare-panel-title">
+            <div class="panel-header">
+              <h2 class="panel-title" id="compare-panel-title">匿名化前後の変更箇所</h2>
+            </div>
+            <div class="panel-body">
+              <div class="diff-grid">
+                <div class="diff-document">
+                  <label class="field-label">匿名化前文書</label>
+                  <pre class="diff-output">{{ text_items.0.original_html|safe }}</pre>
+                </div>
+                <div class="diff-document">
+                  <label class="field-label">匿名化後文書</label>
+                  <pre class="diff-output">{{ text_items.0.anonymized_html|safe }}</pre>
+                </div>
+              </div>
+            </div>
+          </section>
+        {% endif %}
+
+        <section class="panel json-panel" aria-labelledby="json-panel-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="json-panel-title">JSON</h2>
+          </div>
+          <div class="panel-body">
+            <div class="json-grid">
+              <div>
+                <label class="field-label" for="prompt-json">作成JSON</label>
+                <textarea class="field-area prompt-json" id="prompt-json" readonly>{{ prompt_json|default_if_none:"" }}</textarea>
+              </div>
+              <div>
+                <label class="field-label" for="restore-json">復元用JSON</label>
+                <textarea class="field-area restore-json" id="restore-json" readonly>{{ restore_json|default_if_none:"" }}</textarea>
+              </div>
+            </div>
+          </div>
+        </section>
+      </form>
+    </div>
+
+    <form class="dmz-form" id="dmz-export-form" method="post" action="{% url 'close_side:dmz_export' %}">
+      {% csrf_token %}
+      <input type="hidden" name="source_id" id="source-id-field" value="{{ source_id|default_if_none:'' }}">
+      <button class="dmz-button" type="submit" {% if not source_id %}disabled{% endif %}>DMZへ出力</button>
+    </form>
+  </main>
 
   <script>
-    // Template preview on selection
+    const anonymizeForm = document.getElementById('anonymize-form');
+    const textArea = document.querySelector('textarea[name="text"]');
     const templateSelect = document.querySelector('select[name="template"]');
-    if (templateSelect) {
-      templateSelect.addEventListener('change', async () => {
-        const templateName = templateSelect.value;
-        if (!templateName) {
-          document.getElementById('template-preview').innerHTML = '';
-          return;
-        }
-        try {
-          const res = await fetch(`/close/api/templates/${encodeURIComponent(templateName)}/`);
-          if (!res.ok) {
-            throw new Error('Template not found');
-          }
-          const data = await res.json();
-          let html = '<div class="template-preview"><h4>テンプレート内容（ChatGPTに貼り付け可能）</h4>';
-          
-          // Combine basic and additional content
-          let fullContent = '';
-          if (data.basic_content) {
-            fullContent += data.basic_content;
-          }
-          if (data.additional_content) {
-            if (fullContent) fullContent += '\n\n';
-            fullContent += data.additional_content;
-          }
-          
-          if (fullContent) {
-            // Show basic and additional separately if present
-            if (data.basic_content) {
-              html += '<div><strong>基本部分</strong><pre style="white-space:pre-wrap;word-wrap:break-word;background:#fff;border:1px solid #e0e0e0;padding:8px;border-radius:3px;margin-top:6px;">' + escapeHtml(data.basic_content) + '</pre><div style="margin-top:6px"><button type="button" onclick="copyText(' + encodeURIComponent(JSON.stringify(data.basic_content)) + ')">基本をコピー</button></div></div>';
-            }
-            if (data.additional_content) {
-              html += '<div style="margin-top:10px"><strong>追加部分</strong><pre style="white-space:pre-wrap;word-wrap:break-word;background:#fff;border:1px solid #e0e0e0;padding:8px;border-radius:3px;margin-top:6px;">' + escapeHtml(data.additional_content) + '</pre><div style="margin-top:6px"><button type="button" onclick="copyText(' + encodeURIComponent(JSON.stringify(data.additional_content)) + ')">追加をコピー</button></div></div>';
-            }
+    const sourceIdField = document.getElementById('source-id-field');
+    const promptJsonArea = document.getElementById('prompt-json');
+    const restoreJsonArea = document.getElementById('restore-json');
+    const statusArea = document.getElementById('edit-status');
+    const labelItemsBody = document.getElementById('label-items-body');
 
-            // Full content textarea for manual editing / copy
-            html += '<div style="margin-top:12px"><strong>テンプレート全文（ChatGPTに貼り付け可能）</strong>';
-            html += '<textarea id="template-content" style="width:100%;height:180px;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:3px;font-family:monospace">' + fullContent + '</textarea>';
-            html += '<div style="margin-top:8px"><button type="button" onclick="copyFull()">全文をコピー</button> <button type="button" onclick="openChatGPT()">ChatGPT を開く（貼り付け用）</button> <a href="/close/templates/' + encodeURIComponent(templateName) + '/" target="_blank">詳細を表示</a></div></div>';
-          } else {
-            html += '<p>テンプレート内容がありません</p>';
+    if (textArea) {
+      textArea.classList.add('field-area');
+      textArea.removeAttribute('rows');
+      textArea.removeAttribute('cols');
+    }
+
+    const clearButton = document.getElementById('clear-text');
+    if (clearButton && textArea) {
+      clearButton.addEventListener('click', () => {
+        textArea.value = '';
+        document.getElementById('anonymized-output').value = '';
+        textArea.focus();
+      });
+    }
+
+    const reanonymizeButton = document.getElementById('reanonymize-from-labels');
+    const anonymizedOutput = document.getElementById('anonymized-output');
+    if (reanonymizeButton && textArea && anonymizedOutput) {
+      reanonymizeButton.addEventListener('click', async () => {
+        try {
+          if (reanonymizeFromLabels()) {
+            await saveEditedPayload({ replaceLabels: false });
           }
-          html += '</div>';
-          document.getElementById('template-preview').innerHTML = html;
         } catch (error) {
-          console.error('Failed to load template preview:', error);
+          console.error(error);
+          setStatus(error.message);
         }
       });
     }
 
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    function getCsrfToken() {
+      const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+      return tokenInput ? tokenInput.value : '';
     }
 
-    async function copyText(text) {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          const ta = document.createElement('textarea');
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          document.body.removeChild(ta);
+    function setStatus(message) {
+      if (statusArea) {
+        statusArea.textContent = message;
+      }
+    }
+
+    function markEdited() {
+      if (sourceIdField && sourceIdField.value) {
+        setStatus('未反映の編集があります');
+      }
+      updateLabelActionState();
+    }
+
+    function replaceAllText(text, before, after) {
+      if (!before || before === after) {
+        return text;
+      }
+      return text.split(before).join(after);
+    }
+
+    function collectLabelRows() {
+      return Array.from(document.querySelectorAll('.label-row')).map((row) => {
+        const originalInput = row.querySelector('.original-value');
+        const labelInput = row.querySelector('.label-value');
+        return {
+          row,
+          oldLabel: row.dataset.currentLabel || '',
+          original: originalInput ? originalInput.value.trim() : '',
+          label: labelInput ? labelInput.value.trim() : '',
+        };
+      });
+    }
+
+    function buildRestoreMap(rows) {
+      const restoreMap = {};
+      rows.forEach(({ original, label }) => {
+        if (original && label) {
+          restoreMap[label] = original;
         }
-        alert('クリップボードにコピーしました');
-      } catch (err) {
-        console.error('Copy failed', err);
-        alert('コピーに失敗しました');
+      });
+      return restoreMap;
+    }
+
+    function updateLabelActionState() {
+      const hasValidRows = collectLabelRows().some(({ original, label }) => original && label);
+      const applyLabelButton = document.getElementById('apply-label-edits');
+      if (applyLabelButton) {
+        applyLabelButton.disabled = !hasValidRows;
+      }
+      if (reanonymizeButton) {
+        reanonymizeButton.disabled = !hasValidRows;
       }
     }
 
-    async function copyPromptToClipboard(text) {
-      await copyText(text);
-      window.open('https://chat.openai.com/', '_blank');
+    function registerEditableField(field) {
+      if (!field) return;
+      field.addEventListener('input', markEdited);
     }
 
-    function importPromptToEditor(id, content) {
-      const textarea = document.querySelector('textarea[name="text"]');
-      if (!textarea) return;
-      textarea.value = content;
-      textarea.focus();
-      alert('プロンプトを入力欄に取り込みました');
+    function registerLabelDeleteButton(button) {
+      if (!button) return;
+      button.addEventListener('click', () => {
+        const row = button.closest('.label-row');
+        if (row) {
+          row.remove();
+          markEdited();
+          setStatus('匿名ラベル行を削除しました');
+        }
+      });
     }
 
-    async function copyFull() {
-      const textarea = document.getElementById('template-content');
-      if (!textarea) return;
-      await copyText(textarea.value);
+    function createLabelRow(original = '', label = '', currentLabel = '') {
+      if (!labelItemsBody) return null;
+      const row = document.createElement('tr');
+      row.className = 'label-row';
+      row.dataset.currentLabel = currentLabel;
+
+      const originalCell = document.createElement('td');
+      const originalInput = document.createElement('input');
+      originalInput.className = 'label-edit-input original-value';
+      originalInput.type = 'text';
+      originalInput.value = original;
+      originalInput.setAttribute('aria-label', '匿名前文字');
+      originalCell.appendChild(originalInput);
+
+      const labelCell = document.createElement('td');
+      const labelInput = document.createElement('input');
+      labelInput.className = 'label-edit-input label-value';
+      labelInput.type = 'text';
+      labelInput.value = label;
+      labelInput.setAttribute('aria-label', '匿名後文字');
+      labelCell.appendChild(labelInput);
+
+      const actionCell = document.createElement('td');
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'label-action-button label-delete-button delete-label-row';
+      deleteButton.type = 'button';
+      deleteButton.textContent = '削除';
+      actionCell.appendChild(deleteButton);
+
+      row.appendChild(originalCell);
+      row.appendChild(labelCell);
+      row.appendChild(actionCell);
+      labelItemsBody.appendChild(row);
+      registerEditableField(originalInput);
+      registerEditableField(labelInput);
+      registerLabelDeleteButton(deleteButton);
+      updateLabelActionState();
+      originalInput.focus();
+      return row;
     }
 
-    async function openChatGPT() {
-      const textarea = document.getElementById('template-content');
-      if (textarea) {
-        await copyText(textarea.value);
+    function reanonymizeFromLabels() {
+      if (!textArea || !anonymizedOutput) return false;
+      const rows = collectLabelRows()
+        .filter(({ original, label }) => original && label)
+        .sort((a, b) => b.original.length - a.original.length);
+
+      if (!rows.length) {
+        setStatus('匿名ラベルを追加してください');
+        return false;
       }
-      window.open('https://chat.openai.com/', '_blank');
+
+      let editedText = textArea.value;
+      rows.forEach(({ row, original, label }) => {
+        editedText = replaceAllText(editedText, original, label);
+        row.dataset.currentLabel = label;
+      });
+      anonymizedOutput.value = editedText;
+      setStatus('匿名ラベルに従って再匿名化しました');
+      return true;
     }
 
-
-    async function loadCloseSide(){
-      const res = await fetch('/close/prompts/');
-      const html = await res.text();
-      document.getElementById('closeside-content').innerHTML = html;
+    function applyLabelChangesToText(rows) {
+      if (!anonymizedOutput) return;
+      let editedText = anonymizedOutput.value;
+      rows.forEach(({ row, oldLabel, label }) => {
+        if (oldLabel && label && oldLabel !== label) {
+          editedText = replaceAllText(editedText, oldLabel, label);
+        }
+        row.dataset.currentLabel = label;
+      });
+      anonymizedOutput.value = editedText;
     }
-    const panel = document.getElementById('closeside');
-    document.getElementById('closeside-toggle').addEventListener('click', async ()=>{
-      panel.style.transform = 'translateX(0)';
-      await loadCloseSide();
-    });
-    document.getElementById('closeside-close').addEventListener('click', ()=>{
-      panel.style.transform = 'translateX(100%)';
-    });
+
+    async function saveEditedPayload({ replaceLabels = false } = {}) {
+      const rows = collectLabelRows();
+      if (replaceLabels) {
+        applyLabelChangesToText(rows);
+      }
+
+      const restoreMap = buildRestoreMap(rows);
+      const sourceId = sourceIdField ? sourceIdField.value : '';
+      const restorePayload = {
+        source_id: sourceId,
+        restore_map: restoreMap,
+      };
+      if (restoreJsonArea) {
+        restoreJsonArea.value = JSON.stringify(restorePayload, null, 2);
+      }
+
+      if (!sourceId) {
+        setStatus('匿名化後に反映できます');
+        return false;
+      }
+
+      setStatus('反映中...');
+      const response = await fetch('{% url "close_side:update_prompt_payload" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({
+          source_id: sourceId,
+          template_type: templateSelect ? templateSelect.value : '',
+          anonymized_text: anonymizedOutput ? anonymizedOutput.value : '',
+          restore_map: restoreMap,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || '反映に失敗しました');
+      }
+
+      if (promptJsonArea) {
+        promptJsonArea.value = JSON.stringify(data.prompt_json, null, 2);
+      }
+      if (restoreJsonArea) {
+        restoreJsonArea.value = JSON.stringify(data.restore_json, null, 2);
+      }
+      if (sourceIdField) {
+        sourceIdField.value = data.source_id;
+      }
+      setStatus('反映しました');
+      return true;
+    }
+
+    const addLabelButton = document.getElementById('add-label-row');
+    if (addLabelButton) {
+      addLabelButton.addEventListener('click', () => {
+        createLabelRow();
+        setStatus('匿名ラベル行を追加しました');
+      });
+    }
+
+    const applyLabelButton = document.getElementById('apply-label-edits');
+    if (applyLabelButton) {
+      applyLabelButton.addEventListener('click', async () => {
+        try {
+          await saveEditedPayload({ replaceLabels: true });
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    const buildPromptButton = document.getElementById('build-prompt-button');
+    if (buildPromptButton && anonymizeForm) {
+      buildPromptButton.addEventListener('click', async () => {
+        if (!sourceIdField || !sourceIdField.value) {
+          anonymizeForm.requestSubmit();
+          return;
+        }
+        try {
+          await saveEditedPayload({ replaceLabels: true });
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    const editableFields = [
+      anonymizedOutput,
+      ...document.querySelectorAll('.label-edit-input'),
+    ].filter(Boolean);
+    editableFields.forEach(registerEditableField);
+    document.querySelectorAll('.delete-label-row').forEach(registerLabelDeleteButton);
+    updateLabelActionState();
+
+    const dmzExportForm = document.getElementById('dmz-export-form');
+    let submittingDmz = false;
+    if (dmzExportForm) {
+      dmzExportForm.addEventListener('submit', async (event) => {
+        if (submittingDmz || !sourceIdField || !sourceIdField.value) {
+          return;
+        }
+        event.preventDefault();
+        try {
+          await saveEditedPayload({ replaceLabels: true });
+          submittingDmz = true;
+          dmzExportForm.submit();
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
   </script>
 </body>
 </html>

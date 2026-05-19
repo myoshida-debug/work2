@@ -1,0 +1,88 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSideメニュー{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}CloseSideメニュー{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">匿名化、生成文章取込、テンプレート管理を行います。</p>{% endblock %}
+
+{% block content %}
+  <section class="menu-grid">
+    <article class="card">
+      <h3>匿名化</h3>
+      <p class="muted">原文を匿名化し、差分確認とプロンプト作成へ進みます。</p>
+      <a class="button primary" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+    </article>
+    <article class="card">
+      <h3>プロンプト</h3>
+      <p class="muted">作成済みプロンプトの確認、DMZ送信、削除を行います。</p>
+      <a class="button primary" href="{% url 'close_side:prompts_list' %}">プロンプト一覧へ</a>
+    </article>
+    <article class="card">
+      <h3>生成文章</h3>
+      <p class="muted">OpenSideから返却された生成文章を取り込み、復元します。</p>
+      <a class="button primary" href="{% url 'close_side:result_import_list' %}">生成文章一覧へ</a>
+    </article>
+    <article class="card">
+      <h3>テンプレート管理</h3>
+      <p class="muted">テンプレートの作成、編集、削除を行います。</p>
+      <a class="button primary" href="{% url 'close_side:templates_list' %}">テンプレート管理へ</a>
+    </article>
+    {% if request.user.is_staff or request.user.is_superuser %}
+      <article class="card">
+        <h3>操作ログ</h3>
+        <p class="muted">送信、取込、削除、復元などの操作履歴を確認します。</p>
+        <a class="button primary" href="{% url 'close_side:operation_logs' %}">操作ログへ</a>
+      </article>
+      <article class="card">
+        <h3>ユーザー管理</h3>
+        <p class="muted">管理者向けのユーザー確認画面です。</p>
+        <a class="button primary" href="{% url 'close_side:user_list' %}">ユーザー管理へ</a>
+      </article>
+    {% endif %}
+  </section>
+
+  <section class="grid" style="margin-top:18px">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">最近のプロンプト</h3></div>
+      <div class="panel-body">
+        {% if recent_prompts %}
+          <table>
+            <thead><tr><th>名前</th><th>状態</th><th>更新日時</th></tr></thead>
+            <tbody>
+              {% for prompt in recent_prompts %}
+                <tr>
+                  <td>{{ prompt.name }}</td>
+                  <td>{{ prompt.get_status_display }}</td>
+                  <td>{{ prompt.updated_at }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">プロンプトはまだありません。</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">最近の生成文章</h3></div>
+      <div class="panel-body">
+        {% if recent_results %}
+          <table>
+            <thead><tr><th>source_id</th><th>文書種別</th><th>取込日時</th></tr></thead>
+            <tbody>
+              {% for result in recent_results %}
+                <tr>
+                  <td>{{ result.source_id }}</td>
+                  <td>{{ result.template_type }}</td>
+                  <td>{{ result.created_at }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">取り込み済み生成文章はまだありません。</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

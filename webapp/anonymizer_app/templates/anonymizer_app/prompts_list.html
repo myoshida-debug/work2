@@ -1,31 +1,60 @@
-{% load static %}
-<div>
-  <p>
-    <button type="button" onclick="window.location.href='/close/'">CloseSide 匿名化画面へ</button>
-    &nbsp;|&nbsp;
-    <a href="/close/prompts/new/">新しいプロンプトを作成</a>
-    &nbsp;|&nbsp;
-    <a href="/close/templates/">テンプレート管理</a>
-  </p>
-  <ul style="list-style:none;padding:0">
-    {% for p in prompts %}
-      <li style="padding:8px;border-bottom:1px solid #eee">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-          <div>
-            <strong>{{ p.name }}</strong><br/>
-            <small>{{ p.updated_at }}</small>
-          </div>
-          <div>
-            <a href="/close/prompts/{{ p.pk }}/edit/">編集</a>
-          </div>
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" onclick="importPromptToEditor({{ p.pk }}, {{ p.content|escapejs }})">このプロンプトをOpenSideに取り込む</button>
-          <button type="button" onclick="copyPromptToClipboard({{ p.content|escapejs }})">ChatGPTに貼り付けて起動</button>
-        </div>
-      </li>
-    {% empty %}
-      <li>プロンプトがありません。</li>
-    {% endfor %}
-  </ul>
-</div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide プロンプト一覧{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}プロンプト一覧{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">作成済みプロンプトを確認し、DMZ送信または削除を行います。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button primary" href="{% url 'close_side:prompt_create' %}">新規作成</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">作成済みプロンプト</h3>
+    </div>
+    <div class="panel-body">
+      {% if prompts %}
+        <table>
+          <thead>
+            <tr>
+              <th>プロンプト名</th>
+              <th>source_id</th>
+              <th>状態</th>
+              <th>更新日時</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in prompts %}
+              <tr>
+                <td><strong>{{ p.name }}</strong></td>
+                <td>{{ p.source_id|default:"-" }}</td>
+                <td>{{ p.get_status_display }}</td>
+                <td>{{ p.updated_at }}</td>
+                <td>
+                  <div class="actions">
+                    <a class="button" href="{% url 'close_side:prompt_edit' pk=p.pk %}">編集</a>
+                    <form class="inline-form" method="post" action="{% url 'close_side:prompt_send_to_dmz' pk=p.pk %}">
+                      {% csrf_token %}
+                      <button class="primary" type="submit">DMZ送信</button>
+                    </form>
+                    <form class="inline-form" method="post" action="{% url 'close_side:prompt_delete' pk=p.pk %}" onsubmit="return confirm('このプロンプトを削除しますか？');">
+                      {% csrf_token %}
+                      <button class="danger" type="submit">削除</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="5"><pre>{{ p.content }}</pre></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">プロンプトがありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

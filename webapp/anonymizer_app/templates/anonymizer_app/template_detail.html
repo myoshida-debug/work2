@@ -1,33 +1,47 @@
-<div style="max-width:900px;margin:0 auto">
-  <h2>テンプレート詳細</h2>
-  <p><a href="/close/templates/">一覧に戻る</a></p>
-  
-  <div style="background:#f0f0f0;padding:15px;border-radius:5px;margin-bottom:20px">
-    <h3>{{ template.name }}</h3>
-    <p><strong>種別:</strong> {{ template.template_type }}</p>
-    <p><strong>最終更新:</strong> {{ template.updated_at }}</p>
-  </div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}テンプレート詳細{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}テンプレート詳細{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ template.name }}</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
+  <a class="button primary" href="{% url 'close_side:template_edit' pk=template.pk %}">編集</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">基本情報</h3></div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>テンプレート名</dt><dd>{{ template.name }}</dd>
+        <dt>種別</dt><dd>{{ template.template_type }}</dd>
+        <dt>説明</dt><dd>{{ template.description|default:"-" }}</dd>
+        <dt>作成者</dt><dd>{{ template.created_by.username|default:"-" }}</dd>
+        <dt>正本txt</dt><dd>{{ template.source_filename }}</dd>
+        <dt>最終更新</dt><dd>{{ template.updated_at }}</dd>
+      </dl>
+    </div>
+  </section>
 
   {% if template.basic_content %}
-    <div style="margin-bottom:20px">
-      <h4>基本テンプレート</h4>
-      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.basic_content }}</pre>
-    </div>
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">基本テンプレート</h3></div>
+      <div class="panel-body"><pre>{{ template.basic_content }}</pre></div>
+    </section>
   {% endif %}
 
   {% if template.additional_content %}
-    <div style="margin-bottom:20px">
-      <h4>追加部分</h4>
-      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.additional_content }}</pre>
-    </div>
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">追加部分</h3></div>
+      <div class="panel-body"><pre>{{ template.additional_content }}</pre></div>
+    </section>
   {% endif %}
 
   {% if not template.basic_content and not template.additional_content and template.content %}
-    <div style="margin-bottom:20px">
-      <h4>テンプレート内容</h4>
-      <pre style="background:#fff;border:1px solid #ddd;padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap">{{ template.content }}</pre>
-    </div>
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">テンプレート本文</h3></div>
+      <div class="panel-body"><pre>{{ template.content }}</pre></div>
+    </section>
   {% endif %}
-
-  <p><a href="/close/templates/{{ template.pk }}/edit/">編集する</a> | <a href="/close/templates/">一覧に戻る</a></p>
-</div>
+{% endblock %}

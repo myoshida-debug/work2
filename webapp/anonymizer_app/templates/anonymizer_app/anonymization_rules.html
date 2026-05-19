@@ -1,9 +1,22 @@
-<div>
-  <h3>匿名化ルール（テンプレート用）</h3>
-  {% if rules_html %}
-    <div>{{ rules_html|safe }}</div>
-  {% else %}
-    <pre style="white-space:pre-wrap;">{{ rules_text }}</pre>
-  {% endif %}
-  <p><a href="{% url 'close_side:templates_list' %}">テンプレート一覧に戻る</a></p>
-</div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}匿名化ルール{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}匿名化ルール{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">テンプレートで参照する匿名化ルールを確認します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">ルール本文</h3></div>
+    <div class="panel-body">
+      {% if rules_html %}
+        <div>{{ rules_html|safe }}</div>
+      {% else %}
+        <pre>{{ rules_text }}</pre>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

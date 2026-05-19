@@ -77,6 +77,16 @@ def record_restore_segment(restore_map: dict, anonymized_value: str, original_va
     restore_map[anonymized_value] = original_value
 
 
+def unique_restore_label(restore_map: dict, base_label: str) -> str:
+    if base_label not in restore_map:
+        return base_label
+
+    index = 2
+    while f'{base_label}_{index}' in restore_map:
+        index += 1
+    return f'{base_label}_{index}'
+
+
 def generalize_date_text(text: str, restore_map: dict) -> str:
     def replace_date(match):
         year = match.group('year') or ''
@@ -97,20 +107,35 @@ def generalize_date_text(text: str, restore_map: dict) -> str:
 
 
 def generalize_time_text(text: str, restore_map: dict) -> str:
+    time_index = 0
+
+    def anonymized_time_label(period: str, original: str) -> str:
+        nonlocal time_index
+        time_index += 1
+        label = unique_restore_label(restore_map, f'{period}（時刻{time_index}）')
+        record_restore_segment(restore_map, label, original)
+        return label
+
     def replace_time(match):
-        hour = int(match.group('hour'))
-        anonymized = '午前' if hour < 12 else '午後'
-        record_restore_segment(restore_map, anonymized, match.group(0))
-        return anonymized
+        hour_text = match.group('colon_hour') or match.group('jp_hour')
+        hour = int(hour_text)
+        period = match.group('period')
+        if not period:
+            period = '午前' if hour < 12 else '午後'
+        return anonymized_time_label(period, match.group(0))
 
-    text = re.sub(r'(?P<hour>\d{1,2})[:：]\d{1,2}', replace_time, text)
-    text = re.sub(r'午前\d{1,2}時|午後\d{1,2}時', lambda m: record_time_restore(m, restore_map), text)
-    return text
+    time_pattern = re.compile(
+        r'(?P<colon_hour>\d{1,2})[:：]\d{1,2}'
+        r'|(?<!\d)(?P<period>午前|午後)?(?P<jp_hour>\d{1,2})時(?:\d{1,2}分)?'
+    )
+    return time_pattern.sub(replace_time, text)
 
 
-def record_time_restore(match, restore_map: dict) -> str:
+def record_time_restore(match, restore_map: dict, label_factory=None) -> str:
     original = match.group(0)
     anonymized = '午前' if '午前' in original else '午後'
+    if label_factory:
+        return label_factory(anonymized, original)
     record_restore_segment(restore_map, anonymized, original)
     return anonymized
 
@@ -211,7 +236,7 @@ def restore_text(anonymized_text: str, restore_map: dict) -> str:
 
 
 def build_prompt_payload(template_type: str, content: dict, source_id: str, title: str | None = None):
-    prompt_text = create_prompt_text(template_type, content)
+    prompt_text = create_prompt_text(template_type, content, source_id=source_id, title=title)
     payload = {
         'id': source_id,
         'template_type': template_type,
@@ -241,7 +266,87 @@ def build_result_payload(source_id: str, result_text: str, reviewer: str = 'unkn
     }
 
 
-def create_prompt_text(template_type: str, content: dict) -> str:
+def _parse_template_front_matter(text: str) -> str:
+    if not text.startswith('---\n'):
+        return text
+
+    end = text.find('\n---\n', 4)
+    if end == -1:
+        return text
+    return text[end + len('\n---\n'):]
+
+
+def _template_file_candidates(template_type: str) -> list[str]:
+    by_name = {
+        '入院時サマリー': 'admission.txt',
+        '入院時サマリー（詳細版）': 'admission.txt',
+        '退院時サマリー': 'discharge.txt',
+        '中間サマリー': 'midterm.txt',
+        'インシデントレポート': 'incident.txt',
+        'インシデントレポート（様式1-3）': 'incident.txt',
+        'インシデントレポート（簡易版）': 'incident2.txt',
+        '委員会議事録': 'committee.txt',
+        '看護計画': 'nursing.txt',
+    }
+    filenames = []
+    if template_type in by_name:
+        filenames.append(by_name[template_type])
+    filenames.append('default.txt')
+    return filenames
+
+
+def _load_prompt_template_text(template_type: str) -> str | None:
+    try:
+        from anonymizer_app.prompt_template_store import get_template_source_by_name
+
+        source = get_template_source_by_name(template_type)
+        if source:
+            return source.content
+    except Exception:
+        pass
+
+    template_dir = Path(__file__).resolve().parents[2] / 'webapp' / 'anonymizer_app' / 'prompt_templates'
+    for filename in _template_file_candidates(template_type):
+        path = template_dir / filename
+        if path.exists():
+            return _parse_template_front_matter(path.read_text(encoding='utf-8')).strip()
+    return None
+
+
+def _render_prompt_template(
+    template_text: str,
+    template_type: str,
+    content: dict,
+    source_id: str | None,
+    title: str | None,
+) -> str:
+    anonymized_text = content.get('anonymized_text') or content.get('text') or ''
+    values = {
+        'request_no': content.get('request_no') or source_id or '',
+        'document_type': content.get('document_type') or template_type,
+        'anonymized_text': anonymized_text,
+        'source_id': source_id or '',
+        'title': title or '',
+        'text': anonymized_text,
+    }
+    values.update({key: value for key, value in content.items() if isinstance(key, str)})
+
+    rendered = template_text
+    for key, value in values.items():
+        rendered = rendered.replace(f'{{{key}}}', '' if value is None else str(value))
+    return rendered.strip()
+
+
+def create_prompt_text(
+    template_type: str,
+    content: dict,
+    source_id: str | None = None,
+    title: str | None = None,
+) -> str:
+    template_text = _load_prompt_template_text(template_type)
+    if template_text:
+        return _render_prompt_template(template_text, template_type, content, source_id, title)
+
     lines = [f'あなたは精神科病棟の看護師です。以下の匿名化された情報をもとに、{template_type}を作成してください。', '']
     for key, value in content.items():
         label = '入力本文' if key == 'text' else key

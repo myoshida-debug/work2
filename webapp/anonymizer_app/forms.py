@@ -18,14 +18,13 @@ class AnonymizeForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Load available templates from DB, fallback to TEMPLATE_CHOICES
+        # txt files are the canonical template source; DB is refreshed as a cache.
         try:
-            from .models import Template
-            templates = Template.objects.all().values_list('name', flat=True).distinct()
-            if templates:
-                choices = [(name, name) for name in templates]
-            else:
-                choices = TEMPLATE_CHOICES
+            from .prompt_template_store import list_template_sources, sync_templates_to_db
+
+            sync_templates_to_db()
+            sources = list_template_sources()
+            choices = [(source.name, source.name) for source in sources] or TEMPLATE_CHOICES
         except Exception:
             choices = TEMPLATE_CHOICES
         self.fields['template'].choices = choices
@@ -46,6 +45,19 @@ class DMZExportForm(forms.Form):
     # テスト用：ローカルDMZフォルダーへ書き込み
 
 
+class ChatGPTResultForm(forms.Form):
+    result_text = forms.CharField(
+        label='ChatGPT 生成結果',
+        widget=forms.Textarea(attrs={'rows': 14}),
+        required=True,
+    )
+    reviewer = forms.CharField(label='レビュワー', required=False)
+
+
+class DMZResultImportForm(forms.Form):
+    filename = forms.CharField(label='取り込む返却ファイル名', required=True)
+
+
 class PromptForm(forms.Form):
     name = forms.CharField(label='プロンプト名', max_length=255)
     content = forms.CharField(label='プロンプト内容', widget=forms.Textarea(attrs={'rows':8}))
@@ -54,6 +66,11 @@ class PromptForm(forms.Form):
 class TemplateForm(forms.Form):
     template_type = forms.ChoiceField(choices=TEMPLATE_CHOICES, label='テンプレート種別')
     name = forms.CharField(label='テンプレート名', max_length=255)
+    description = forms.CharField(
+        label='説明',
+        widget=forms.Textarea(attrs={'rows': 3}),
+        required=False,
+    )
     basic_content = forms.CharField(
         label='基本テンプレート',
         widget=forms.Textarea(attrs={'rows':16}),

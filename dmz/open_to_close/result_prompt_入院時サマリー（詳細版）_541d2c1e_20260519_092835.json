@@ -1,0 +1,12 @@
+{
+  "id": "result_prompt_入院時サマリー（詳細版）_541d2c1e",
+  "source_id": "prompt_入院時サマリー（詳細版）_541d2c1e",
+  "result_text": "患者A氏は5月中旬に入院した。",
+  "metadata": {
+    "processed_at": null,
+    "reviewer": "tester",
+    "template_type": "入院時サマリー（詳細版）",
+    "source_prompt_file": "prompt_prompt_入院時サマリー（詳細版）_541d2c1e.json"
+  },
+  "template_type": "入院時サマリー（詳細版）"
+}

@@ -1,13 +1,22 @@
-<div>
-  {% if create %}
-    <h3>新しいプロンプト</h3>
-  {% else %}
-    <h3>プロンプトを編集</h3>
-  {% endif %}
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">保存</button>
-  </form>
-  <p><a href="/close/prompts/">一覧に戻る</a></p>
-</div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}{% if create %}プロンプト作成{% else %}プロンプト編集{% endif %}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{% if create %}プロンプト作成{% else %}プロンプト編集{% endif %}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">手動プロンプトを作成・編集します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:prompts_list' %}">一覧へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">プロンプト情報</h3></div>
+    <div class="panel-body">
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="primary" type="submit">保存</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

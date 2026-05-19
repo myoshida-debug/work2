@@ -1,30 +1,25 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8" />
-  <title>OpenSide DMZ ファイル取込</title>
-</head>
-<body>
-  <h1>OpenSide: DMZ からファイルを取り込む</h1>
-  <p>CloseSide から出力されたローカル DMZ フォルダー (work2/dmz/close_to_open) からファイルを取り込みます。</p>
-  {% if messages %}
-    <ul>
-      {% for m in messages %}
-        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">取り込む</button>
-  </form>
-  {% if downloaded_path %}
-    <p>取り込んだファイル: {{ downloaded_path }}</p>
-  {% endif %}
-  <p>
-    <a href="{% url 'open_side:dmz_list' %}">DMZ 一覧へ戻る</a>
-    | <a href="{% url 'close_side:home' %}">CloseSide へ戻る</a>
-  </p>
-</body>
-</html>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSide プロンプト取込{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}プロンプト取込{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">DMZのファイル名を指定してプロンプトを取り込みます。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">取込ファイル</h3></div>
+    <div class="panel-body">
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="primary" type="submit">取り込む</button>
+      </form>
+      {% if downloaded_path %}
+        <p class="muted">取り込んだファイル: {{ downloaded_path }}</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

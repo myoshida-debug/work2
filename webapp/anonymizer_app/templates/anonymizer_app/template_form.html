@@ -1,13 +1,26 @@
-<div>
-  {% if create %}
-    <h3>新しいテンプレート</h3>
-  {% else %}
-    <h3>テンプレートを編集</h3>
-  {% endif %}
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">保存</button>
-  </form>
-  <p><a href="/close/templates/">一覧に戻る</a></p>
-</div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}{% if create %}テンプレート作成{% else %}テンプレート編集{% endif %}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{% if create %}テンプレート作成{% else %}テンプレート編集{% endif %}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">テンプレート本文、説明、種別を管理します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">テンプレート情報</h3>
+      <span class="badge">txt正本</span>
+    </div>
+    <div class="panel-body">
+      <p class="muted">保存後、DBのTemplateは表示・検索用キャッシュとして同期されます。</p>
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="primary" type="submit">保存</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

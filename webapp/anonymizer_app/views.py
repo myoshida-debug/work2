@@ -10,7 +10,13 @@ from .forms import AnonymizeForm
 from .models import RestoreMetadata, Prompt, Template
 from .forms import PromptForm, TemplateForm
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload
-from .template_defaults import load_default_template
+from .prompt_template_store import (
+    get_template_source_by_filename,
+    get_template_source_by_name,
+    load_basic_template,
+    sync_templates_to_db,
+    write_template_source,
+)
 import os
 from django.contrib import messages
 from pathlib import Path
@@ -269,7 +275,8 @@ def prompt_edit(request, pk):
 
 
 def templates_list(request):
-    templates = Template.objects.all().order_by('template_type', '-updated_at')
+    result = sync_templates_to_db()
+    templates = sorted(result['templates'], key=lambda template: (template.template_type, template.name))
     return render(request, 'anonymizer_app/templates_list.html', {'templates': templates})
 
 
@@ -279,40 +286,50 @@ def template_create(request):
         if form.is_valid():
             basic = form.cleaned_data.get('basic_content') or ''
             additional = form.cleaned_data.get('additional_content') or ''
-            content = f"{basic}\n\n{additional}" if additional else basic
-            Template.objects.create(
+            source = write_template_source(
+                source_filename=None,
                 template_type=form.cleaned_data['template_type'],
                 name=form.cleaned_data['name'],
-                content=content,
                 basic_content=basic,
                 additional_content=additional,
             )
+            sync_templates_to_db()
+            messages.success(request, f'txtテンプレートを保存しました: {source.source_filename}')
             return redirect('templates_list')
     else:
-        form = TemplateForm(initial={'basic_content': load_default_template()})
+        form = TemplateForm(initial={'basic_content': load_basic_template()})
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': True})
 
 
 def template_edit(request, pk):
+    sync_templates_to_db()
     tpl = get_object_or_404(Template, pk=pk)
     if request.method == 'POST':
         form = TemplateForm(request.POST)
         if form.is_valid():
             basic = form.cleaned_data.get('basic_content') or ''
             additional = form.cleaned_data.get('additional_content') or ''
-            tpl.template_type = form.cleaned_data['template_type']
-            tpl.name = form.cleaned_data['name']
-            tpl.basic_content = basic
-            tpl.additional_content = additional
-            tpl.content = f"{basic}\n\n{additional}" if additional else basic
-            tpl.save()
+            source = write_template_source(
+                source_filename=tpl.source_filename or None,
+                template_type=form.cleaned_data['template_type'],
+                name=form.cleaned_data['name'],
+                basic_content=basic,
+                additional_content=additional,
+            )
+            sync_templates_to_db()
+            messages.success(request, f'txtテンプレートを更新しました: {source.source_filename}')
             return redirect('templates_list')
     else:
+        source = None
+        if tpl.source_filename:
+            source = get_template_source_by_filename(tpl.source_filename)
+        if source is None:
+            source = get_template_source_by_name(tpl.name)
         form = TemplateForm(initial={
-            'template_type': tpl.template_type,
-            'name': tpl.name,
-            'basic_content': tpl.basic_content or tpl.content,
-            'additional_content': tpl.additional_content,
+            'template_type': source.template_type if source else tpl.template_type,
+            'name': source.name if source else tpl.name,
+            'basic_content': source.basic_content if source else (tpl.basic_content or tpl.content),
+            'additional_content': source.additional_content if source else tpl.additional_content,
         })
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})
 
@@ -342,7 +359,10 @@ def anonymization_rules(request):
 def api_template_preview(request, template_name):
     """API endpoint to return template content as JSON for AJAX preview."""
     try:
-        template = Template.objects.get(name=template_name)
+        sync_templates_to_db()
+        template = get_template_source_by_name(template_name)
+        if template is None:
+            return JsonResponse({'error': 'Template not found'}, status=404)
         return JsonResponse({
             'name': template.name,
             'template_type': template.template_type,
@@ -358,7 +378,13 @@ def api_template_preview(request, template_name):
 def template_detail(request, template_name):
     """Display template details on a dedicated page."""
     try:
-        template = Template.objects.get(name=template_name)
+        sync_templates_to_db()
+        source = get_template_source_by_name(template_name)
+        if source is None:
+            return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
+        template = Template.objects.filter(source_filename=source.source_filename).first()
+        if template is None:
+            return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
         return render(request, 'anonymizer_app/template_detail.html', {'template': template})
     except Template.DoesNotExist:
         return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)

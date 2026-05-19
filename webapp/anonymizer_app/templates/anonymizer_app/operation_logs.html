@@ -1,0 +1,48 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}{{ side_name }} 操作ログ{% endblock %}
+{% block brand %}{{ side_name }}{% endblock %}
+{% block page_title %}操作ログ確認{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">作成、送信、取込、削除、復元、ネットワーク拒否を確認します。</p>{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">操作ログ</h3>
+    </div>
+    <div class="panel-body">
+      {% if logs %}
+        <table>
+          <thead>
+            <tr>
+              <th>日時</th>
+              <th>操作者</th>
+              <th>操作</th>
+              <th>対象</th>
+              <th>送信元IP</th>
+              <th>取込元IP</th>
+              <th>結果</th>
+              <th>エラー</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in logs %}
+              <tr>
+                <td>{{ log.created_at }}</td>
+                <td>{{ log.actor_username|default:"-" }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.target_type }} / {{ log.target_id }}</td>
+                <td>{{ log.source_ip|default:"-" }}</td>
+                <td>{{ log.import_source_ip|default:"-" }}</td>
+                <td>{{ log.get_result_display }}</td>
+                <td>{{ log.error_message|default:"-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">操作ログはありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

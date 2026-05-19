@@ -31,9 +31,31 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'anonymizer_app.network_policy.NetworkSegmentPolicyMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+NETWORK_POLICY_ENFORCED = True
+NETWORK_POLICY_ALLOW_LOOPBACK = DEBUG
+NETWORK_POLICY_TRUST_X_FORWARDED_FOR = True
+NETWORK_POLICY = {
+    'close_side': {
+        'label': 'CloseSide',
+        'paths': ['/close/'],
+        'cidrs': ['192.168.50.0/24'],
+    },
+    'open_side': {
+        'label': 'OpenSide',
+        'paths': ['/open/'],
+        'cidrs': ['192.168.110.0/24'],
+    },
+    'dmz': {
+        'label': 'DMZ',
+        'paths': [],
+        'cidrs': ['192.168.150.0/24'],
+    },
+}
 
 ROOT_URLCONF = 'anonflow.urls'
 

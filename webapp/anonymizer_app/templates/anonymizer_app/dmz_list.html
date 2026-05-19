@@ -1,62 +1,58 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8" />
-  <title>OpenSide DMZ ファイル一覧</title>
-</head>
-<body>
-  <h1>OpenSide DMZ ファイル一覧</h1>
-  <p>CloseSide から出力されたローカル DMZ フォルダーのファイル一覧を表示します。</p>
-  {% if messages %}
-    <ul>
-      {% for m in messages %}
-        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-  <form method="post">
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSide プロンプト一覧{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}プロンプト一覧{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">DMZ上のプロンプトを取り込み、AI生成画面へ進みます。</p>{% endblock %}
+{% block page_actions %}
+  <form class="inline-form" method="post">
     {% csrf_token %}
-    <button type="submit">一覧を更新</button>
+    <button class="primary" type="submit">一覧更新</button>
   </form>
+  <a class="button" href="{% url 'open_side:dmz_import' %}">ファイル名指定取込</a>
+{% endblock %}
 
-  {% if files is not None %}
-    <h2>一覧</h2>
-    {% if files %}
-      <table border="1" cellpadding="6" cellspacing="0">
-        <thead>
-          <tr>
-            <th>ファイル名</th>
-            <th>サイズ（バイト）</th>
-            <th>更新日時</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for file in files %}
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">DMZ: Close_to_Open</h3></div>
+    <div class="panel-body">
+      {% if files %}
+        <table>
+          <thead>
             <tr>
-              <td>{{ file.name }}</td>
-              <td>{{ file.size }}</td>
-              <td>{{ file.modified }}</td>
-              <td>
-                <form method="post" action="{% url 'open_side:dmz_import' %}" style="margin:0">
-                  {% csrf_token %}
-                  <input type="hidden" name="filename" value="{{ file.name }}">
-                  <input type="hidden" name="next" value="list">
-                  <button type="submit">取り込んでプロンプト画面へ</button>
-                </form>
-              </td>
+              <th>ファイル名</th>
+              <th>source_id</th>
+              <th>作成者</th>
+              <th>文書種別</th>
+              <th>サイズ</th>
+              <th>更新日時</th>
+              <th>操作</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p>指定されたディレクトリにファイルがありません。</p>
-    {% endif %}
-  {% endif %}
-
-  <p>
-    <a href="{% url 'open_side:dmz_import' %}">ファイルを取り込む</a>
-    | <a href="{% url 'close_side:home' %}">CloseSide 匿名化画面へ戻る</a>
-  </p>
-</body>
-</html>
+          </thead>
+          <tbody>
+            {% for file in files %}
+              <tr>
+                <td>{{ file.name }}</td>
+                <td>{{ file.source_id|default:"-" }}</td>
+                <td>{{ file.owner_username|default:"-" }}</td>
+                <td>{{ file.template_type|default:"-" }}</td>
+                <td>{{ file.size }}</td>
+                <td>{{ file.modified }}</td>
+                <td>
+                  <form class="inline-form" method="post" action="{% url 'open_side:dmz_import' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="filename" value="{{ file.name }}">
+                    <input type="hidden" name="next" value="list">
+                    <button class="primary" type="submit">取込</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">DMZ上に取り込み可能なプロンプトはありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

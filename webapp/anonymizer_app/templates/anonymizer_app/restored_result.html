@@ -1,0 +1,67 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 復元結果確認{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}復元結果確認{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">AI生成後文書と復元後文書の変更点をハイライト表示します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:result_import_list' %}">生成文章一覧へ</a>
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">取り込み情報</h3>
+      <span class="badge">保存ID {{ record.pk }}</span>
+    </div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>返却ファイル</dt><dd>{{ filename }}</dd>
+        <dt>source_id</dt><dd>{{ source_id }}</dd>
+        <dt>文書種別</dt><dd>{{ template_type|default:"-" }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">AI生成後文書</h3></div>
+      <div class="panel-body">
+        <pre>{{ result_html|safe }}</pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">復元後文書</h3></div>
+      <div class="panel-body">
+        <pre>{{ restored_html|safe }}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">匿名化ラベル一覧</h3></div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr><th>匿名化ラベル</th><th>元文言</th></tr>
+        </thead>
+        <tbody>
+          {% for label, original in restore_map_items %}
+            <tr>
+              <td><strong>{{ label }}</strong></td>
+              <td>{{ original }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="2">復元マップはありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <details>
+    <summary>返却JSON</summary>
+    <pre>{{ result_json }}</pre>
+  </details>
+{% endblock %}

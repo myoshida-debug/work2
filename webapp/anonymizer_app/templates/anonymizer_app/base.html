@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>{% block title %}匿名化システム{% endblock %}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #fff;
+      --surface: #f7f8fb;
+      --line: #d6dbe6;
+      --line-strong: #a8b1c2;
+      --text: #1d2433;
+      --muted: #657084;
+      --blue: #1f5eff;
+      --blue-dark: #1747bd;
+      --green: #138a5b;
+      --danger: #b42318;
+      --amber: #a96a00;
+      --shadow: 0 10px 26px rgba(29, 36, 51, 0.08);
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--blue-dark);
+      font-weight: 700;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 4px;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+    }
+
+    .header-inner,
+    .content {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 18px 28px;
+    }
+
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .top-nav form,
+    .inline-form {
+      margin: 0;
+      display: inline-flex;
+    }
+
+    .nav-link,
+    .button,
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--blue-dark);
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    .nav-link:hover,
+    .button:hover,
+    button:hover {
+      border-color: var(--blue);
+      background: #f3f7ff;
+      transform: translateY(-1px);
+    }
+
+    .primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .green {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+
+    .danger {
+      border-color: #f0b8b2;
+      color: var(--danger);
+    }
+
+    .content {
+      padding-top: 28px;
+      padding-bottom: 40px;
+    }
+
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.3;
+    }
+
+    .page-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .flow-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .flow-step {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      padding: 4px 9px;
+    }
+
+    .panel,
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel + .panel,
+    .card + .card {
+      margin-top: 18px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      min-height: 54px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      padding: 14px 16px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .panel-body,
+    .card {
+      padding: 16px;
+    }
+
+    .card h3,
+    .panel-body h4 {
+      margin-top: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .menu-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 9px 10px;
+      outline: none;
+    }
+
+    form p {
+      margin: 0 0 14px;
+    }
+
+    label {
+      display: inline-block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    textarea {
+      min-height: 220px;
+      line-height: 1.6;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcff;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    details + details {
+      margin-top: 14px;
+    }
+
+    summary {
+      cursor: pointer;
+      background: var(--surface);
+      padding: 12px 14px;
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    details > pre,
+    details > .detail-body,
+    details > table {
+      margin: 14px;
+    }
+
+    .meta-list {
+      display: grid;
+      grid-template-columns: 140px minmax(0, 1fr);
+      gap: 8px 12px;
+      margin: 0;
+    }
+
+    .meta-list dt {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .meta-list dd {
+      margin: 0;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .anonymized-label.changed {
+      border: 1px solid #ffe08a;
+      border-radius: 4px;
+      background: #fff3bf;
+      color: #3d3d3d;
+      padding: 1px 4px;
+      font-weight: 800;
+    }
+
+    .messages {
+      margin: 0 0 16px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .messages li {
+      margin-bottom: 8px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--blue);
+      border-radius: 6px;
+      background: #fff;
+      padding: 10px 12px;
+      font-weight: 700;
+    }
+
+    .messages li.error {
+      border-left-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .empty {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    @media (max-width: 980px) {
+      .header-inner,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .header-inner,
+      .page-head {
+        display: grid;
+      }
+
+      .top-nav {
+        justify-content: flex-start;
+      }
+
+      .grid,
+      .menu-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1 class="brand-title">{% block brand %}匿名化システム{% endblock %}</h1>
+      <nav class="top-nav" aria-label="主要メニュー">
+        {% if request.resolver_match.namespace == 'open_side' %}
+          <a class="nav-link" href="{% url 'open_side:menu' %}">OpenSideメニュー</a>
+          <a class="nav-link" href="{% url 'open_side:dmz_list' %}">プロンプト一覧</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a class="nav-link" href="{% url 'open_side:operation_logs' %}">操作ログ</a>
+          {% endif %}
+          <a class="nav-link" href="{% url 'close_side:menu' %}">CloseSide</a>
+          <form method="post" action="{% url 'open_side:logout' %}">
+            {% csrf_token %}
+            <button type="submit">{{ request.user.username }} / ログアウト</button>
+          </form>
+        {% else %}
+          <a class="nav-link" href="{% url 'close_side:menu' %}">CloseSideメニュー</a>
+          <a class="nav-link" href="{% url 'close_side:home' %}">匿名化画面</a>
+          <a class="nav-link" href="{% url 'close_side:prompts_list' %}">プロンプト一覧</a>
+          <a class="nav-link" href="{% url 'close_side:result_import_list' %}">生成文章一覧</a>
+          <a class="nav-link" href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a class="nav-link" href="{% url 'close_side:operation_logs' %}">操作ログ</a>
+          {% endif %}
+          <a class="nav-link" href="{% url 'open_side:menu' %}">OpenSide</a>
+          <form method="post" action="{% url 'close_side:logout' %}">
+            {% csrf_token %}
+            <button type="submit">{{ request.user.username }} / ログアウト</button>
+          </form>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="page-head">
+      <div>
+        <h2 class="page-title">{% block page_title %}{% endblock %}</h2>
+        {% block page_subtitle %}{% endblock %}
+      </div>
+      <div class="actions">{% block page_actions %}{% endblock %}</div>
+    </div>
+
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

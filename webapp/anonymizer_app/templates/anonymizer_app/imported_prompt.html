@@ -1,87 +1,65 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8" />
-  <title>OpenSide プロンプト貼り付け</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      line-height: 1.6;
-      margin: 24px;
-      color: #222;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin: 16px 0;
-    }
-    button {
-      padding: 8px 12px;
-      cursor: pointer;
-    }
-    textarea {
-      box-sizing: border-box;
-      width: 100%;
-      min-height: 320px;
-      padding: 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #f9f9f9;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
-      padding: 12px;
-    }
-  </style>
-</head>
-<body>
-  <h1>OpenSide プロンプト貼り付け</h1>
-  <p>取り込んだファイルから ChatGPT に貼り付けるプロンプトを抽出しました。</p>
+{% extends "anonymizer_app/base.html" %}
 
-  {% if messages %}
-    <ul>
-      {% for m in messages %}
-        <li{% if m.tags %} class="{{ m.tags }}"{% endif %}>{{ m }}</li>
-      {% endfor %}
-    </ul>
+{% block title %}OpenSide AI生成{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}AI生成{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">取り込んだプロンプトを使って生成AI処理を行い、生成文章をDMZへ送信します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">取り込み情報</h3></div>
+      <div class="panel-body">
+        <p><strong>ファイル:</strong> {{ filename }}</p>
+        {% if source_id %}<p><strong>source_id:</strong> {{ source_id }}</p>{% endif %}
+        {% if template_type %}<p><strong>文書種別:</strong> {{ template_type }}</p>{% endif %}
+        <p><strong>保存先:</strong> {{ imported_path }}</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">操作</h3></div>
+      <div class="panel-body">
+        <div class="actions">
+          <button class="primary" type="button" onclick="copyPrompt()">コピー</button>
+          <button type="button" onclick="openChatGPT()">ChatGPTを開く</button>
+          <button class="green" type="button" onclick="copyAndOpen()">コピーして開く</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">ChatGPT貼り付け用プロンプト</h3></div>
+    <div class="panel-body">
+      <textarea id="prompt-text" style="min-height:360px">{{ prompt_text }}</textarea>
+    </div>
+  </section>
+
+  {% if source_id %}
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">生成文章確認 / DMZ送信</h3></div>
+      <div class="panel-body">
+        <form method="post" action="{% url 'open_side:create_result' filename=filename %}">
+          {% csrf_token %}
+          {{ result_form.as_p }}
+          <button class="primary" type="submit">生成文章をDMZへ送信</button>
+        </form>
+      </div>
+    </section>
   {% endif %}
 
-  <section>
-    <h2>取り込み情報</h2>
-    <p><strong>ファイル:</strong> {{ filename }}</p>
-    {% if source_id %}<p><strong>source_id:</strong> {{ source_id }}</p>{% endif %}
-    {% if template_type %}<p><strong>文書種別:</strong> {{ template_type }}</p>{% endif %}
-    <p><strong>保存先:</strong> {{ imported_path }}</p>
-  </section>
-
-  <section>
-    <h2>ChatGPT 貼り付け用プロンプト</h2>
-    <div class="actions">
-      <button type="button" onclick="copyPrompt()">コピー</button>
-      <button type="button" onclick="openChatGPT()">ChatGPT を開く</button>
-      <button type="button" onclick="copyAndOpen()">コピーして ChatGPT を開く</button>
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">取り込み元JSON</h3></div>
+    <div class="panel-body">
+      <details>
+        <summary>JSON / 原文を表示</summary>
+        <pre>{{ raw_text }}</pre>
+      </details>
     </div>
-    <textarea id="prompt-text">{{ prompt_text }}</textarea>
   </section>
-
-  <details>
-    <summary>取り込み元 JSON / 原文を表示</summary>
-    <pre>{{ raw_text }}</pre>
-  </details>
-
-  <p>
-    <a href="{% url 'open_side:dmz_list' %}">DMZ 一覧へ戻る</a>
-    | <a href="{% url 'open_side:dmz_import' %}">別ファイルを取り込む</a>
-    | <a href="{% url 'close_side:home' %}">CloseSide へ戻る</a>
-  </p>
 
   <script>
     const chatgptUrl = 'https://chatgpt.com/';
@@ -96,7 +74,7 @@
         } else {
           document.execCommand('copy');
         }
-        alert('プロンプトをコピーしました。ChatGPT に貼り付けてください。');
+        alert('プロンプトをコピーしました。');
       } catch (err) {
         alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
       }
@@ -111,5 +89,4 @@
       openChatGPT();
     }
   </script>
-</body>
-</html>
+{% endblock %}

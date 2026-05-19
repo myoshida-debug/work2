@@ -1,0 +1,47 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSide 生成文章確認{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}生成文章確認{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">AI生成後文書を DMZ: Open_to_Close へ送信しました。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+  <a class="button" href="{% url 'open_side:imported_prompt' filename=filename %}">AI生成へ戻る</a>
+  <a class="button primary" href="{% url 'close_side:result_import_list' %}">CloseSideで取込</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">DMZ送信情報</h3>
+      <div class="flow-row">
+        <span class="flow-step">AI生成</span>
+        <span>→</span>
+        <span class="flow-step">生成文章確認</span>
+        <span>→</span>
+        <span class="flow-step">DMZ送信</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>元ファイル</dt><dd>{{ filename }}</dd>
+        <dt>source_id</dt><dd>{{ source_id }}</dd>
+        <dt>文書種別</dt><dd>{{ template_type|default:"-" }}</dd>
+        <dt>返却ファイル</dt><dd>{{ output_filename }}</dd>
+        <dt>出力先</dt><dd>{{ output_path }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">AI生成後文書</h3></div>
+    <div class="panel-body">
+      <pre>{{ result_text }}</pre>
+    </div>
+  </section>
+
+  <details open>
+    <summary>返却JSON</summary>
+    <pre>{{ result_json }}</pre>
+  </details>
+{% endblock %}

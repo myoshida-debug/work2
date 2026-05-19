@@ -1,20 +1,89 @@
 import datetime
 import difflib
 import json
+import re
 import uuid
 from pathlib import Path
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_http_methods
 
-from anonymizer_app.forms import AnonymizeForm, DMZExportForm, PromptForm, TemplateForm
-from anonymizer_app.models import AnonymizationRule, Prompt, RestoreMetadata, Template
-from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload
-from anonymizer_app.template_defaults import load_default_template
+from anonymizer_app.forms import AnonymizeForm, DMZExportForm, DMZResultImportForm, PromptForm, TemplateForm
+from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template
+from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
+from anonymizer_app.network_policy import get_client_ip
+from anonymizer_app.prompt_template_store import (
+    delete_template_source,
+    get_template_source_by_filename,
+    get_template_source_by_name,
+    load_basic_template,
+    sync_templates_to_db,
+    write_template_source,
+)
+
+
+def _is_admin(user) -> bool:
+    return bool(user.is_staff or user.is_superuser)
+
+
+def _owned_queryset(queryset, user):
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(owner=user)
+
+
+def _log_operation(
+    request,
+    action: str,
+    target_type: str = '',
+    target_id: str = '',
+    details: dict | None = None,
+    result: str = 'success',
+    error_message: str = '',
+) -> None:
+    user = request.user
+    source_ip = get_client_ip(request) or None
+    OperationLog.objects.create(
+        actor=user if user.is_authenticated else None,
+        actor_username=user.get_username() if user.is_authenticated else '',
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        source_ip=source_ip,
+        import_source_ip=source_ip if 'import' in action else None,
+        result=result,
+        error_message=error_message,
+        details=details or {},
+    )
+
+
+def _prompt_text_from_payload(payload: dict) -> str:
+    return (
+        payload.get('prompt_text')
+        or payload.get('prompt')
+        or payload.get('content', {}).get('text')
+        or json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+
+
+def _safe_token(value: str) -> str:
+    token = re.sub(r'[\\/\s]+', '_', value.strip())
+    token = re.sub(r'[^\w.\-（）()ぁ-んァ-ヶ一-龥ー]', '_', token)
+    return token.strip('._') or 'template'
+
+
+def _make_prompt_source_id(template_name: str) -> str:
+    return f'prompt_{_safe_token(template_name)}_{uuid.uuid4().hex[:8]}'
+
+
+def _metadata_for_user(source_id: str, user):
+    return _owned_queryset(RestoreMetadata.objects.all(), user).filter(source_id=source_id).first()
 
 
 def highlight_changed_text(original: str, anonymized: str) -> tuple[str, str]:
@@ -43,19 +112,90 @@ def _close_to_open_dir() -> Path:
     return Path(__file__).resolve().parents[2] / 'dmz' / 'close_to_open'
 
 
+def _open_to_close_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / 'dmz' / 'open_to_close'
+
+
+def _safe_filename(filename: str) -> str:
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        raise ValueError('不正なファイル名です')
+    return safe_name
+
+
+def _prompt_json_filename(source_id: str) -> str:
+    file_stem = source_id if source_id.startswith('prompt_') else f'prompt_{source_id}'
+    return f'{_safe_token(file_stem)}.json'
+
+
+def _payload_visible_to_user(payload: dict, user) -> bool:
+    if _is_admin(user):
+        return True
+    metadata = payload.get('metadata') or {}
+    owner_user_id = metadata.get('owner_user_id')
+    owner_username = metadata.get('owner_username')
+    if owner_user_id:
+        return str(owner_user_id) == str(user.id)
+    if owner_username:
+        return owner_username == user.get_username()
+    return False
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def _list_files(directory: Path, user=None):
+    if not directory.exists():
+        return []
+
+    files = []
+    entries = sorted(directory.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+    for entry in entries:
+        if entry.is_file():
+            payload = _read_json_file(entry)
+            if user is not None and not _payload_visible_to_user(payload, user):
+                continue
+            metadata = payload.get('metadata') or {}
+            stat = entry.stat()
+            files.append({
+                'name': entry.name,
+                'size': stat.st_size,
+                'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                'source_id': payload.get('source_id') or metadata.get('source_id') or '',
+                'owner_username': metadata.get('owner_username') or '',
+            })
+    return files
+
+
+def menu(request):
+    recent_prompts = _owned_queryset(Prompt.objects.all(), request.user).order_by('-updated_at')[:5]
+    recent_results = _owned_queryset(RestoredResult.objects.all(), request.user).order_by('-created_at')[:5]
+    return render(request, 'anonymizer_app/close_menu.html', {
+        'recent_prompts': recent_prompts,
+        'recent_results': recent_results,
+    })
+
+
 def home(request):
     if request.method == 'POST':
         form = AnonymizeForm(request.POST)
         if form.is_valid():
-            template_type = form.cleaned_data['template']
+            template_name = form.cleaned_data['template']
             original_text = form.cleaned_data['text']
-            result = anonymize_text(original_text, template_type)
+            result = anonymize_text(original_text, template_name)
             anonymized_text = result.text
             restore_map = result.restore_map
 
-            source_id = f'prompt_{template_type.replace(" ", "_")}_{uuid.uuid4().hex[:8]}'
-            payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id)
+            source_id = _make_prompt_source_id(template_name)
+            payload = build_prompt_payload(template_name, {'text': anonymized_text}, source_id, title=template_name)
             payload['metadata']['created_at'] = None
+            payload['metadata']['owner_user_id'] = request.user.id
+            payload['metadata']['owner_username'] = request.user.get_username()
+            payload['metadata']['template_name'] = template_name
             restore_data = {
                 'source_id': source_id,
                 'restore_map': restore_map,
@@ -71,14 +211,26 @@ def home(request):
 
             RestoreMetadata.objects.create(
                 source_id=source_id,
-                template_type=template_type,
+                template_type=template_name,
                 restore_map=restore_map,
                 prompt_json=payload,
+                owner=request.user,
+                status='draft',
             )
+            Prompt.objects.update_or_create(
+                source_id=source_id,
+                defaults={
+                    'name': f'{template_name} / {source_id}',
+                    'content': _prompt_text_from_payload(payload),
+                    'owner': request.user,
+                    'status': 'draft',
+                },
+            )
+            _log_operation(request, 'prompt_created', 'RestoreMetadata', source_id)
 
-            return render(request, 'anonymizer_app/result.html', {
+            return render(request, 'anonymizer_app/index.html', {
                 'form': form,
-                'template_type': template_type,
+                'template_type': template_name,
                 'text_items': text_items,
                 'restore_map': restore_map,
                 'restore_map_items': list(restore_map.items()),
@@ -92,7 +244,7 @@ def home(request):
 
 
 def download_prompt(request, source_id):
-    metadata = get_object_or_404(RestoreMetadata, source_id=source_id)
+    metadata = get_object_or_404(_owned_queryset(RestoreMetadata.objects.all(), request.user), source_id=source_id)
     response = HttpResponse(
         json.dumps(metadata.prompt_json, ensure_ascii=False, indent=2),
         content_type='application/json',
@@ -102,7 +254,7 @@ def download_prompt(request, source_id):
 
 
 def download_restore(request, source_id):
-    metadata = get_object_or_404(RestoreMetadata, source_id=source_id)
+    metadata = get_object_or_404(_owned_queryset(RestoreMetadata.objects.all(), request.user), source_id=source_id)
     payload = {
         'source_id': metadata.source_id,
         'restore_map': metadata.restore_map,
@@ -112,8 +264,81 @@ def download_restore(request, source_id):
     return response
 
 
+@require_http_methods(["POST"])
+def update_prompt_payload(request):
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSONとして解析できません。'}, status=400)
+
+    source_id = str(data.get('source_id') or '').strip()
+    if not source_id:
+        return JsonResponse({'error': 'source_id が必要です。'}, status=400)
+
+    metadata = _metadata_for_user(source_id, request.user)
+    if metadata is None:
+        return JsonResponse({'error': f'source_id {source_id} が見つかりません。'}, status=404)
+
+    anonymized_text = str(data.get('anonymized_text') or '')
+    restore_map_data = data.get('restore_map') or {}
+    if not isinstance(restore_map_data, dict):
+        return JsonResponse({'error': 'restore_map はオブジェクトで指定してください。'}, status=400)
+
+    restore_map = {}
+    for anonymized, original in restore_map_data.items():
+        anonymized_value = str(anonymized).strip()
+        if anonymized_value:
+            restore_map[anonymized_value] = str(original)
+
+    previous_restore_map = metadata.restore_map or {}
+    previous_source_id = metadata.source_id
+    template_type = str(data.get('template_type') or metadata.template_type)
+    if template_type != metadata.template_type:
+        source_id = _make_prompt_source_id(template_type)
+
+    prompt_payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id, title=template_type)
+    prompt_payload['metadata']['created_at'] = None
+    prompt_payload['metadata']['owner_user_id'] = request.user.id
+    prompt_payload['metadata']['owner_username'] = request.user.get_username()
+    prompt_payload['metadata']['template_name'] = template_type
+    restore_payload = {
+        'source_id': source_id,
+        'restore_map': restore_map,
+    }
+
+    metadata.source_id = source_id
+    metadata.template_type = template_type
+    metadata.restore_map = restore_map
+    metadata.prompt_json = prompt_payload
+    metadata.save(update_fields=['source_id', 'template_type', 'restore_map', 'prompt_json', 'updated_at'])
+    Prompt.objects.filter(source_id=previous_source_id).update(
+        source_id=source_id,
+        name=f'{template_type} / {source_id}',
+        content=_prompt_text_from_payload(prompt_payload),
+        updated_at=timezone.now(),
+    )
+
+    removed_labels = sorted(set(previous_restore_map) - set(restore_map))
+    if removed_labels:
+        _log_operation(
+            request,
+            'anonymization_labels_deleted',
+            'RestoreMetadata',
+            source_id,
+            {'labels': removed_labels},
+        )
+
+    return JsonResponse({
+        'source_id': source_id,
+        'prompt_json': prompt_payload,
+        'restore_json': restore_payload,
+        'restore_map_items': list(restore_map.items()),
+    })
+
+
 @require_http_methods(["GET", "POST"])
 def dmz_export(request):
+    saved = _owned_queryset(RestoreMetadata.objects.all(), request.user).order_by('-id')[:50]
     if request.method == 'POST':
         form = DMZExportForm(request.POST)
         if form.is_valid():
@@ -121,37 +346,211 @@ def dmz_export(request):
             dmz_dir = _close_to_open_dir()
 
             try:
-                metadata = RestoreMetadata.objects.filter(source_id=source_id).first()
+                metadata = _metadata_for_user(source_id, request.user)
                 if not metadata:
                     messages.error(request, f'source_id {source_id} が見つかりません')
-                    return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
+                    return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
+
+                payload = metadata.prompt_json or {}
+                payload.setdefault('metadata', {})
+                payload['metadata']['source_id'] = metadata.source_id
+                payload['metadata']['owner_user_id'] = metadata.owner_id
+                payload['metadata']['owner_username'] = metadata.owner.get_username() if metadata.owner else ''
+                payload['metadata']['sent_by'] = request.user.get_username()
+                payload['metadata']['sent_at'] = timezone.now().isoformat()
 
                 dmz_dir.mkdir(parents=True, exist_ok=True)
-                filename = f'prompt_{source_id}.json'
+                filename = _prompt_json_filename(source_id)
                 output_path = dmz_dir / filename
                 output_path.write_text(
-                    json.dumps(metadata.prompt_json, ensure_ascii=False, indent=2),
+                    json.dumps(payload, ensure_ascii=False, indent=2),
                     encoding='utf-8',
                 )
+                metadata.prompt_json = payload
+                metadata.status = 'sent_to_dmz'
+                metadata.save(update_fields=['prompt_json', 'status', 'updated_at'])
+                Prompt.objects.filter(source_id=source_id).update(status='sent_to_dmz', updated_at=timezone.now())
+                _log_operation(request, 'prompt_sent_to_dmz', 'RestoreMetadata', source_id, {'filename': filename})
 
                 messages.success(request, f'OpenSide DMZ へ出力しました: {output_path}')
                 return render(
                     request,
                     'anonymizer_app/dmz_export.html',
-                    {'form': DMZExportForm(), 'uploaded_path': str(output_path)},
+                    {'form': DMZExportForm(), 'uploaded_path': str(output_path), 'saved': saved},
                 )
             except Exception as e:
+                _log_operation(
+                    request,
+                    'prompt_sent_to_dmz',
+                    'RestoreMetadata',
+                    source_id or '',
+                    {'source_id': source_id},
+                    result='failure',
+                    error_message=str(e),
+                )
                 messages.error(request, f'出力に失敗しました: {e}')
-                return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
+                return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
     else:
         form = DMZExportForm(initial={'source_id': request.GET.get('source_id', '')})
 
-    saved = RestoreMetadata.objects.all().order_by('-id')[:50]
     return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
 
 
+def result_import_list(request):
+    dmz_dir = _open_to_close_dir()
+    try:
+        files = _list_files(dmz_dir, request.user)
+    except Exception as e:
+        files = []
+        messages.error(request, f'返却DMZファイル一覧の取得に失敗しました: {e}')
+
+    saved_results = _owned_queryset(RestoredResult.objects.all(), request.user).order_by('-created_at')[:30]
+    return render(request, 'anonymizer_app/result_import_list.html', {
+        'form': DMZResultImportForm(),
+        'files': files,
+        'dmz_path': str(dmz_dir),
+        'saved_results': saved_results,
+    })
+
+
+@require_http_methods(["POST"])
+def result_import(request):
+    form = DMZResultImportForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, '取り込む返却ファイル名を指定してください。')
+        return redirect('close_side:result_import_list')
+
+    try:
+        filename = _safe_filename(form.cleaned_data['filename'])
+    except ValueError as e:
+        _log_operation(request, 'result_imported_to_close', 'RestoredResult', '', result='failure', error_message=str(e))
+        messages.error(request, str(e))
+        return redirect('close_side:result_import_list')
+
+    result_path = _open_to_close_dir() / filename
+    if not result_path.exists() or not result_path.is_file():
+        _log_operation(
+            request,
+            'result_imported_to_close',
+            'RestoredResult',
+            filename,
+            {'filename': filename},
+            result='failure',
+            error_message='返却ファイルが見つかりません',
+        )
+        messages.error(request, f'返却ファイルが見つかりません: {filename}')
+        return redirect('close_side:result_import_list')
+
+    try:
+        result_payload = json.loads(result_path.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        _log_operation(
+            request,
+            'result_imported_to_close',
+            'RestoredResult',
+            filename,
+            {'filename': filename},
+            result='failure',
+            error_message='返却ファイルをJSONとして解析できません',
+        )
+        messages.error(request, '返却ファイルをJSONとして解析できません。')
+        return redirect('close_side:result_import_list')
+
+    source_id = result_payload.get('source_id') or result_payload.get('metadata', {}).get('source_id') or ''
+    result_text_value = result_payload.get('result_text') or ''
+    if not source_id or not result_text_value:
+        _log_operation(
+            request,
+            'result_imported_to_close',
+            'RestoredResult',
+            source_id or filename,
+            {'filename': filename, 'source_id': source_id},
+            result='failure',
+            error_message='返却JSONには source_id と result_text が必要です',
+        )
+        messages.error(request, '返却JSONには source_id と result_text が必要です。')
+        return redirect('close_side:result_import_list')
+    if not _payload_visible_to_user(result_payload, request.user):
+        _log_operation(
+            request,
+            'result_imported_to_close',
+            'RestoredResult',
+            source_id,
+            {'filename': filename, 'source_id': source_id},
+            result='failure',
+            error_message='返却ファイルを取り込む権限がありません',
+        )
+        messages.error(request, 'この返却ファイルを取り込む権限がありません。')
+        return redirect('close_side:result_import_list')
+
+    metadata = _metadata_for_user(source_id, request.user)
+    if metadata is None:
+        _log_operation(
+            request,
+            'result_imported_to_close',
+            'RestoredResult',
+            source_id,
+            {'filename': filename, 'source_id': source_id},
+            result='failure',
+            error_message='対応する復元メタデータが見つかりません',
+        )
+        messages.error(request, f'source_id {source_id} に対応する復元メタデータが見つかりません。')
+        return redirect('close_side:result_import_list')
+
+    restored_text = restore_text(result_text_value, metadata.restore_map)
+    template_type = result_payload.get('template_type') or metadata.template_type
+    reviewer = result_payload.get('metadata', {}).get('reviewer') or ''
+    result_record = RestoredResult.objects.create(
+        source_id=source_id,
+        result_id=result_payload.get('id') or '',
+        template_type=template_type,
+        result_text=result_text_value,
+        restored_text=restored_text,
+        result_json=result_payload,
+        imported_filename=filename,
+        reviewer=reviewer,
+        owner=metadata.owner or request.user,
+        status='imported',
+    )
+    metadata.status = 'imported_to_close'
+    metadata.save(update_fields=['status', 'updated_at'])
+    try:
+        result_path.unlink()
+    except OSError as e:
+        messages.warning(request, f'DMZ返却ファイルの削除に失敗しました: {e}')
+    result_html, restored_html = highlight_changed_text(result_text_value, restored_text)
+    _log_operation(request, 'result_imported_to_close', 'RestoredResult', str(result_record.pk), {
+        'filename': filename,
+        'source_id': source_id,
+    })
+
+    messages.success(request, f'返却JSONを取り込み、復元しました: {filename}')
+    return render(request, 'anonymizer_app/restored_result.html', {
+        'record': result_record,
+        'filename': filename,
+        'source_id': source_id,
+        'template_type': template_type,
+        'result_text': result_text_value,
+        'restored_text': restored_text,
+        'result_html': result_html,
+        'restored_html': restored_html,
+        'result_json': json.dumps(result_payload, ensure_ascii=False, indent=2),
+        'restore_map_items': list(metadata.restore_map.items()),
+    })
+
+
+@require_http_methods(["POST"])
+def result_delete(request, pk):
+    result = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
+    target_id = result.result_id or result.source_id or str(result.pk)
+    result.delete()
+    _log_operation(request, 'restored_result_deleted', 'RestoredResult', target_id)
+    messages.success(request, '取り込み済み生成文章を削除しました。')
+    return redirect('close_side:result_import_list')
+
+
 def prompts_list(request):
-    prompts = Prompt.objects.all().order_by('-updated_at')
+    prompts = _owned_queryset(Prompt.objects.all(), request.user).order_by('-updated_at')
     return render(request, 'anonymizer_app/prompts_list.html', {'prompts': prompts})
 
 
@@ -162,7 +561,9 @@ def prompt_create(request):
             Prompt.objects.create(
                 name=form.cleaned_data['name'],
                 content=form.cleaned_data['content'],
+                owner=request.user,
             )
+            _log_operation(request, 'prompt_created_manually', 'Prompt', form.cleaned_data['name'])
             return redirect('close_side:prompts_list')
     else:
         form = PromptForm()
@@ -170,21 +571,79 @@ def prompt_create(request):
 
 
 def prompt_edit(request, pk):
-    prompt = get_object_or_404(Prompt, pk=pk)
+    prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=pk)
     if request.method == 'POST':
         form = PromptForm(request.POST)
         if form.is_valid():
             prompt.name = form.cleaned_data['name']
             prompt.content = form.cleaned_data['content']
             prompt.save()
+            _log_operation(request, 'prompt_updated', 'Prompt', str(prompt.pk))
             return redirect('close_side:prompts_list')
     else:
         form = PromptForm(initial={'name': prompt.name, 'content': prompt.content})
     return render(request, 'anonymizer_app/prompt_form.html', {'form': form, 'create': False, 'prompt': prompt})
 
 
+@require_http_methods(["POST"])
+def prompt_delete(request, pk):
+    prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=pk)
+    target_id = prompt.source_id or str(prompt.pk)
+    prompt.delete()
+    _log_operation(request, 'prompt_deleted', 'Prompt', target_id)
+    messages.success(request, 'プロンプトを削除しました。')
+    return redirect('close_side:prompts_list')
+
+
+@require_http_methods(["POST"])
+def prompt_send_to_dmz(request, pk):
+    prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=pk)
+    source_id = prompt.source_id
+    metadata = _metadata_for_user(source_id, request.user) if source_id else None
+
+    if metadata is None:
+        source_id = f'prompt_manual_{prompt.pk}_{uuid.uuid4().hex[:8]}'
+        payload = build_prompt_payload('手動プロンプト', {'text': prompt.content}, source_id, title=prompt.name)
+        payload['metadata']['created_at'] = None
+        payload['metadata']['owner_user_id'] = request.user.id
+        payload['metadata']['owner_username'] = request.user.get_username()
+        metadata = RestoreMetadata.objects.create(
+            source_id=source_id,
+            template_type='手動プロンプト',
+            restore_map={},
+            prompt_json=payload,
+            owner=request.user,
+            status='draft',
+        )
+        prompt.source_id = source_id
+
+    dmz_dir = _close_to_open_dir()
+    dmz_dir.mkdir(parents=True, exist_ok=True)
+    payload = metadata.prompt_json or build_prompt_payload(metadata.template_type, {'text': prompt.content}, source_id)
+    owner = metadata.owner or prompt.owner or request.user
+    payload.setdefault('metadata', {})
+    payload['metadata']['source_id'] = source_id
+    payload['metadata']['owner_user_id'] = owner.id
+    payload['metadata']['owner_username'] = owner.get_username()
+    payload['metadata']['sent_by'] = request.user.get_username()
+    payload['metadata']['sent_at'] = timezone.now().isoformat()
+    output_filename = _prompt_json_filename(source_id)
+    output_path = dmz_dir / output_filename
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    metadata.prompt_json = payload
+    metadata.status = 'sent_to_dmz'
+    metadata.save(update_fields=['prompt_json', 'status', 'updated_at'])
+    prompt.status = 'sent_to_dmz'
+    prompt.save(update_fields=['source_id', 'status', 'updated_at'])
+    _log_operation(request, 'prompt_sent_to_dmz', 'Prompt', str(prompt.pk), {'filename': output_filename})
+    messages.success(request, f'DMZへ送信しました: {output_filename}')
+    return redirect('close_side:prompts_list')
+
+
 def templates_list(request):
-    templates = Template.objects.all().order_by('template_type', '-updated_at')
+    result = sync_templates_to_db()
+    templates = sorted(result['templates'], key=lambda template: (template.template_type, template.name))
     return render(request, 'anonymizer_app/templates_list.html', {'templates': templates})
 
 
@@ -194,42 +653,88 @@ def template_create(request):
         if form.is_valid():
             basic = form.cleaned_data.get('basic_content') or ''
             additional = form.cleaned_data.get('additional_content') or ''
-            content = f"{basic}\n\n{additional}" if additional else basic
-            Template.objects.create(
+            source = write_template_source(
+                source_filename=None,
                 template_type=form.cleaned_data['template_type'],
                 name=form.cleaned_data['name'],
-                content=content,
                 basic_content=basic,
                 additional_content=additional,
             )
+            sync_templates_to_db()
+            Template.objects.filter(source_filename=source.source_filename).update(
+                description=form.cleaned_data.get('description') or '',
+                created_by=request.user,
+            )
+            _log_operation(request, 'template_created', 'Template', source.source_filename)
+            messages.success(request, f'txtテンプレートを保存しました: {source.source_filename}')
             return redirect('close_side:templates_list')
     else:
-        form = TemplateForm(initial={'basic_content': load_default_template()})
+        form = TemplateForm(initial={'basic_content': load_basic_template()})
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': True})
 
 
 def template_edit(request, pk):
+    sync_templates_to_db()
     tpl = get_object_or_404(Template, pk=pk)
     if request.method == 'POST':
         form = TemplateForm(request.POST)
         if form.is_valid():
             basic = form.cleaned_data.get('basic_content') or ''
             additional = form.cleaned_data.get('additional_content') or ''
-            tpl.template_type = form.cleaned_data['template_type']
-            tpl.name = form.cleaned_data['name']
-            tpl.basic_content = basic
-            tpl.additional_content = additional
-            tpl.content = f"{basic}\n\n{additional}" if additional else basic
-            tpl.save()
+            source = write_template_source(
+                source_filename=tpl.source_filename or None,
+                template_type=form.cleaned_data['template_type'],
+                name=form.cleaned_data['name'],
+                basic_content=basic,
+                additional_content=additional,
+            )
+            sync_templates_to_db()
+            Template.objects.filter(source_filename=source.source_filename).update(
+                description=form.cleaned_data.get('description') or '',
+                created_by=tpl.created_by or request.user,
+            )
+            _log_operation(request, 'template_updated', 'Template', source.source_filename)
+            messages.success(request, f'txtテンプレートを更新しました: {source.source_filename}')
             return redirect('close_side:templates_list')
     else:
+        source = None
+        if tpl.source_filename:
+            source = get_template_source_by_filename(tpl.source_filename)
+        if source is None:
+            source = get_template_source_by_name(tpl.name)
         form = TemplateForm(initial={
-            'template_type': tpl.template_type,
-            'name': tpl.name,
-            'basic_content': tpl.basic_content or tpl.content,
-            'additional_content': tpl.additional_content,
+            'template_type': source.template_type if source else tpl.template_type,
+            'name': source.name if source else tpl.name,
+            'description': tpl.description,
+            'basic_content': source.basic_content if source else (tpl.basic_content or tpl.content),
+            'additional_content': source.additional_content if source else tpl.additional_content,
         })
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})
+
+
+@require_http_methods(["POST"])
+def template_delete(request, pk):
+    sync_templates_to_db()
+    tpl = get_object_or_404(Template, pk=pk)
+    source_filename = tpl.source_filename
+    try:
+        delete_template_source(source_filename)
+        tpl.delete()
+        _log_operation(request, 'template_deleted', 'Template', source_filename)
+        messages.success(request, 'テンプレートを削除しました。')
+    except Exception as e:
+        messages.error(request, f'テンプレート削除に失敗しました: {e}')
+    return redirect('close_side:templates_list')
+
+
+def user_list(request):
+    users = get_user_model().objects.order_by('username')
+    return render(request, 'anonymizer_app/user_list.html', {'users': users})
+
+
+def operation_logs(request):
+    logs = OperationLog.objects.order_by('-created_at')[:200]
+    return render(request, 'anonymizer_app/operation_logs.html', {'logs': logs, 'side_name': 'CloseSide'})
 
 
 def anonymization_rules(request):
@@ -252,12 +757,15 @@ def anonymization_rules(request):
 
 def api_template_preview(request, template_name):
     try:
-        template = Template.objects.get(name=template_name)
+        sync_templates_to_db()
+        source = get_template_source_by_name(template_name)
+        if source is None:
+            return JsonResponse({'error': 'Template not found'}, status=404)
         return JsonResponse({
-            'name': template.name,
-            'template_type': template.template_type,
-            'basic_content': template.basic_content or '',
-            'additional_content': template.additional_content or '',
+            'name': source.name,
+            'template_type': source.template_type,
+            'basic_content': source.basic_content or '',
+            'additional_content': source.additional_content or '',
         })
     except Template.DoesNotExist:
         return JsonResponse({'error': 'Template not found'}, status=404)
@@ -267,8 +775,13 @@ def api_template_preview(request, template_name):
 
 def template_detail(request, template_name):
     try:
-        template = Template.objects.get(name=template_name)
+        sync_templates_to_db()
+        source = get_template_source_by_name(template_name)
+        if source is None:
+            return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
+        template = Template.objects.filter(source_filename=source.source_filename).first()
+        if template is None:
+            return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
         return render(request, 'anonymizer_app/template_detail.html', {'template': template})
     except Template.DoesNotExist:
         return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
-

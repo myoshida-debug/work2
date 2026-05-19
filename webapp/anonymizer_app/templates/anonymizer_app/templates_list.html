@@ -1,45 +1,81 @@
-<div>
-  <p><a href="/close/templates/new/">新しいテンプレートを作成</a></p>
-  <ul style="list-style:none;padding:0">
-    {% for t in templates %}
-      <li style="padding:12px;border-bottom:1px solid #eee">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="flex:1">
-            <strong style="cursor:pointer" onclick="toggleContent('template-{{ t.pk }}')">
-              ▶ {{ t.template_type }} — {{ t.name }}
-            </strong><br/>
-            <small>{{ t.updated_at }}</small>
-          </div>
-          <div>
-            <a href="/close/templates/{{ t.pk }}/edit/" style="margin-right:10px">編集</a>
-          </div>
-        </div>
-        <div id="template-{{ t.pk }}" style="display:none;margin-top:10px;padding:10px;background:#f9f9f9;border:1px solid #ddd">
-          {% if t.basic_content %}
-            <h4 style="margin-top:0">基本テンプレート</h4>
-            <pre style="white-space:pre-wrap;font-size:12px;max-height:200px;overflow-y:auto">{{ t.basic_content }}</pre>
-          {% endif %}
-          {% if t.additional_content %}
-            <h4>追加部分</h4>
-            <pre style="white-space:pre-wrap;font-size:12px;max-height:150px;overflow-y:auto">{{ t.additional_content }}</pre>
-          {% endif %}
-          {% if not t.basic_content and not t.additional_content and t.content %}
-            <pre style="white-space:pre-wrap;font-size:12px;max-height:300px;overflow-y:auto">{{ t.content }}</pre>
-          {% endif %}
-        </div>
-      </li>
-    {% empty %}
-      <li>テンプレートがありません。</li>
-    {% endfor %}
-  </ul>
-  <script>
-    function toggleContent(id) {
-      const elem = document.getElementById(id);
-      if (elem.style.display === 'none') {
-        elem.style.display = 'block';
-      } else {
-        elem.style.display = 'none';
-      }
-    }
-  </script>
-</div>
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide テンプレート管理{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}テンプレート管理{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">テンプレート作成、編集、削除、一覧確認を行います。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+  <a class="button primary" href="{% url 'close_side:template_create' %}">作成</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">テンプレート一覧</h3>
+      <span class="badge">prompt_templates/*.txt</span>
+    </div>
+    <div class="panel-body">
+      {% if templates %}
+        <table>
+          <thead>
+            <tr>
+              <th>テンプレート</th>
+              <th>説明</th>
+              <th>作成者</th>
+              <th>更新日時</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in templates %}
+              <tr>
+                <td>
+                  <strong>{{ t.name }}</strong><br>
+                  <span class="muted">{{ t.template_type }} / {{ t.source_filename }}</span>
+                </td>
+                <td>{{ t.description|default:"-" }}</td>
+                <td>{{ t.created_by.username|default:"-" }}</td>
+                <td>{{ t.updated_at }}</td>
+                <td>
+                  <div class="actions">
+                    <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
+                    <a class="button primary" href="{% url 'close_side:template_edit' pk=t.pk %}">編集</a>
+                    <form class="inline-form" method="post" action="{% url 'close_side:template_delete' pk=t.pk %}" onsubmit="return confirm('このテンプレートを削除しますか？');">
+                      {% csrf_token %}
+                      <button class="danger" type="submit">削除</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="5">
+                  <details>
+                    <summary>本文プレビュー</summary>
+                    {% if t.basic_content %}
+                      <div class="detail-body">
+                        <h4>基本テンプレート</h4>
+                        <pre>{{ t.basic_content }}</pre>
+                      </div>
+                    {% endif %}
+                    {% if t.additional_content %}
+                      <div class="detail-body">
+                        <h4>追加部分</h4>
+                        <pre>{{ t.additional_content }}</pre>
+                      </div>
+                    {% endif %}
+                    {% if not t.basic_content and not t.additional_content and t.content %}
+                      <pre>{{ t.content }}</pre>
+                    {% endif %}
+                  </details>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">テンプレートがありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}
