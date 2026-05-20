@@ -1,104 +1,67 @@
 {% extends "anonymizer_app/base.html" %}
 
-{% block title %}CloseSide 生成文章一覧{% endblock %}
+{% block title %}CloseSide 返却DMZから取り込み{% endblock %}
 {% block brand %}CloseSide{% endblock %}
-{% block page_title %}生成文章一覧{% endblock %}
-{% block page_subtitle %}<p class="page-subtitle">DMZ: Open_to_Close の生成文章を取り込み、同時に復元します。</p>{% endblock %}
+{% block page_title %}返却DMZから取り込み{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">返却ファイル一覧から取り込み、復元を行います。</p>{% endblock %}
 {% block page_actions %}
-  <a class="button" href="{% url 'close_side:menu' %}">メニューへ</a>
-  <a class="button" href="{% url 'open_side:dmz_list' %}">OpenSideへ</a>
+  <a class="button" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴へ</a>
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
 {% endblock %}
 
 {% block content %}
   <section class="panel">
     <div class="panel-header">
-      <h3 class="panel-title">生成文章取込</h3>
-      <div class="flow-row">
-        <span class="flow-step">生成文章一覧</span>
-        <span>→</span>
-        <span class="flow-step">生成文章取込</span>
-        <span>→</span>
-        <span class="flow-step">復元結果確認</span>
-      </div>
+      <h3 class="panel-title">返却DMZから取り込み</h3>
+      <span class="badge">DMZ: {{ dmz_path }}</span>
     </div>
     <div class="panel-body">
-      <p class="muted">返却DMZ: {{ dmz_path }}</p>
-      {% if files %}
-        <table>
-          <thead>
-            <tr>
-              <th>ファイル名</th>
-              <th>source_id</th>
-              <th>作成者</th>
-              <th>サイズ</th>
-              <th>更新日時</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for file in files %}
-              <tr>
-                <td>{{ file.name }}</td>
-                <td>{{ file.source_id|default:"-" }}</td>
-                <td>{{ file.owner_username|default:"-" }}</td>
-                <td>{{ file.size }}</td>
-                <td>{{ file.modified }}</td>
-                <td>
-                  <form class="inline-form" method="post" action="{% url 'close_side:result_import' %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="filename" value="{{ file.name }}">
-                    <button class="primary" type="submit">取り込んで復元</button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="empty">返却ファイルはまだありません。</p>
-      {% endif %}
-    </div>
-  </section>
+      <div class="stacked-panels">
+        <div class="card">
+          <h3>返却ファイル一覧</h3>
+          <p class="muted">返却ファイルを選んで、そのまま取り込みと復元を実行します。</p>
 
-  <section class="grid">
-    <div class="panel">
-      <div class="panel-header"><h3 class="panel-title">ファイル名指定取込</h3></div>
-      <div class="panel-body">
-        <form method="post" action="{% url 'close_side:result_import' %}">
-          {% csrf_token %}
-          {{ form.as_p }}
-          <button class="primary" type="submit">取り込んで復元</button>
-        </form>
-      </div>
-    </div>
+          {% if files %}
+            <div class="table-scroll compact">
+              <div class="stacked-panels">
+                {% for file in files %}
+                  <article class="history-doc-card">
+                    <div class="history-doc-header">
+                      <div>
+                        <h4 class="history-doc-title">{{ file.name }}</h4>
+                        <p class="history-doc-subtitle">更新日時 {{ file.modified }}</p>
+                      </div>
+                      <span class="badge">{{ file.size }} bytes</span>
+                    </div>
+                    <div class="history-doc-body">
+                      <dl class="meta-list">
+                        <dt>source_id</dt><dd>{{ file.source_id|default:"-" }}</dd>
+                        <dt>作成者</dt><dd>{{ file.owner_username|default:"-" }}</dd>
+                      </dl>
+                      <form class="inline-form history-preview-actions" method="post" action="{% url 'close_side:result_import' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="filename" value="{{ file.name }}">
+                        <button class="primary" type="submit">取り込んで復元</button>
+                      </form>
+                    </div>
+                  </article>
+                {% endfor %}
+              </div>
+            </div>
+          {% else %}
+            <p class="empty">返却ファイルはまだありません。</p>
+          {% endif %}
+        </div>
 
-    <div class="panel">
-      <div class="panel-header"><h3 class="panel-title">取り込み済み結果</h3></div>
-      <div class="panel-body">
-        {% if saved_results %}
-          <table>
-            <thead>
-              <tr><th>取込日時</th><th>source_id</th><th>文書種別</th><th>操作</th></tr>
-            </thead>
-            <tbody>
-              {% for item in saved_results %}
-                <tr>
-                  <td>{{ item.created_at }}</td>
-                  <td>{{ item.source_id }}</td>
-                  <td>{{ item.template_type|default:"-" }}</td>
-                  <td>
-                    <form class="inline-form" method="post" action="{% url 'close_side:result_delete' pk=item.pk %}" onsubmit="return confirm('この取り込み済み生成文章を削除しますか？');">
-                      {% csrf_token %}
-                      <button class="danger" type="submit">削除</button>
-                    </form>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          <p class="empty">取り込み済み結果はありません。</p>
-        {% endif %}
+        <div class="card">
+          <h3>ファイル名指定取込</h3>
+          <p class="muted">ファイル名が分かっている場合は直接指定できます。</p>
+          <form method="post" action="{% url 'close_side:result_import' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="primary" type="submit">取り込んで復元</button>
+          </form>
+        </div>
       </div>
     </div>
   </section>

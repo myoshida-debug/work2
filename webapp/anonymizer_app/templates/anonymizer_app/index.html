@@ -498,8 +498,9 @@
           <a href="{% url 'close_side:menu' %}">CloseSideメニュー</a>
           <a href="{% url 'close_side:home' %}">匿名化画面へ</a>
           <a href="{% url 'close_side:prompts_list' %}">プロンプト一覧</a>
+          <a href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴</a>
+          <a href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
           <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
-          <a href="{% url 'close_side:result_import_list' %}">生成文章一覧</a>
           <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
           {% if request.user.is_staff or request.user.is_superuser %}
             <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>
@@ -854,7 +855,7 @@
 
       if (!sourceId) {
         setStatus('匿名化後に反映できます');
-        return false;
+        return null;
       }
 
       setStatus('反映中...');
@@ -887,7 +888,7 @@
         sourceIdField.value = data.source_id;
       }
       setStatus('反映しました');
-      return true;
+      return data;
     }
 
     const addLabelButton = document.getElementById('add-label-row');
@@ -911,19 +912,40 @@
     }
 
     const buildPromptButton = document.getElementById('build-prompt-button');
+    const promptPreviewStorageKey = 'closeSide.openPromptPreviewAfterAnonymize';
     if (buildPromptButton && anonymizeForm) {
       buildPromptButton.addEventListener('click', async () => {
         if (!sourceIdField || !sourceIdField.value) {
+          sessionStorage.setItem(promptPreviewStorageKey, '1');
           anonymizeForm.requestSubmit();
           return;
         }
         try {
-          await saveEditedPayload({ replaceLabels: true });
+          const data = await saveEditedPayload({ replaceLabels: true });
+          if (data && data.prompt_url) {
+            window.location.href = data.prompt_url;
+          }
         } catch (error) {
           console.error(error);
           setStatus(error.message);
         }
       });
+    }
+
+    const shouldOpenPromptPreview = sessionStorage.getItem(promptPreviewStorageKey) === '1';
+    if (shouldOpenPromptPreview && sourceIdField && sourceIdField.value) {
+      sessionStorage.removeItem(promptPreviewStorageKey);
+      (async () => {
+        try {
+          const data = await saveEditedPayload({ replaceLabels: true });
+          if (data && data.prompt_url) {
+            window.location.href = data.prompt_url;
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      })();
     }
 
     const editableFields = [

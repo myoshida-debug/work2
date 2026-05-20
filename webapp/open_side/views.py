@@ -9,6 +9,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from anonymizer_app.forms import ChatGPTResultForm, DMZImportForm, DMZListForm
+from anonymizer_app.history_utils import (
+    HISTORY_LIMIT,
+    decorate_operation_logs,
+    filter_history_items,
+    operation_action_label,
+)
 from anonymizer_app.models import OperationLog, Prompt, RestoreMetadata
 from anonymizer_app.modules.anonymize import build_result_payload
 from anonymizer_app.network_policy import get_client_ip
@@ -366,5 +372,24 @@ def create_result(request, filename):
 
 
 def operation_logs(request):
-    logs = OperationLog.objects.order_by('-created_at')[:200]
-    return render(request, 'anonymizer_app/operation_logs.html', {'logs': logs, 'side_name': 'OpenSide'})
+    history_query = request.GET.get('q', '').strip()
+    logs = list(OperationLog.objects.order_by('-created_at')[:HISTORY_LIMIT])
+    logs = filter_history_items(logs, history_query, [
+        'actor_username',
+        'action',
+        lambda log: operation_action_label(log.action),
+        'target_type',
+        'target_id',
+        'source_ip',
+        'import_source_ip',
+        lambda log: log.get_result_display(),
+        'error_message',
+        'details',
+        lambda log: log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+    ])
+    logs = decorate_operation_logs(logs)
+    return render(request, 'anonymizer_app/operation_logs.html', {
+        'logs': logs,
+        'side_name': 'OpenSide',
+        'history_query': history_query,
+    })

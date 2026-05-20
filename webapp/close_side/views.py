@@ -3,18 +3,26 @@ import difflib
 import json
 import re
 import uuid
+from urllib.parse import urlencode
 from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_http_methods
 
 from anonymizer_app.forms import AnonymizeForm, DMZExportForm, DMZResultImportForm, PromptForm, TemplateForm
+from anonymizer_app.history_utils import (
+    HISTORY_LIMIT,
+    decorate_operation_logs,
+    filter_history_items,
+    operation_action_label,
+)
 from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
@@ -84,6 +92,67 @@ def _make_prompt_source_id(template_name: str) -> str:
 
 def _metadata_for_user(source_id: str, user):
     return _owned_queryset(RestoreMetadata.objects.all(), user).filter(source_id=source_id).first()
+
+
+def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
+    result_text = result_record.result_text or ''
+    restored_text = result_record.restored_text or ''
+    has_result_text = bool(result_text.strip())
+    has_restored_text = bool(restored_text.strip())
+
+    if has_result_text and has_restored_text:
+        result_html, restored_html = highlight_changed_text(result_text, restored_text)
+    else:
+        result_html = mark_safe(escape(result_text)) if has_result_text else ''
+        restored_html = mark_safe(escape(restored_text)) if has_restored_text else ''
+
+    return {
+        'imported_filename': result_record.imported_filename or '',
+        'source_id': result_record.source_id or '',
+        'result_id': result_record.result_id or '',
+        'template_type': result_record.template_type or '',
+        'status_label': result_record.get_status_display(),
+        'status': result_record.status,
+        'reviewer': result_record.reviewer or '',
+        'created_at': result_record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': result_record.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'result_html': result_html,
+        'restored_html': restored_html,
+        'has_result_text': has_result_text,
+        'has_restored_text': has_restored_text,
+    }
+
+
+def _result_history_list_context(request) -> dict[str, object]:
+    history_query = request.GET.get('q', '').strip()
+    saved_results = list(_owned_queryset(RestoredResult.objects.all(), request.user).order_by('-created_at')[:HISTORY_LIMIT])
+    saved_results = filter_history_items(saved_results, history_query, [
+        'imported_filename',
+        'result_id',
+        'source_id',
+        'template_type',
+        'status',
+        lambda item: item.get_status_display(),
+        'reviewer',
+        lambda item: item.owner.get_username() if item.owner else '',
+        lambda item: item.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        lambda item: item.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+    ])
+    return {
+        'history_query': history_query,
+        'saved_results': saved_results,
+    }
+
+
+def _result_history_preview_context(request, pk: int) -> dict[str, object]:
+    history_query = request.GET.get('q', '').strip()
+    selected_result = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
+    selected_preview = _build_result_preview(selected_result)
+    return {
+        'history_query': history_query,
+        'selected_result': selected_result,
+        'selected_preview': selected_preview,
+    }
 
 
 def highlight_changed_text(original: str, anonymized: str) -> tuple[str, str]:
@@ -311,12 +380,23 @@ def update_prompt_payload(request):
     metadata.restore_map = restore_map
     metadata.prompt_json = prompt_payload
     metadata.save(update_fields=['source_id', 'template_type', 'restore_map', 'prompt_json', 'updated_at'])
+    prompt_name = f'{template_type} / {source_id}'
+    prompt_content = _prompt_text_from_payload(prompt_payload)
     Prompt.objects.filter(source_id=previous_source_id).update(
         source_id=source_id,
-        name=f'{template_type} / {source_id}',
-        content=_prompt_text_from_payload(prompt_payload),
+        name=prompt_name,
+        content=prompt_content,
         updated_at=timezone.now(),
     )
+    prompt = _owned_queryset(Prompt.objects.all(), request.user).filter(source_id=source_id).order_by('-updated_at').first()
+    if prompt is None:
+        prompt = Prompt.objects.create(
+            source_id=source_id,
+            name=prompt_name,
+            content=prompt_content,
+            owner=request.user,
+            status='draft',
+        )
 
     removed_labels = sorted(set(previous_restore_map) - set(restore_map))
     if removed_labels:
@@ -330,6 +410,8 @@ def update_prompt_payload(request):
 
     return JsonResponse({
         'source_id': source_id,
+        'prompt_pk': prompt.pk,
+        'prompt_url': reverse('close_side:prompt_preview', args=[prompt.pk]),
         'prompt_json': prompt_payload,
         'restore_json': restore_payload,
         'restore_map_items': list(restore_map.items()),
@@ -396,6 +478,16 @@ def dmz_export(request):
     return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
 
 
+def result_history_list(request):
+    context = _result_history_list_context(request)
+    return render(request, 'anonymizer_app/result_history_list.html', context)
+
+
+def result_history_preview(request, pk):
+    context = _result_history_preview_context(request, pk)
+    return render(request, 'anonymizer_app/result_history_preview.html', context)
+
+
 def result_import_list(request):
     dmz_dir = _open_to_close_dir()
     try:
@@ -404,12 +496,10 @@ def result_import_list(request):
         files = []
         messages.error(request, f'返却DMZファイル一覧の取得に失敗しました: {e}')
 
-    saved_results = _owned_queryset(RestoredResult.objects.all(), request.user).order_by('-created_at')[:30]
     return render(request, 'anonymizer_app/result_import_list.html', {
         'form': DMZResultImportForm(),
         'files': files,
         'dmz_path': str(dmz_dir),
-        'saved_results': saved_results,
     })
 
 
@@ -546,7 +636,11 @@ def result_delete(request, pk):
     result.delete()
     _log_operation(request, 'restored_result_deleted', 'RestoredResult', target_id)
     messages.success(request, '取り込み済み生成文章を削除しました。')
-    return redirect('close_side:result_import_list')
+    redirect_url = reverse('close_side:result_history_list')
+    history_query = request.GET.get('q', '').strip()
+    if history_query:
+        redirect_url = f'{redirect_url}?{urlencode({"q": history_query})}'
+    return redirect(redirect_url)
 
 
 def prompts_list(request):
@@ -554,24 +648,36 @@ def prompts_list(request):
     return render(request, 'anonymizer_app/prompts_list.html', {'prompts': prompts})
 
 
+def prompt_preview(request, pk):
+    prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=pk)
+    return render(request, 'anonymizer_app/prompt_preview.html', {'prompt': prompt})
+
+
 def prompt_create(request):
+    back_url = reverse('close_side:prompts_list')
     if request.method == 'POST':
         form = PromptForm(request.POST)
         if form.is_valid():
-            Prompt.objects.create(
+            prompt = Prompt.objects.create(
                 name=form.cleaned_data['name'],
                 content=form.cleaned_data['content'],
                 owner=request.user,
             )
-            _log_operation(request, 'prompt_created_manually', 'Prompt', form.cleaned_data['name'])
-            return redirect('close_side:prompts_list')
+            _log_operation(request, 'prompt_created_manually', 'Prompt', str(prompt.pk))
+            return redirect('close_side:prompt_preview', pk=prompt.pk)
     else:
         form = PromptForm()
-    return render(request, 'anonymizer_app/prompt_form.html', {'form': form, 'create': True})
+    return render(request, 'anonymizer_app/prompt_form.html', {
+        'form': form,
+        'create': True,
+        'back_url': back_url,
+        'back_label': '一覧へ戻る',
+    })
 
 
 def prompt_edit(request, pk):
     prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=pk)
+    back_url = reverse('close_side:prompt_preview', args=[prompt.pk])
     if request.method == 'POST':
         form = PromptForm(request.POST)
         if form.is_valid():
@@ -579,10 +685,16 @@ def prompt_edit(request, pk):
             prompt.content = form.cleaned_data['content']
             prompt.save()
             _log_operation(request, 'prompt_updated', 'Prompt', str(prompt.pk))
-            return redirect('close_side:prompts_list')
+            return redirect('close_side:prompt_preview', pk=prompt.pk)
     else:
         form = PromptForm(initial={'name': prompt.name, 'content': prompt.content})
-    return render(request, 'anonymizer_app/prompt_form.html', {'form': form, 'create': False, 'prompt': prompt})
+    return render(request, 'anonymizer_app/prompt_form.html', {
+        'form': form,
+        'create': False,
+        'prompt': prompt,
+        'back_url': back_url,
+        'back_label': 'プレビューへ戻る',
+    })
 
 
 @require_http_methods(["POST"])
@@ -638,7 +750,7 @@ def prompt_send_to_dmz(request, pk):
     prompt.save(update_fields=['source_id', 'status', 'updated_at'])
     _log_operation(request, 'prompt_sent_to_dmz', 'Prompt', str(prompt.pk), {'filename': output_filename})
     messages.success(request, f'DMZへ送信しました: {output_filename}')
-    return redirect('close_side:prompts_list')
+    return redirect('close_side:prompt_preview', pk=prompt.pk)
 
 
 def templates_list(request):
@@ -733,8 +845,27 @@ def user_list(request):
 
 
 def operation_logs(request):
-    logs = OperationLog.objects.order_by('-created_at')[:200]
-    return render(request, 'anonymizer_app/operation_logs.html', {'logs': logs, 'side_name': 'CloseSide'})
+    history_query = request.GET.get('q', '').strip()
+    logs = list(OperationLog.objects.order_by('-created_at')[:HISTORY_LIMIT])
+    logs = filter_history_items(logs, history_query, [
+        'actor_username',
+        'action',
+        lambda log: operation_action_label(log.action),
+        'target_type',
+        'target_id',
+        'source_ip',
+        'import_source_ip',
+        lambda log: log.get_result_display(),
+        'error_message',
+        'details',
+        lambda log: log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+    ])
+    logs = decorate_operation_logs(logs)
+    return render(request, 'anonymizer_app/operation_logs.html', {
+        'logs': logs,
+        'side_name': 'CloseSide',
+        'history_query': history_query,
+    })
 
 
 def anonymization_rules(request):

@@ -5,7 +5,6 @@
 {% block page_title %}復元結果確認{% endblock %}
 {% block page_subtitle %}<p class="page-subtitle">AI生成後文書と復元後文書の変更点をハイライト表示します。</p>{% endblock %}
 {% block page_actions %}
-  <a class="button" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴へ</a>
   <a class="button" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込みへ</a>
   <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
 {% endblock %}
@@ -27,49 +26,18 @@
 
   <section class="grid">
     <div class="panel">
-      <div class="panel-header">
-        <h3 class="panel-title">AI生成後文書</h3>
-        <button type="button" class="button panel-header-spacer" tabindex="-1">コピー</button>
-      </div>
+      <div class="panel-header"><h3 class="panel-title">AI生成後文書</h3></div>
       <div class="panel-body">
         <pre>{{ result_html|safe }}</pre>
       </div>
     </div>
-    <div class="panel">
-      <div class="panel-header">
-        <h3 class="panel-title">復元後文書</h3>
-        <button type="button" class="button" id="copy-restored-button">コピー</button>
-      </div>
-      <div class="panel-body">
-        <pre id="restored-text">{{ restored_html|safe }}</pre>
-      </div>
-
-      <textarea id="restored-plain-text" hidden>{{ restored_text }}</textarea>
-
-      <script>
-        document.getElementById('copy-restored-button').addEventListener('click', async () => {
-          const text = document.getElementById('restored-plain-text').value;
-          await navigator.clipboard.writeText(text);
-
-          const button = document.getElementById('copy-restored-button');
-          button.textContent = 'コピーしました';
-          setTimeout(() => {
-            button.textContent = 'コピー';
-          }, 1500);
-        });
-      </script>
-    </div>
- </section>
-
- <!--
     <div class="panel">
       <div class="panel-header"><h3 class="panel-title">復元後文書</h3></div>
       <div class="panel-body">
         <pre>{{ restored_html|safe }}</pre>
       </div>
     </div>
-  -->
-  
+  </section>
 
   <section class="panel">
     <div class="panel-header"><h3 class="panel-title">匿名化ラベル一覧</h3></div>

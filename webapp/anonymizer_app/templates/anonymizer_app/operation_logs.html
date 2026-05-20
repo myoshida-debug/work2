@@ -9,37 +9,62 @@
   <section class="panel">
     <div class="panel-header">
       <h3 class="panel-title">操作ログ</h3>
+      <span class="badge">{{ logs|length }}件</span>
     </div>
     <div class="panel-body">
+      <form method="get" class="history-search">
+        <input
+          class="search-input"
+          type="search"
+          name="q"
+          value="{{ history_query }}"
+          placeholder="操作者、操作種別、対象、日時、結果、エラーで検索"
+          aria-label="操作ログ検索"
+        >
+        <button class="primary" type="submit">検索</button>
+        {% if history_query %}
+          {% if side_name == 'OpenSide' %}
+            <a class="button" href="{% url 'open_side:operation_logs' %}">検索解除</a>
+          {% else %}
+            <a class="button" href="{% url 'close_side:operation_logs' %}">検索解除</a>
+          {% endif %}
+        {% endif %}
+      </form>
+
       {% if logs %}
-        <table>
-          <thead>
-            <tr>
-              <th>日時</th>
-              <th>操作者</th>
-              <th>操作</th>
-              <th>対象</th>
-              <th>送信元IP</th>
-              <th>取込元IP</th>
-              <th>結果</th>
-              <th>エラー</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for log in logs %}
+        <div class="table-scroll">
+          <table class="history-table">
+            <thead>
               <tr>
-                <td>{{ log.created_at }}</td>
-                <td>{{ log.actor_username|default:"-" }}</td>
-                <td>{{ log.action }}</td>
-                <td>{{ log.target_type }} / {{ log.target_id }}</td>
-                <td>{{ log.source_ip|default:"-" }}</td>
-                <td>{{ log.import_source_ip|default:"-" }}</td>
-                <td>{{ log.get_result_display }}</td>
-                <td>{{ log.error_message|default:"-" }}</td>
+                <th>日時</th>
+                <th>操作者</th>
+                <th>操作種別</th>
+                <th>対象</th>
+                <th>送信元IP</th>
+                <th>取込元IP</th>
+                <th>結果</th>
+                <th>エラー</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {% for log in logs %}
+                <tr>
+                  <td>{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+                  <td>{{ log.actor_username|default:"-" }}</td>
+                  <td>
+                    <strong>{{ log.action_label|default:log.action }}</strong><br>
+                    <span class="muted">{{ log.action }}</span>
+                  </td>
+                  <td>{{ log.target_type|default:"-" }}{% if log.target_id %} / {{ log.target_id }}{% endif %}</td>
+                  <td>{{ log.source_ip|default:"-" }}</td>
+                  <td>{{ log.import_source_ip|default:"-" }}</td>
+                  <td>{{ log.get_result_display }}</td>
+                  <td>{{ log.error_message|default:"-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       {% else %}
         <p class="empty">操作ログはありません。</p>
       {% endif %}

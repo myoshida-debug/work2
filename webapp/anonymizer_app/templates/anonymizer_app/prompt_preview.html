@@ -1,0 +1,52 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide プロンプトプレビュー{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}プロンプトプレビュー{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">選択したプロンプトの内容を確認し、編集やDMZ送信を行います。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:prompts_list' %}">一覧へ戻る</a>
+  <a class="button" href="{% url 'close_side:prompt_edit' pk=prompt.pk %}">編集</a>
+  <form class="inline-form" method="post" action="{% url 'close_side:prompt_send_to_dmz' pk=prompt.pk %}">
+    {% csrf_token %}
+    <button class="primary" type="submit">DMZ送信</button>
+  </form>
+  <form class="inline-form" method="post" action="{% url 'close_side:prompt_delete' pk=prompt.pk %}" onsubmit="return confirm('このプロンプトを削除しますか？');">
+    {% csrf_token %}
+    <button class="danger" type="submit">削除</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">{{ prompt.name }}</h3>
+      <span class="badge">{{ prompt.get_status_display }}</span>
+    </div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>source_id</dt><dd>{{ prompt.source_id|default:"-" }}</dd>
+        <dt>状態</dt><dd>{{ prompt.get_status_display }}</dd>
+        <dt>作成日時</dt><dd>{{ prompt.created_at }}</dd>
+        <dt>更新日時</dt><dd>{{ prompt.updated_at }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">プロンプト本文</h3>
+    </div>
+    <div class="panel-body">
+      {% if prompt.content %}
+        <pre>{{ prompt.content }}</pre>
+      {% else %}
+        <p class="empty">本文がありません。</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="actions history-preview-actions">
+    <a class="button" href="{% url 'close_side:prompts_list' %}">一覧へ戻る</a>
+  </div>
+{% endblock %}

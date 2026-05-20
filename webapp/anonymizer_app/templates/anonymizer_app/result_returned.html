@@ -7,7 +7,8 @@
 {% block page_actions %}
   <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
   <a class="button" href="{% url 'open_side:imported_prompt' filename=filename %}">AI生成へ戻る</a>
-  <a class="button primary" href="{% url 'close_side:result_import_list' %}">CloseSideで取込</a>
+  <a class="button primary" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込みへ</a>
+  <a class="button" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴へ</a>
 {% endblock %}
 
 {% block content %}

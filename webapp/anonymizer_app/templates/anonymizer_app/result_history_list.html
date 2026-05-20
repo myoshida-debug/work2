@@ -1,0 +1,78 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 取り込み済み結果履歴{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}取り込み済み結果履歴{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">履歴を検索して、一覧から選ぶとプレビュー画面へ移動します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込みへ</a>
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">取り込み済み結果履歴</h3>
+      <span class="badge">{{ saved_results|length }}件</span>
+    </div>
+    <div class="panel-body">
+      <form method="get" class="history-search">
+        <input
+          class="search-input"
+          type="search"
+          name="q"
+          value="{{ history_query }}"
+          placeholder="ファイル名、日時、状態、文書名で検索"
+          aria-label="取り込み済み結果検索"
+        >
+        <button class="primary" type="submit">検索</button>
+        {% if history_query %}
+          <a class="button" href="{% url 'close_side:result_history_list' %}">検索解除</a>
+        {% endif %}
+      </form>
+      <p class="muted history-note">プレビューを押すと、選択した履歴のプレビュー画面に移動します。</p>
+
+      {% if saved_results %}
+        <div class="table-scroll">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>取込日時</th>
+                <th>ファイル名</th>
+                <th>文書名</th>
+                <th>状態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in saved_results %}
+                <tr>
+                  <td>{{ item.created_at|date:"Y-m-d H:i:s" }}</td>
+                  <td>
+                    <strong>{{ item.imported_filename|default:"-" }}</strong><br>
+                    <span class="muted">source_id: {{ item.source_id|default:"-" }}</span>
+                  </td>
+                  <td>
+                    <strong>{{ item.template_type|default:"-" }}</strong><br>
+                    <span class="muted">result_id: {{ item.result_id|default:"-" }}</span>
+                  </td>
+                  <td>{{ item.get_status_display }}</td>
+                  <td>
+                    <a
+                      class="button"
+                      href="{% url 'close_side:result_history_preview' pk=item.pk %}{% if history_query %}?q={{ history_query|urlencode }}{% endif %}"
+                    >
+                      プレビュー
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">検索条件に一致する履歴がありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 取り込み済み結果プレビュー{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}取り込み済み結果プレビュー{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">選択した履歴のAI生成文書と復元文書を横並びで比較します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:result_history_list' %}{% if history_query %}?q={{ history_query|urlencode }}{% endif %}">一覧表へ戻る</a>
+  <a class="button" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込みへ</a>
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">取り込み済み結果の詳細</h3>
+      <span class="badge">{{ selected_preview.status_label }}</span>
+    </div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>取込日時</dt><dd>{{ selected_preview.created_at }}</dd>
+        <dt>ファイル名</dt><dd>{{ selected_preview.imported_filename|default:"-" }}</dd>
+        <dt>文書名</dt><dd>{{ selected_preview.template_type|default:"-" }}</dd>
+        <dt>状態</dt><dd>{{ selected_preview.status_label }}</dd>
+        <dt>source_id</dt><dd>{{ selected_preview.source_id|default:"-" }}</dd>
+        <dt>result_id</dt><dd>{{ selected_preview.result_id|default:"-" }}</dd>
+        {% if selected_preview.reviewer %}
+          <dt>レビュワー</dt><dd>{{ selected_preview.reviewer }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">AI生成後文書</h3>
+        <button type="button" class="button panel-header-spacer" tabindex="-1">コピー</button>
+      </div>
+      <div class="panel-body">
+        {% if selected_preview.has_result_text %}
+          <pre>{{ selected_preview.result_html|safe }}</pre>
+        {% else %}
+          <p class="empty">文書がありません。</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">復元後文書</h3>
+        <button type="button" class="button" id="copy-restored-button">コピー</button>
+      </div>
+      <div class="panel-body">
+        {% if selected_preview.has_restored_text %}
+          <pre id="restored-text">{{ selected_preview.restored_html|safe }}</pre>
+        {% else %}
+          <p class="empty">文書がありません。</p>
+        {% endif %}
+      </div>
+
+      <textarea id="restored-plain-text" hidden>{{ selected_result.restored_text }}</textarea>
+
+      {% if selected_preview.has_restored_text %}
+        <script>
+          document.getElementById('copy-restored-button').addEventListener('click', async () => {
+            const text = document.getElementById('restored-plain-text').value;
+            await navigator.clipboard.writeText(text);
+
+            const button = document.getElementById('copy-restored-button');
+            button.textContent = 'コピーしました';
+            setTimeout(() => {
+              button.textContent = 'コピー';
+            }, 1500);
+          });
+        </script>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="actions history-preview-actions">
+    <a class="button" href="{% url 'close_side:result_history_list' %}{% if history_query %}?q={{ history_query|urlencode }}{% endif %}">一覧表へ戻る</a>
+    <form
+      class="inline-form"
+      method="post"
+      action="{% url 'close_side:result_delete' pk=selected_result.pk %}{% if history_query %}?q={{ history_query|urlencode }}{% endif %}"
+      onsubmit="return confirm('この取り込み済み生成文章を削除しますか？');"
+    >
+      {% csrf_token %}
+      <button class="danger" type="submit">この履歴を削除</button>
+    </form>
+  </div>
+{% endblock %}

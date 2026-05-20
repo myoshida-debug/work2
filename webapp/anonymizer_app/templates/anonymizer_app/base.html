@@ -216,6 +216,10 @@
       font-weight: 800;
     }
 
+    .panel-body pre {
+      margin: 0;
+    }
+
     .panel-body,
     .card {
       padding: 16px;
@@ -235,6 +239,140 @@
     .menu-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .history-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .history-column,
+    .history-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .history-search {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .history-search .search-input {
+      flex: 1 1 260px;
+      min-width: 0;
+      width: auto;
+    }
+
+    .table-scroll {
+      overflow: auto;
+      overflow-x: hidden;
+      max-height: min(58vh, 560px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .table-scroll.compact {
+      max-height: min(42vh, 380px);
+    }
+
+    .history-table {
+      margin: 0;
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    .history-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface);
+    }
+
+    .history-table tbody tr:hover td {
+      background: #f6f9ff;
+    }
+
+    .history-table tbody tr.is-selected td {
+      background: #eaf1ff;
+    }
+
+    .history-table th,
+    .history-table td {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .history-row-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .history-preview-actions {
+      margin-top: 16px;
+    }
+
+    .history-note {
+      margin-top: 10px;
+    }
+
+    .history-doc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+
+    .history-doc-grid.spaced {
+      margin-top: 16px;
+    }
+
+    .history-doc-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .history-doc-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px 14px;
+    }
+
+    .history-doc-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .history-doc-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .history-doc-body {
+      padding: 12px 14px;
+    }
+
+    .stacked-panels {
+      display: flex;
+      flex-direction: column;
       gap: 18px;
     }
 
@@ -420,9 +558,31 @@
       }
 
       .grid,
-      .menu-grid {
+      .menu-grid,
+      .history-layout,
+      .history-doc-grid {
         grid-template-columns: 1fr;
       }
+
+      .history-search .search-input {
+        flex-basis: 100%;
+      }
+
+      .table-scroll {
+        max-height: min(48vh, 360px);
+      }
+
+    }
+ 
+    .panel-header-spacer {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .grid > .panel,
+    .menu-grid > .card,
+    .menu-grid > .panel {
+      margin-top: 8pt;
     }
   </style>
   {% block extra_head %}{% endblock %}
@@ -447,7 +607,8 @@
           <a class="nav-link" href="{% url 'close_side:menu' %}">CloseSideメニュー</a>
           <a class="nav-link" href="{% url 'close_side:home' %}">匿名化画面</a>
           <a class="nav-link" href="{% url 'close_side:prompts_list' %}">プロンプト一覧</a>
-          <a class="nav-link" href="{% url 'close_side:result_import_list' %}">生成文章一覧</a>
+          <a class="nav-link" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴</a>
+          <a class="nav-link" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
           <a class="nav-link" href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
           {% if request.user.is_staff or request.user.is_superuser %}
             <a class="nav-link" href="{% url 'close_side:operation_logs' %}">操作ログ</a>
