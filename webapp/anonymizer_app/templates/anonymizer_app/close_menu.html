@@ -29,7 +29,7 @@
     </article>
     <article class="card">
       <h3>テンプレート管理</h3>
-      <p class="muted">テンプレートの作成、編集、削除を行います。</p>
+      <p class="muted">テンプレートの作成、編集、削除、入力欄初期値の編集を行います。</p>
       <a class="button primary" href="{% url 'close_side:templates_list' %}">テンプレート管理へ</a>
     </article>
     {% if request.user.is_staff or request.user.is_superuser %}

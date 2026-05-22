@@ -41,6 +41,7 @@ urlpatterns = [
     path('templates/<int:pk>/edit/', close_login_required(views.template_edit), name='template_edit'),
     path('templates/<int:pk>/delete/', close_login_required(views.template_delete), name='template_delete'),
     path('templates/<str:template_name>/', close_login_required(views.template_detail), name='template_detail'),
+    path('templates/<str:template_type>/input-defaults/', close_login_required(views.template_input_defaults_edit), name='template_input_defaults_edit'),
     path('anonymization-rules/', close_login_required(views.anonymization_rules), name='anonymization_rules'),
     path('users/', close_admin_required(views.user_list), name='user_list'),
     path('logs/', close_admin_required(views.operation_logs), name='operation_logs'),

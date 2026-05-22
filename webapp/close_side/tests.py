@@ -11,7 +11,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from anonymizer_app.models import Prompt, RestoreMetadata
+from anonymizer_app.models import Prompt, RestoreMetadata, TemplateInputDefault
+from anonymizer_app.template_input_schemas import get_template_input_schema
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
@@ -262,3 +263,61 @@ class TranscriptionApiTests(TestCase):
             self.assertNotIn('source_input_data', payload['metadata'])
             self.assertNotIn('audio_file_name', payload['metadata'])
             self.assertEqual(payload['content']['text'], '匿名化済み本文')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateInputDefaultEditTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+
+    def test_template_input_defaults_edit_updates_saved_defaults_and_home_preview(self):
+        schema = get_template_input_schema('委員会議事録')
+        post_data = {
+            f'default__{field["key"]}': str(field.get('default') or '')
+            for field in schema
+        }
+        post_data.update({
+            f'required__{field["key"]}': ''
+            for field in schema
+        })
+        post_data['default__overview'] = '会議名：\n開催日時：\n開催場所：\n参加者：\n出席状況：'
+        post_data['required__overview'] = 'false'
+
+        response = self.client.post(
+            reverse('close_side:template_input_defaults_edit', args=['委員会議事録']),
+            post_data,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            TemplateInputDefault.objects.get(template_type='委員会議事録', field_key='overview').default_text,
+            '会議名：\n開催日時：\n開催場所：\n参加者：\n出席状況：',
+        )
+        self.assertFalse(
+            TemplateInputDefault.objects.get(template_type='委員会議事録', field_key='overview').required_override
+        )
+
+        prompt = Prompt.objects.create(
+            source_id='prompt_defaults_1234',
+            name='委員会議事録 / prompt_defaults_1234',
+            content='本文',
+            source_input_data={
+                'template_type': '委員会議事録',
+                'input_mode': 'structured',
+                'text': '',
+                'structured_input': {},
+            },
+            owner=self.user,
+            status='draft',
+        )
+
+        home_response = self.client.get(reverse('close_side:home'), {'reload_prompt_id': prompt.pk})
+
+        self.assertEqual(home_response.status_code, 200)
+        overview = next(field for field in home_response.context['structured_fields'] if field['key'] == 'overview')
+        self.assertEqual(overview['value'], '会議名：\n開催日時：\n開催場所：\n参加者：\n出席状況：')
+        self.assertFalse(overview['required'])

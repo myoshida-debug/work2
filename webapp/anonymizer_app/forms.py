@@ -1,5 +1,7 @@
 from django import forms
 
+from .template_input_schemas import get_template_input_schema
+
 
 TEMPLATE_CHOICES = [
     ('入院時サマリー', '入院時サマリー'),
@@ -104,3 +106,27 @@ class TemplateForm(forms.Form):
         widget=forms.Textarea(attrs={'rows':8}),
         required=False,
     )
+
+
+class TemplateInputDefaultsForm(forms.Form):
+    def __init__(self, *args, template_type: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.template_type = template_type
+        for field in get_template_input_schema(template_type):
+            key = str(field['key'])
+            label = str(field['label'])
+            self.fields[f'default__{key}'] = forms.CharField(
+                label=label,
+                required=False,
+                widget=forms.Textarea(attrs={'rows': 3, 'style': 'min-height: 120px; width: 100%;'}),
+            )
+            self.fields[f'required__{key}'] = forms.ChoiceField(
+                label=f'{label}の必須設定',
+                required=False,
+                choices=[
+                    ('', '既定'),
+                    ('true', '必須'),
+                    ('false', '任意'),
+                ],
+                widget=forms.Select(attrs={'style': 'width: 160px;'}),
+            )

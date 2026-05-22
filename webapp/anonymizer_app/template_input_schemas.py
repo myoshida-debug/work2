@@ -81,6 +81,52 @@ def _canonical_template_type(template_type: str) -> str:
     return TEMPLATE_INPUT_SCHEMA_ALIASES.get(template_type, template_type)
 
 
+def _load_template_input_default_overrides() -> dict[str, dict[str, object]]:
+    try:
+        from .models import TemplateInputDefault
+    except Exception:
+        return {}
+
+    overrides: dict[str, dict[str, object]] = {}
+    try:
+        for row in TemplateInputDefault.objects.all().only('template_type', 'field_key', 'default_text', 'required_override'):
+            overrides.setdefault(row.template_type, {})[row.field_key] = {
+                'default_text': row.default_text,
+                'required_override': row.required_override,
+            }
+    except Exception:
+        return {}
+    return overrides
+
+
+def _schema_for_template(template_type: str, overrides: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:
+    canonical_template_type = _canonical_template_type(template_type)
+    schema = TEMPLATE_INPUT_SCHEMAS.get(canonical_template_type, DEFAULT_TEMPLATE_INPUT_SCHEMA)
+    merged_schema = [deepcopy(field) for field in schema]
+    override_map = (overrides or {}).get(canonical_template_type, {})
+    for field in merged_schema:
+        field_key = str(field.get('key') or '')
+        override = override_map.get(field_key)
+        if isinstance(override, dict):
+            if 'default_text' in override:
+                field['default'] = override.get('default_text', '')
+            if override.get('required_override') is not None:
+                field['required'] = bool(override.get('required_override'))
+    return merged_schema
+
+
 def get_template_input_schema(template_type: str) -> list[dict[str, object]]:
-    schema = TEMPLATE_INPUT_SCHEMAS.get(_canonical_template_type(template_type), DEFAULT_TEMPLATE_INPUT_SCHEMA)
-    return [deepcopy(field) for field in schema]
+    overrides = _load_template_input_default_overrides()
+    return _schema_for_template(template_type, overrides)
+
+
+def get_template_input_schema_map() -> dict[str, list[dict[str, object]]]:
+    overrides = _load_template_input_default_overrides()
+    schema_map: dict[str, list[dict[str, object]]] = {
+        template_type: _schema_for_template(template_type, overrides)
+        for template_type in TEMPLATE_INPUT_SCHEMAS
+    }
+    for alias in TEMPLATE_INPUT_SCHEMA_ALIASES:
+        schema_map[alias] = _schema_for_template(alias, overrides)
+    schema_map['__default__'] = [deepcopy(field) for field in DEFAULT_TEMPLATE_INPUT_SCHEMA]
+    return schema_map

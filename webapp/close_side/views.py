@@ -16,14 +16,14 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_http_methods
 
-from anonymizer_app.forms import AnonymizeForm, DMZExportForm, DMZResultImportForm, PromptForm, TemplateForm
+from anonymizer_app.forms import AnonymizeForm, DMZExportForm, DMZResultImportForm, PromptForm, TemplateForm, TemplateInputDefaultsForm
 from anonymizer_app.history_utils import (
     HISTORY_LIMIT,
     decorate_operation_logs,
     filter_history_items,
     operation_action_label,
 )
-from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template
+from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputDefault
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
 from anonymizer_app.structured_input import (
@@ -35,7 +35,12 @@ from anonymizer_app.structured_input import (
     normalize_source_input_data,
     validate_structured_input,
 )
-from anonymizer_app.template_input_schemas import DEFAULT_TEMPLATE_INPUT_SCHEMA, TEMPLATE_INPUT_SCHEMAS, get_template_input_schema
+from anonymizer_app.template_input_schemas import (
+    TEMPLATE_INPUT_SCHEMA_ALIASES,
+    TEMPLATE_INPUT_SCHEMAS,
+    get_template_input_schema,
+    get_template_input_schema_map,
+)
 from anonymizer_app.prompt_template_store import (
     delete_template_source,
     get_template_source_by_filename,
@@ -221,7 +226,7 @@ def _anonymize_page_context(
         'prompt_json': prompt_json,
         'restore_json': restore_json,
         'source_id': source_id,
-        'template_input_schemas': {**TEMPLATE_INPUT_SCHEMAS, '__default__': DEFAULT_TEMPLATE_INPUT_SCHEMA},
+        'template_input_schemas': get_template_input_schema_map(),
     }
 
 
@@ -1126,6 +1131,72 @@ def template_edit(request, pk):
             'additional_content': source.additional_content if source else tpl.additional_content,
         })
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})
+
+
+def template_input_defaults_edit(request, template_type):
+    canonical_template_type = TEMPLATE_INPUT_SCHEMA_ALIASES.get(template_type, template_type)
+    if canonical_template_type not in TEMPLATE_INPUT_SCHEMAS:
+        return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
+
+    schema = get_template_input_schema(canonical_template_type)
+    field_keys = [str(field['key']) for field in schema]
+    existing_rows = {
+        row.field_key: row
+        for row in TemplateInputDefault.objects.filter(template_type=canonical_template_type)
+    }
+    initial = {}
+    for field in schema:
+        field_key = str(field['key'])
+        row = existing_rows.get(field_key)
+        initial[f'default__{field_key}'] = str(row.default_text if row else field.get('default') or '')
+        if row is not None and row.required_override is not None:
+            initial[f'required__{field_key}'] = 'true' if row.required_override else 'false'
+        else:
+            initial[f'required__{field_key}'] = ''
+
+    if request.method == 'POST':
+        form = TemplateInputDefaultsForm(request.POST, template_type=canonical_template_type)
+        if form.is_valid():
+            for field in schema:
+                field_key = str(field['key'])
+                required_choice = str(form.cleaned_data.get(f'required__{field_key}') or '').strip()
+                required_override = None
+                if required_choice == 'true':
+                    required_override = True
+                elif required_choice == 'false':
+                    required_override = False
+                TemplateInputDefault.objects.update_or_create(
+                    template_type=canonical_template_type,
+                    field_key=field_key,
+                    defaults={
+                        'default_text': form.cleaned_data.get(f'default__{field_key}', ''),
+                        'required_override': required_override,
+                    },
+                )
+            TemplateInputDefault.objects.filter(template_type=canonical_template_type).exclude(field_key__in=field_keys).delete()
+            messages.success(request, f'{canonical_template_type} の入力欄初期値を更新しました。')
+            return redirect('close_side:templates_list')
+    else:
+        form = TemplateInputDefaultsForm(template_type=canonical_template_type, initial=initial)
+
+    field_rows = []
+    for field in schema:
+        field_key = str(field['key'])
+        field_rows.append({
+            'key': field_key,
+            'label': str(field['label']),
+            'required': bool(field.get('required')),
+            'bound_default_field': form[f'default__{field_key}'],
+            'bound_required_field': form[f'required__{field_key}'],
+        })
+
+    aliases = [alias for alias, canonical in TEMPLATE_INPUT_SCHEMA_ALIASES.items() if canonical == canonical_template_type]
+    return render(request, 'anonymizer_app/template_input_defaults_form.html', {
+        'form': form,
+        'template_type': canonical_template_type,
+        'template_aliases': aliases,
+        'field_rows': field_rows,
+    })
 
 
 @require_http_methods(["POST"])

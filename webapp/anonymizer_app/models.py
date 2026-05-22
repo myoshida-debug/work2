@@ -101,6 +101,23 @@ class Template(models.Model):
         return self.basic_content or self.content
 
 
+class TemplateInputDefault(models.Model):
+    template_type = models.CharField(max_length=255, choices=TEMPLATE_CHOICES)
+    field_key = models.CharField(max_length=255)
+    default_text = models.TextField(blank=True, default='')
+    required_override = models.BooleanField(null=True, blank=True, default=None)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['template_type', 'field_key'], name='unique_template_input_default'),
+        ]
+        ordering = ['template_type', 'field_key']
+
+    def __str__(self):
+        return f'{self.template_type}:{self.field_key}'
+
+
 class AnonymizationRule(models.Model):
     """Store editable anonymization rule text for admin editing and runtime display."""
     name = models.CharField(max_length=255, default='default')

@@ -9,14 +9,14 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from anonymizer_app.forms import AnonymizeForm
-from anonymizer_app.models import Prompt, RestoreMetadata
+from anonymizer_app.models import Prompt, RestoreMetadata, TemplateInputDefault
 from anonymizer_app.structured_input import (
     build_source_input_data,
     build_source_text_from_structured_input,
     build_source_text_from_source_input_data,
     validate_structured_input,
 )
-from anonymizer_app.template_input_schemas import get_template_input_schema
+from anonymizer_app.template_input_schemas import get_template_input_schema, get_template_input_schema_map
 
 
 COMMITTEE_OVERVIEW_DEFAULT = '会議名：\n開催日時：\n開催場所：\n参加者：'
@@ -57,6 +57,37 @@ class StructuredInputHelperTests(TestCase):
         overview = next(field for field in schema if field['key'] == 'overview')
 
         self.assertEqual(overview.get('default'), COMMITTEE_OVERVIEW_DEFAULT)
+
+    def test_committee_overview_schema_uses_db_override(self):
+        TemplateInputDefault.objects.create(
+            template_type='委員会議事録',
+            field_key='overview',
+            default_text='会議名：\n開催日時：\n参加者：',
+        )
+
+        schema = get_template_input_schema('委員会議事録')
+        overview = next(field for field in schema if field['key'] == 'overview')
+
+        self.assertEqual(overview.get('default'), '会議名：\n開催日時：\n参加者：')
+
+    def test_committee_overview_schema_uses_required_override(self):
+        TemplateInputDefault.objects.create(
+            template_type='委員会議事録',
+            field_key='overview',
+            required_override=False,
+        )
+
+        schema = get_template_input_schema('委員会議事録')
+        overview = next(field for field in schema if field['key'] == 'overview')
+
+        self.assertFalse(overview.get('required'))
+
+    def test_template_input_schema_map_includes_aliases(self):
+        schema_map = get_template_input_schema_map()
+
+        self.assertIn('入院時サマリー（詳細版）', schema_map)
+        self.assertIn('インシデントレポート（様式1-3）', schema_map)
+        self.assertIn('インシデントレポート（簡易版）', schema_map)
 
     def test_build_source_input_data_keeps_source_payload(self):
         payload = build_source_input_data(

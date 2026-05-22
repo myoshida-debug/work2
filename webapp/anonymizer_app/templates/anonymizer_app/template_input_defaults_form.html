@@ -1,0 +1,124 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}入力欄初期値編集{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}入力欄初期値編集{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">テンプレート項目に最初から入れる文字を編集します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .defaults-note {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .aliases-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .default-field-list {
+      display: grid;
+      gap: 18px;
+    }
+
+    .default-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .default-field .field-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .default-field .field-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+    }
+
+    .default-field textarea {
+      min-height: 120px;
+      width: 100%;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .required-select-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .required-select-row .field-label {
+      min-width: 90px;
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h3 class="panel-title">{{ template_type }}</h3>
+        {% if template_aliases %}
+          <div class="aliases-row">
+            {% for alias in template_aliases %}
+              <span class="badge">{{ alias }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+      <span class="badge">初期値</span>
+    </div>
+    <div class="panel-body">
+      <p class="defaults-note">空欄にすると、その項目の初期表示は空になります。保存後、匿名化画面のテンプレート項目に反映されます。</p>
+
+      <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="default-field-list">
+          {% for row in field_rows %}
+            <div class="default-field">
+              <div class="field-head">
+                <label class="field-label" for="{{ row.bound_default_field.id_for_label }}">
+                  {{ row.label }}
+                </label>
+                {% if row.required %}<span class="badge">現在: 必須</span>{% else %}<span class="badge">現在: 任意</span>{% endif %}
+              </div>
+              {{ row.bound_default_field }}
+              {% if row.bound_default_field.errors %}
+                <div class="field-error">{{ row.bound_default_field.errors }}</div>
+              {% endif %}
+              <div class="required-select-row">
+                <label class="field-label" for="{{ row.bound_required_field.id_for_label }}">{{ row.bound_required_field.label }}</label>
+                {{ row.bound_required_field }}
+                {% if row.bound_required_field.errors %}
+                  <div class="field-error">{{ row.bound_required_field.errors }}</div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+          <button class="primary" type="submit">保存</button>
+          <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}
