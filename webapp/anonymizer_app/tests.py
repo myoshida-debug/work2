@@ -19,6 +19,9 @@ from anonymizer_app.structured_input import (
 from anonymizer_app.template_input_schemas import get_template_input_schema
 
 
+COMMITTEE_OVERVIEW_DEFAULT = '会議名：\n開催日時：\n開催場所：\n参加者：'
+
+
 class StructuredInputHelperTests(TestCase):
     def test_build_source_text_from_structured_input_uses_headings(self):
         structured_input = {
@@ -53,20 +56,20 @@ class StructuredInputHelperTests(TestCase):
         schema = get_template_input_schema('委員会議事録')
         overview = next(field for field in schema if field['key'] == 'overview')
 
-        self.assertEqual(overview.get('default'), '会議名、開催日時、開催場所、参加者')
+        self.assertEqual(overview.get('default'), COMMITTEE_OVERVIEW_DEFAULT)
 
     def test_build_source_input_data_keeps_source_payload(self):
         payload = build_source_input_data(
             '委員会議事録',
             'structured',
-            '【開催概要】\n会議名、開催日時、開催場所、参加者',
-            {'overview': '会議名、開催日時、開催場所、参加者', 'agenda': '検討'},
+            f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}',
+            {'overview': COMMITTEE_OVERVIEW_DEFAULT, 'agenda': '検討'},
         )
 
         self.assertEqual(payload['template_type'], '委員会議事録')
         self.assertEqual(payload['input_mode'], 'structured')
-        self.assertEqual(payload['text'], '【開催概要】\n会議名、開催日時、開催場所、参加者')
-        self.assertEqual(payload['structured_input']['overview'], '会議名、開催日時、開催場所、参加者')
+        self.assertEqual(payload['text'], f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}')
+        self.assertEqual(payload['structured_input']['overview'], COMMITTEE_OVERVIEW_DEFAULT)
         self.assertEqual(payload['structured_input']['agenda'], '検討')
 
     def test_build_source_input_data_keeps_voice_transcript_source(self):
@@ -88,12 +91,12 @@ class StructuredInputHelperTests(TestCase):
             '委員会議事録',
             'structured',
             '',
-            {'overview': '会議名、開催日時、開催場所、参加者', 'agenda': '検討'},
+            {'overview': COMMITTEE_OVERVIEW_DEFAULT, 'agenda': '検討'},
         )
 
         source_text = build_source_text_from_source_input_data(payload)
 
-        self.assertIn('【開催概要】\n会議名、開催日時、開催場所、参加者', source_text)
+        self.assertIn(f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}', source_text)
         self.assertIn('【議題】\n検討', source_text)
 
 
@@ -208,9 +211,9 @@ class StructuredInputViewTests(TestCase):
             source_input_data={
                 'template_type': '委員会議事録',
                 'input_mode': 'structured',
-                'text': '【開催概要】\n会議名、開催日時、開催場所、参加者',
+                'text': f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}',
                 'structured_input': {
-                    'overview': '会議名、開催日時、開催場所、参加者',
+                    'overview': COMMITTEE_OVERVIEW_DEFAULT,
                     'agenda': '議題A',
                 },
             },
@@ -222,7 +225,7 @@ class StructuredInputViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '再読み込み')
-        self.assertContains(response, '会議名、開催日時、開催場所、参加者')
+        self.assertContains(response, COMMITTEE_OVERVIEW_DEFAULT)
         self.assertContains(response, f'reload_prompt_id={prompt.pk}')
 
     def test_home_get_reload_prompt_prefills_saved_source_data(self):
@@ -232,9 +235,9 @@ class StructuredInputViewTests(TestCase):
             source_input_data={
                 'template_type': '委員会議事録',
                 'input_mode': 'structured',
-                'text': '【開催概要】\n会議名、開催日時、開催場所、参加者',
+                'text': f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}',
                 'structured_input': {
-                    'overview': '会議名、開催日時、開催場所、参加者',
+                    'overview': COMMITTEE_OVERVIEW_DEFAULT,
                     'agenda': '議題A',
                 },
             },
@@ -247,10 +250,10 @@ class StructuredInputViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['template_type'], '委員会議事録')
         self.assertEqual(response.context['input_mode'], 'structured')
-        self.assertEqual(response.context['source_text'], '【開催概要】\n会議名、開催日時、開催場所、参加者')
+        self.assertEqual(response.context['source_text'], f'【開催概要】\n{COMMITTEE_OVERVIEW_DEFAULT}')
         overview = next(field for field in response.context['structured_fields'] if field['key'] == 'overview')
         agenda = next(field for field in response.context['structured_fields'] if field['key'] == 'agenda')
-        self.assertEqual(overview['value'], '会議名、開催日時、開催場所、参加者')
+        self.assertEqual(overview['value'], COMMITTEE_OVERVIEW_DEFAULT)
         self.assertEqual(agenda['value'], '議題A')
 
     def test_update_prompt_payload_returns_refreshed_compare_html(self):
@@ -293,7 +296,7 @@ class StructuredInputViewTests(TestCase):
         fields = _structured_field_context('委員会議事録')
         overview = next(field for field in fields if field['key'] == 'overview')
 
-        self.assertEqual(overview['value'], '会議名、開催日時、開催場所、参加者')
+        self.assertEqual(overview['value'], COMMITTEE_OVERVIEW_DEFAULT)
 
     def test_committee_overview_context_keeps_explicit_blank_value(self):
         from close_side.views import _structured_field_context

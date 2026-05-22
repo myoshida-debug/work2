@@ -77,6 +77,98 @@ class TranscriptionApiTests(TestCase):
         self.assertTrue(str(transcribe_path).endswith('.webm'))
         self.assertNotEqual(Path(transcribe_path).name, 'voice.webm')
 
+    def test_transcribe_audio_file_uses_download_root_for_cache_directory(self):
+        audio_file = SimpleUploadedFile(
+            'voice.webm',
+            b'fake audio bytes',
+            content_type='audio/webm',
+        )
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = (
+            [SimpleNamespace(text='患者は安静を保っている')],
+            SimpleNamespace(language='ja'),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir, override_settings(
+            CLOSE_SIDE_WHISPER_MODEL_PATH=tmpdir,
+            CLOSE_SIDE_WHISPER_MODEL_NAME='small',
+        ), patch('close_side.transcription._load_whisper_model', return_value=fake_model) as mocked_load:
+            from close_side.transcription import transcribe_audio_file
+
+            result = transcribe_audio_file(audio_file, template_type='看護計画')
+
+        self.assertEqual(result['text'], '患者は安静を保っている')
+        self.assertEqual(result['model'], 'small')
+        mocked_load.assert_called_once()
+        self.assertEqual(mocked_load.call_args.args[0], 'small')
+        self.assertEqual(mocked_load.call_args.kwargs['download_root'], tmpdir)
+
+    def test_transcribe_audio_file_discovers_complete_snapshot_directory(self):
+        audio_file = SimpleUploadedFile(
+            'voice.webm',
+            b'fake audio bytes',
+            content_type='audio/webm',
+        )
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = (
+            [SimpleNamespace(text='患者は安静を保っている')],
+            SimpleNamespace(language='ja'),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            snapshot = root / 'models--Systran--faster-whisper-small' / 'snapshots' / 'abc123'
+            snapshot.mkdir(parents=True)
+            for filename in ('config.json', 'model.bin', 'tokenizer.json', 'vocabulary.txt'):
+                (snapshot / filename).write_text(filename, encoding='utf-8')
+
+            with override_settings(CLOSE_SIDE_WHISPER_MODEL_PATH=tmpdir), patch(
+                'close_side.transcription._load_whisper_model',
+                return_value=fake_model,
+            ) as mocked_load:
+                from close_side.transcription import transcribe_audio_file
+
+                result = transcribe_audio_file(audio_file, template_type='看護計画')
+
+        self.assertEqual(result['text'], '患者は安静を保っている')
+        self.assertEqual(result['model'], 'small')
+        mocked_load.assert_called_once()
+        self.assertEqual(mocked_load.call_args.args[0], str(snapshot))
+        self.assertIsNone(mocked_load.call_args.kwargs['download_root'])
+
+    def test_transcribe_audio_file_discovers_complete_model_directory_under_root(self):
+        audio_file = SimpleUploadedFile(
+            'voice.webm',
+            b'fake audio bytes',
+            content_type='audio/webm',
+        )
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = (
+            [SimpleNamespace(text='患者は安静を保っている')],
+            SimpleNamespace(language='ja'),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            model_dir = root / 'faster-whisper-small'
+            model_dir.mkdir(parents=True)
+            for filename in ('config.json', 'model.bin', 'tokenizer.json', 'vocabulary.txt'):
+                (model_dir / filename).write_text(filename, encoding='utf-8')
+
+            with override_settings(CLOSE_SIDE_WHISPER_MODEL_PATH=tmpdir), patch(
+                'close_side.transcription._load_whisper_model',
+                return_value=fake_model,
+            ) as mocked_load:
+                from close_side.transcription import transcribe_audio_file
+
+                result = transcribe_audio_file(audio_file, template_type='看護計画')
+
+        self.assertEqual(result['text'], '患者は安静を保っている')
+        self.assertEqual(result['model'], 'small')
+        mocked_load.assert_called_once()
+        self.assertEqual(mocked_load.call_args.args[0], str(model_dir))
+        self.assertIsNone(mocked_load.call_args.kwargs['download_root'])
+
     def test_transcribe_audio_requires_audio_file(self):
         response = self.client.post(
             reverse('close_side:transcribe_audio'),

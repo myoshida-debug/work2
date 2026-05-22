@@ -15,7 +15,14 @@ DEFAULT_WHISPER_MODEL_NAME = 'small'
 DEFAULT_WHISPER_DEVICE = 'cpu'
 DEFAULT_WHISPER_COMPUTE_TYPE = 'int8'
 DEFAULT_WHISPER_LANGUAGE = 'ja'
+DEFAULT_WHISPER_LOCAL_FILES_ONLY = False
 MAX_TRANSCRIPTION_AUDIO_BYTES = 25 * 1024 * 1024
+WHISPER_MODEL_FILENAMES = (
+    'config.json',
+    'model.bin',
+    'tokenizer.json',
+    'vocabulary.txt',
+)
 
 
 class TranscriptionError(RuntimeError):
@@ -54,11 +61,53 @@ def _configured_int(name: str, default: int) -> int:
         return default
 
 
-def _whisper_model_identifier() -> str:
-    model_path = _configured_value('CLOSE_SIDE_WHISPER_MODEL_PATH')
-    if model_path:
-        return model_path
+def _whisper_model_name() -> str:
     return _configured_value('CLOSE_SIDE_WHISPER_MODEL_NAME', DEFAULT_WHISPER_MODEL_NAME)
+
+
+def _whisper_download_root() -> str:
+    return _configured_value('CLOSE_SIDE_WHISPER_DOWNLOAD_ROOT') or _configured_value('CLOSE_SIDE_WHISPER_MODEL_PATH')
+
+
+def _is_complete_whisper_model_dir(candidate: Path) -> bool:
+    return candidate.is_dir() and all((candidate / filename).exists() for filename in WHISPER_MODEL_FILENAMES)
+
+
+def _find_complete_whisper_model_dir(root: Path) -> Path | None:
+    if _is_complete_whisper_model_dir(root):
+        return root
+    if not root.exists():
+        return None
+
+    candidates = [
+        candidate
+        for candidate in root.iterdir()
+        if candidate.is_dir() and _is_complete_whisper_model_dir(candidate)
+    ]
+    candidates.extend(
+        candidate
+        for candidate in root.glob('**/snapshots/*')
+        if _is_complete_whisper_model_dir(candidate)
+    )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda candidate: candidate.stat().st_mtime)
+
+
+def _whisper_local_model_path() -> Path | None:
+    model_path = _configured_value('CLOSE_SIDE_WHISPER_MODEL_PATH')
+    if not model_path:
+        return None
+
+    candidate = Path(model_path)
+    return _find_complete_whisper_model_dir(candidate)
+
+
+def _resolve_whisper_model_source() -> tuple[str, str | None]:
+    local_model_path = _whisper_local_model_path()
+    if local_model_path is not None:
+        return str(local_model_path), None
+    return _whisper_model_name(), _whisper_download_root() or None
 
 
 def _whisper_device() -> str:
@@ -70,7 +119,7 @@ def _whisper_compute_type() -> str:
 
 
 def _whisper_local_files_only() -> bool:
-    return _configured_bool('CLOSE_SIDE_WHISPER_LOCAL_FILES_ONLY', True)
+    return _configured_bool('CLOSE_SIDE_WHISPER_LOCAL_FILES_ONLY', DEFAULT_WHISPER_LOCAL_FILES_ONLY)
 
 
 def _whisper_language() -> str:
@@ -153,29 +202,36 @@ def _load_whisper_model(
     device: str,
     compute_type: str,
     local_files_only: bool,
+    download_root: str | None = None,
 ):
     whisper_model_class = _import_whisper_model_class()
     try:
-        return whisper_model_class(
-            model_identifier,
-            device=device,
-            compute_type=compute_type,
-            local_files_only=local_files_only,
-        )
+        kwargs = {
+            'device': device,
+            'compute_type': compute_type,
+            'local_files_only': local_files_only,
+        }
+        if download_root:
+            kwargs['download_root'] = download_root
+        return whisper_model_class(model_identifier, **kwargs)
     except Exception as exc:
         raise TranscriptionConfigurationError(
             'ローカル Whisper モデルを読み込めませんでした。'
-            ' CLOSE_SIDE_WHISPER_MODEL_PATH または CLOSE_SIDE_WHISPER_MODEL_NAME を確認してください。'
+            ' CLOSE_SIDE_WHISPER_MODEL_PATH がモデル本体(model.binを含む)か、'
+            ' もしくはダウンロード先のルートディレクトリかを確認してください。'
+            ' 必要なら CLOSE_SIDE_WHISPER_DOWNLOAD_ROOT も指定できます。'
+            f' 元のエラー: {exc}'
         ) from exc
 
 
 def _transcribe_audio_file(audio_path: Path, template_type: str) -> tuple[str, str]:
-    model_identifier = _whisper_model_identifier()
+    model_identifier, download_root = _resolve_whisper_model_source()
     model = _load_whisper_model(
         model_identifier,
         _whisper_device(),
         _whisper_compute_type(),
         _whisper_local_files_only(),
+        download_root=download_root,
     )
     initial_prompt = _build_transcription_prompt(template_type)
 
@@ -215,7 +271,7 @@ def transcribe_audio_file(audio_file, *, template_type: str = '') -> dict[str, s
 
     result = {
         'text': transcript_text,
-        'model': _whisper_model_identifier(),
+        'model': _whisper_model_name(),
     }
     if detected_language:
         result['language'] = detected_language

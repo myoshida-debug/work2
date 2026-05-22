@@ -53,7 +53,7 @@ TEMPLATE_INPUT_SCHEMAS: dict[str, list[dict[str, object]]] = {
             'key': 'overview',
             'label': '開催概要',
             'required': True,
-            'default': '会議名、開催日時、開催場所、参加者',
+            'default': '会議名：\n開催日時：\n開催場所：\n参加者：',
         },
         {'key': 'agenda', 'label': '議題', 'required': True},
         {'key': 'discussion', 'label': '主な議論', 'required': True},
