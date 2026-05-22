@@ -597,6 +597,8 @@ def update_prompt_payload(request):
             {'labels': removed_labels},
         )
 
+    compare_original_html, compare_anonymized_html = highlight_changed_text(source_text, anonymized_text)
+
     return JsonResponse({
         'source_id': source_id,
         'prompt_pk': prompt.pk,
@@ -604,6 +606,8 @@ def update_prompt_payload(request):
         'prompt_json': prompt_payload,
         'restore_json': restore_payload,
         'restore_map_items': list(restore_map.items()),
+        'compare_original_html': compare_original_html,
+        'compare_anonymized_html': compare_anonymized_html,
     })
 
 

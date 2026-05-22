@@ -794,6 +794,9 @@
     const restoreJsonArea = document.getElementById('restore-json');
     const statusArea = document.getElementById('edit-status');
     const labelItemsBody = document.getElementById('label-items-body');
+    const compareOutputs = Array.from(document.querySelectorAll('.compare-panel .diff-output'));
+    const compareOriginalOutput = compareOutputs[0] || null;
+    const compareAnonymizedOutput = compareOutputs[1] || null;
     const inputModeRadios = Array.from(document.querySelectorAll('input[name="input_mode"]'));
     const structuredPanel = document.getElementById('structured-input-panel');
     const structuredFieldsHost = document.getElementById('structured-input-fields');
@@ -1113,6 +1116,14 @@
       }
     }
 
+    function setComparePanelHtml(originalHtml, anonymizedHtml) {
+      if (!compareOriginalOutput || !compareAnonymizedOutput) {
+        return;
+      }
+      compareOriginalOutput.innerHTML = originalHtml || '';
+      compareAnonymizedOutput.innerHTML = anonymizedHtml || '';
+    }
+
     function nextAnimationFrame() {
       return new Promise((resolve) => {
         if (typeof requestAnimationFrame === 'function') {
@@ -1309,6 +1320,9 @@
       }
       if (restoreJsonArea) {
         restoreJsonArea.value = JSON.stringify(data.restore_json, null, 2);
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'compare_original_html') && Object.prototype.hasOwnProperty.call(data, 'compare_anonymized_html')) {
+        setComparePanelHtml(data.compare_original_html, data.compare_anonymized_html);
       }
       if (sourceIdField) {
         sourceIdField.value = data.source_id;

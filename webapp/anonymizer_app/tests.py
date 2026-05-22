@@ -193,6 +193,40 @@ class StructuredInputViewTests(TestCase):
         self.assertEqual(overview['value'], '会議名、開催日時、開催場所、参加者')
         self.assertEqual(agenda['value'], '議題A')
 
+    def test_update_prompt_payload_returns_refreshed_compare_html(self):
+        source_id = 'prompt_compare_1234'
+        RestoreMetadata.objects.create(
+            source_id=source_id,
+            template_type='委員会議事録',
+            restore_map={'患者A': '山田太郎'},
+            prompt_json={'metadata': {'input_mode': 'free'}},
+            owner=self.user,
+        )
+
+        response = self.client.post(
+            reverse('close_side:update_prompt_payload'),
+            data=json.dumps({
+                'source_id': source_id,
+                'template_type': '委員会議事録',
+                'input_mode': 'free',
+                'source_text': '山田太郎が来院した',
+                'structured_input': {},
+                'structured_input_labels': [],
+                'anonymized_text': '患者Aが来院した',
+                'restore_map': {'患者A': '山田太郎'},
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertIn('compare_original_html', payload)
+        self.assertIn('compare_anonymized_html', payload)
+        self.assertIn('class="anonymized-label changed"', payload['compare_original_html'])
+        self.assertIn('山田太郎', payload['compare_original_html'])
+        self.assertIn('class="anonymized-label changed"', payload['compare_anonymized_html'])
+        self.assertIn('患者A', payload['compare_anonymized_html'])
+
     def test_committee_overview_context_uses_default_text(self):
         from close_side.views import _structured_field_context
 
