@@ -108,6 +108,7 @@ def _list_dmz_files(dmz_dir: Path, user=None):
                 'source_id': metadata.get('source_id') or payload.get('id') or '',
                 'owner_username': metadata.get('owner_username') or '',
                 'template_type': payload.get('template_type') or metadata.get('template_type') or '',
+                'input_mode': metadata.get('input_mode') or '',
             })
     return files
 
@@ -240,6 +241,7 @@ def imported_prompt(request, filename):
     prompt_text = raw_text
     source_id = ''
     template_type = ''
+    input_mode = ''
 
     try:
         payload = json.loads(raw_text)
@@ -254,6 +256,7 @@ def imported_prompt(request, filename):
         )
         source_id = payload.get('metadata', {}).get('source_id') or payload.get('id') or ''
         template_type = payload.get('template_type') or payload.get('metadata', {}).get('template_type') or ''
+        input_mode = payload.get('metadata', {}).get('input_mode') or ''
     except json.JSONDecodeError:
         messages.warning(request, 'JSON として解析できなかったため、ファイル本文をそのまま表示します。')
 
@@ -264,6 +267,7 @@ def imported_prompt(request, filename):
         'raw_text': raw_text,
         'source_id': source_id,
         'template_type': template_type,
+        'input_mode': input_mode,
         'is_json': payload is not None,
         'result_form': ChatGPTResultForm(),
     })
@@ -341,6 +345,7 @@ def create_result(request, filename):
     result_text = form.cleaned_data['result_text']
     reviewer = form.cleaned_data.get('reviewer') or ''
     template_type = prompt_payload.get('template_type') or prompt_payload.get('metadata', {}).get('template_type') or ''
+    input_mode = prompt_payload.get('metadata', {}).get('input_mode') or 'free'
     result_payload = build_result_payload(source_id, result_text, reviewer)
     result_payload['template_type'] = template_type
     result_payload['metadata']['template_type'] = template_type
@@ -349,6 +354,7 @@ def create_result(request, filename):
     result_payload['metadata']['owner_username'] = prompt_payload.get('metadata', {}).get('owner_username') or ''
     result_payload['metadata']['returned_by'] = request.user.get_username()
     result_payload['metadata']['returned_at'] = datetime.datetime.now().isoformat()
+    result_payload['metadata']['input_mode'] = input_mode
 
     output_dir = _open_to_close_dir()
     output_dir.mkdir(parents=True, exist_ok=True)

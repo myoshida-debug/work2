@@ -10,10 +10,26 @@ TEMPLATE_CHOICES = [
     ('看護計画', '看護計画'),
 ]
 
+INPUT_MODE_CHOICES = [
+    ('structured', 'テンプレート項目入力'),
+    ('free', 'フリー入力'),
+]
+
 
 class AnonymizeForm(forms.Form):
     template = forms.ChoiceField(label='書類テンプレート')
-    text = forms.CharField(label='入力テキスト', widget=forms.Textarea(attrs={'rows': 8}), required=True)
+    input_mode = forms.ChoiceField(
+        label='入力方式',
+        choices=INPUT_MODE_CHOICES,
+        initial='free',
+        widget=forms.RadioSelect,
+    )
+    text = forms.CharField(
+        label='入力テキスト',
+        widget=forms.Textarea(attrs={'rows': 8}),
+        required=False,
+    )
+    structured_input = forms.JSONField(required=False, widget=forms.HiddenInput)
     reviewer = forms.CharField(label='レビュワー', required=False)
 
     def __init__(self, *args, **kwargs):

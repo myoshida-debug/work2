@@ -16,6 +16,7 @@
         <p><strong>ファイル:</strong> {{ filename }}</p>
         {% if source_id %}<p><strong>source_id:</strong> {{ source_id }}</p>{% endif %}
         {% if template_type %}<p><strong>文書種別:</strong> {{ template_type }}</p>{% endif %}
+        <p><strong>入力方式:</strong> {{ input_mode|default:"-" }}</p>
         <p><strong>保存先:</strong> {{ imported_path }}</p>
       </div>
     </div>

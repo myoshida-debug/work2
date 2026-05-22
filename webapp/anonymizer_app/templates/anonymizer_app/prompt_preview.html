@@ -6,6 +6,9 @@
 {% block page_subtitle %}<p class="page-subtitle">選択したプロンプトの内容を確認し、編集やDMZ送信を行います。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:prompts_list' %}">一覧へ戻る</a>
+  {% if prompt.source_input_data %}
+    <a class="button primary" href="{% url 'close_side:home' %}?reload_prompt_id={{ prompt.pk }}">再読み込み</a>
+  {% endif %}
   <a class="button" href="{% url 'close_side:prompt_edit' pk=prompt.pk %}">編集</a>
   <form class="inline-form" method="post" action="{% url 'close_side:prompt_send_to_dmz' pk=prompt.pk %}">
     {% csrf_token %}
@@ -30,6 +33,23 @@
         <dt>作成日時</dt><dd>{{ prompt.created_at }}</dd>
         <dt>更新日時</dt><dd>{{ prompt.updated_at }}</dd>
       </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">元データ</h3>
+    </div>
+    <div class="panel-body">
+      {% if prompt.source_input_data %}
+        <dl class="meta-list">
+          <dt>入力方式</dt><dd>{{ prompt.source_input_data.input_mode|default:"-" }}</dd>
+          <dt>文書種別</dt><dd>{{ prompt.source_input_data.template_type|default:"-" }}</dd>
+        </dl>
+        <pre>{{ prompt.source_input_data.text|default:"-" }}</pre>
+      {% else %}
+        <p class="empty">元データがありません。</p>
+      {% endif %}
     </div>
   </section>
 

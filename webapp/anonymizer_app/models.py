@@ -57,6 +57,7 @@ class Prompt(models.Model):
 
     name = models.CharField(max_length=255)
     content = models.TextField()
+    source_input_data = models.JSONField(blank=True, default=dict)
     source_id = models.CharField(max_length=255, blank=True, default='', db_index=True)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='draft')

@@ -51,6 +51,7 @@
                   <td>
                     <strong>{{ item.imported_filename|default:"-" }}</strong><br>
                     <span class="muted">source_id: {{ item.source_id|default:"-" }}</span>
+                    {% if item.input_mode %}<br><span class="muted">input_mode: {{ item.input_mode }}</span>{% endif %}
                   </td>
                   <td>
                     <strong>{{ item.template_type|default:"-" }}</strong><br>

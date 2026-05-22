@@ -22,6 +22,7 @@
               <tr>
                 <th>プロンプト名</th>
                 <th>source_id</th>
+                <th>元データ</th>
                 <th>状態</th>
                 <th>更新日時</th>
                 <th>操作</th>
@@ -32,10 +33,21 @@
                 <tr>
                   <td><strong>{{ p.name }}</strong></td>
                   <td>{{ p.source_id|default:"-" }}</td>
+                  <td>
+                    {% if p.source_input_data %}
+                      <strong>{{ p.source_input_data.input_mode|default:"-" }}</strong><br>
+                      <span class="muted">{{ p.source_input_data.text|default:"-"|truncatechars:70 }}</span>
+                    {% else %}
+                      <span class="muted">元データなし</span>
+                    {% endif %}
+                  </td>
                   <td>{{ p.get_status_display }}</td>
                   <td>{{ p.updated_at }}</td>
                   <td>
                     <a class="button" href="{% url 'close_side:prompt_preview' pk=p.pk %}">プレビュー</a>
+                    {% if p.source_input_data %}
+                      <a class="button primary" href="{% url 'close_side:home' %}?reload_prompt_id={{ p.pk }}">再読み込み</a>
+                    {% endif %}
                   </td>
                 </tr>
               {% endfor %}

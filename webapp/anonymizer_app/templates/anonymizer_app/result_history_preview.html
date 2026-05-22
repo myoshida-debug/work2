@@ -21,6 +21,7 @@
         <dt>取込日時</dt><dd>{{ selected_preview.created_at }}</dd>
         <dt>ファイル名</dt><dd>{{ selected_preview.imported_filename|default:"-" }}</dd>
         <dt>文書名</dt><dd>{{ selected_preview.template_type|default:"-" }}</dd>
+        <dt>入力方式</dt><dd>{{ selected_preview.input_mode|default:"-" }}</dd>
         <dt>状態</dt><dd>{{ selected_preview.status_label }}</dd>
         <dt>source_id</dt><dd>{{ selected_preview.source_id|default:"-" }}</dd>
         <dt>result_id</dt><dd>{{ selected_preview.result_id|default:"-" }}</dd>

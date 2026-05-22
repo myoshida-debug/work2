@@ -26,6 +26,16 @@ from anonymizer_app.history_utils import (
 from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
+from anonymizer_app.structured_input import (
+    build_source_input_data,
+    build_source_text_from_structured_input,
+    build_source_text_from_source_input_data,
+    build_structured_input_labels,
+    collect_structured_input,
+    normalize_source_input_data,
+    validate_structured_input,
+)
+from anonymizer_app.template_input_schemas import DEFAULT_TEMPLATE_INPUT_SCHEMA, TEMPLATE_INPUT_SCHEMAS, get_template_input_schema
 from anonymizer_app.prompt_template_store import (
     delete_template_source,
     get_template_source_by_filename,
@@ -90,6 +100,87 @@ def _make_prompt_source_id(template_name: str) -> str:
     return f'prompt_{_safe_token(template_name)}_{uuid.uuid4().hex[:8]}'
 
 
+def _selected_template_name(form: AnonymizeForm) -> str:
+    choices = [choice[0] for choice in form.fields.get('template').choices]
+    if form.is_bound:
+        candidate = str(form.data.get('template') or '').strip()
+        if candidate in choices:
+            return candidate
+    initial_template = str(form.initial.get('template') or '').strip()
+    if initial_template in choices:
+        return initial_template
+    return choices[0] if choices else ''
+
+
+def _selected_input_mode(form: AnonymizeForm) -> str:
+    valid_modes = [choice[0] for choice in form.fields.get('input_mode').choices]
+    if form.is_bound:
+        candidate = str(form.data.get('input_mode') or 'free').strip()
+        if candidate in valid_modes:
+            return candidate
+    initial_mode = str(form.initial.get('input_mode') or 'free').strip()
+    if initial_mode in valid_modes:
+        return initial_mode
+    return 'free'
+
+
+def _structured_field_context(
+    template_type: str,
+    structured_input: dict[str, str] | None = None,
+    errors: dict[str, str] | None = None,
+) -> list[dict[str, object]]:
+    structured_input = structured_input or {}
+    errors = errors or {}
+    fields = []
+    for field in get_template_input_schema(template_type):
+        key = str(field['key'])
+        if key in structured_input:
+            value = str(structured_input.get(key, '') or '')
+        else:
+            value = str(field.get('default', '') or '')
+        fields.append({
+            **field,
+            'value': value,
+            'error': errors.get(key, ''),
+        })
+    return fields
+
+
+def _anonymize_page_context(
+    form: AnonymizeForm,
+    *,
+    template_type: str,
+    input_mode: str,
+    source_text: str = '',
+    structured_input: dict[str, str] | None = None,
+    structured_field_errors: dict[str, str] | None = None,
+    structured_fields: list[dict[str, object]] | None = None,
+    text_items: list[dict[str, object]] | None = None,
+    restore_map: dict[str, str] | None = None,
+    prompt_json: str = '',
+    restore_json: str = '',
+    source_id: str = '',
+) -> dict[str, object]:
+    structured_fields = structured_fields or _structured_field_context(template_type, structured_input, structured_field_errors)
+    restore_map = restore_map or {}
+    return {
+        'form': form,
+        'template_type': template_type,
+        'input_mode': input_mode,
+        'source_text': source_text,
+        'structured_fields': structured_fields,
+        'structured_input': structured_input or {},
+        'structured_field_errors': structured_field_errors or {},
+        'text_items': text_items or [],
+        'restore_map': restore_map,
+        'restore_map_items': list(restore_map.items()),
+        'prompt_json': prompt_json,
+        'restore_json': restore_json,
+        'source_id': source_id,
+        'template_input_schemas': {**TEMPLATE_INPUT_SCHEMAS, '__default__': DEFAULT_TEMPLATE_INPUT_SCHEMA},
+    }
+
+
 def _metadata_for_user(source_id: str, user):
     return _owned_queryset(RestoreMetadata.objects.all(), user).filter(source_id=source_id).first()
 
@@ -99,6 +190,8 @@ def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
     restored_text = result_record.restored_text or ''
     has_result_text = bool(result_text.strip())
     has_restored_text = bool(restored_text.strip())
+    result_json = result_record.result_json if isinstance(result_record.result_json, dict) else {}
+    input_mode = result_json.get('metadata', {}).get('input_mode') or ''
 
     if has_result_text and has_restored_text:
         result_html, restored_html = highlight_changed_text(result_text, restored_text)
@@ -114,6 +207,7 @@ def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
         'status_label': result_record.get_status_display(),
         'status': result_record.status,
         'reviewer': result_record.reviewer or '',
+        'input_mode': input_mode,
         'created_at': result_record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         'updated_at': result_record.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
         'result_html': result_html,
@@ -250,66 +344,138 @@ def menu(request):
 
 
 def home(request):
-    if request.method == 'POST':
-        form = AnonymizeForm(request.POST)
-        if form.is_valid():
-            template_name = form.cleaned_data['template']
-            original_text = form.cleaned_data['text']
-            result = anonymize_text(original_text, template_name)
-            anonymized_text = result.text
-            restore_map = result.restore_map
-
-            source_id = _make_prompt_source_id(template_name)
-            payload = build_prompt_payload(template_name, {'text': anonymized_text}, source_id, title=template_name)
-            payload['metadata']['created_at'] = None
-            payload['metadata']['owner_user_id'] = request.user.id
-            payload['metadata']['owner_username'] = request.user.get_username()
-            payload['metadata']['template_name'] = template_name
-            restore_data = {
-                'source_id': source_id,
-                'restore_map': restore_map,
-            }
-            original_html, anonymized_html = highlight_changed_text(original_text, anonymized_text)
-            text_items = [{
-                'label': '入力テキスト',
-                'original': original_text,
-                'anonymized': anonymized_text,
-                'original_html': original_html,
-                'anonymized_html': anonymized_html,
-            }]
-
-            RestoreMetadata.objects.create(
-                source_id=source_id,
-                template_type=template_name,
-                restore_map=restore_map,
-                prompt_json=payload,
-                owner=request.user,
-                status='draft',
-            )
-            Prompt.objects.update_or_create(
-                source_id=source_id,
-                defaults={
-                    'name': f'{template_name} / {source_id}',
-                    'content': _prompt_text_from_payload(payload),
-                    'owner': request.user,
-                    'status': 'draft',
-                },
-            )
-            _log_operation(request, 'prompt_created', 'RestoreMetadata', source_id)
-
-            return render(request, 'anonymizer_app/index.html', {
-                'form': form,
-                'template_type': template_name,
-                'text_items': text_items,
-                'restore_map': restore_map,
-                'restore_map_items': list(restore_map.items()),
-                'prompt_json': json.dumps(payload, ensure_ascii=False, indent=2),
-                'restore_json': json.dumps(restore_data, ensure_ascii=False, indent=2),
-                'source_id': source_id,
+    if request.method == 'GET':
+        reload_prompt_id = str(request.GET.get('reload_prompt_id') or '').strip()
+        if reload_prompt_id:
+            prompt = get_object_or_404(_owned_queryset(Prompt.objects.all(), request.user), pk=reload_prompt_id)
+            source_input_data = normalize_source_input_data(prompt.source_input_data)
+            template_name = str(source_input_data.get('template_type') or '').strip()
+            input_mode = str(source_input_data.get('input_mode') or 'free').strip() or 'free'
+            structured_input = source_input_data.get('structured_input') or {}
+            if not isinstance(structured_input, dict):
+                structured_input = {}
+            source_text = build_source_text_from_source_input_data(prompt.source_input_data)
+            form = AnonymizeForm(initial={
+                'template': template_name,
+                'input_mode': input_mode,
+                'text': source_text,
             })
-    else:
-        form = AnonymizeForm()
-    return render(request, 'anonymizer_app/index.html', {'form': form})
+            return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                form,
+                template_type=template_name,
+                input_mode=input_mode,
+                source_text=source_text,
+                structured_input=structured_input if input_mode == 'structured' else {},
+                structured_fields=_structured_field_context(
+                    template_name,
+                    structured_input if input_mode == 'structured' else {},
+                ),
+            ))
+
+    form = AnonymizeForm(request.POST or None)
+    template_name = _selected_template_name(form)
+    input_mode = _selected_input_mode(form)
+    structured_input: dict[str, str] = {}
+    structured_field_errors: dict[str, str] = {}
+    source_text = ''
+
+    if request.method == 'POST' and form.is_valid():
+        template_name = form.cleaned_data['template']
+        input_mode = form.cleaned_data.get('input_mode') or 'free'
+
+        if input_mode == 'structured':
+            structured_input = collect_structured_input(request.POST)
+            structured_field_errors = validate_structured_input(template_name, structured_input)
+            source_text = build_source_text_from_structured_input(template_name, structured_input)
+            if structured_field_errors:
+                return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                    form,
+                    template_type=template_name,
+                    input_mode=input_mode,
+                    source_text=source_text,
+                    structured_input=structured_input,
+                    structured_field_errors=structured_field_errors,
+                ))
+        else:
+            source_text = (form.cleaned_data.get('text') or '').strip()
+            if not source_text:
+                form.add_error('text', '入力文章を入力してください。')
+                return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                    form,
+                    template_type=template_name,
+                    input_mode=input_mode,
+                    source_text=source_text,
+                ))
+
+        result = anonymize_text(source_text, template_name)
+        anonymized_text = result.text
+        restore_map = result.restore_map
+
+        source_id = _make_prompt_source_id(template_name)
+        payload = build_prompt_payload(template_name, {'text': anonymized_text}, source_id, title=template_name)
+        payload['metadata']['created_at'] = None
+        payload['metadata']['owner_user_id'] = request.user.id
+        payload['metadata']['owner_username'] = request.user.get_username()
+        payload['metadata']['template_name'] = template_name
+        payload['metadata']['input_mode'] = input_mode
+        if input_mode == 'structured':
+            payload['metadata']['structured_input_labels'] = build_structured_input_labels(template_name, structured_input)
+        source_input_data = build_source_input_data(template_name, input_mode, source_text, structured_input)
+        restore_data = {
+            'source_id': source_id,
+            'restore_map': restore_map,
+        }
+        original_html, anonymized_html = highlight_changed_text(source_text, anonymized_text)
+        text_items = [{
+            'label': '入力テキスト',
+            'original': source_text,
+            'anonymized': anonymized_text,
+            'original_html': original_html,
+            'anonymized_html': anonymized_html,
+        }]
+
+        RestoreMetadata.objects.create(
+            source_id=source_id,
+            template_type=template_name,
+            restore_map=restore_map,
+            prompt_json=payload,
+            owner=request.user,
+            status='draft',
+        )
+        Prompt.objects.update_or_create(
+            source_id=source_id,
+            defaults={
+                'name': f'{template_name} / {source_id}',
+                'content': _prompt_text_from_payload(payload),
+                'source_input_data': source_input_data,
+                'owner': request.user,
+                'status': 'draft',
+            },
+        )
+        _log_operation(request, 'prompt_created', 'RestoreMetadata', source_id)
+
+        return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+            form,
+            template_type=template_name,
+            input_mode=input_mode,
+            source_text=source_text,
+            structured_input=structured_input,
+            structured_field_errors=structured_field_errors,
+            text_items=text_items,
+            restore_map=restore_map,
+            prompt_json=json.dumps(payload, ensure_ascii=False, indent=2),
+            restore_json=json.dumps(restore_data, ensure_ascii=False, indent=2),
+            source_id=source_id,
+        ))
+
+    structured_fields = _structured_field_context(template_name)
+    return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+        form,
+        template_type=template_name,
+        input_mode=input_mode,
+        source_text=source_text,
+        structured_fields=structured_fields,
+    ))
 
 
 def download_prompt(request, source_id):
@@ -361,7 +527,23 @@ def update_prompt_payload(request):
 
     previous_restore_map = metadata.restore_map or {}
     previous_source_id = metadata.source_id
+    previous_prompt_metadata = (metadata.prompt_json or {}).get('metadata', {}) if isinstance(metadata.prompt_json, dict) else {}
     template_type = str(data.get('template_type') or metadata.template_type)
+    input_mode = str(data.get('input_mode') or previous_prompt_metadata.get('input_mode') or 'free')
+    source_text = str(data.get('source_text') or '').strip()
+    structured_input_data = data.get('structured_input')
+    if isinstance(structured_input_data, dict):
+        structured_input = {str(key): str(value or '').strip() for key, value in structured_input_data.items()}
+    else:
+        structured_input = {}
+    if input_mode == 'structured' and not source_text:
+        source_text = build_source_text_from_structured_input(template_type, structured_input)
+    source_input_data = build_source_input_data(template_type, input_mode, source_text, structured_input)
+    structured_input_labels = data.get('structured_input_labels')
+    if isinstance(structured_input_labels, list):
+        structured_input_labels = [str(label).strip() for label in structured_input_labels if str(label).strip()]
+    else:
+        structured_input_labels = []
     if template_type != metadata.template_type:
         source_id = _make_prompt_source_id(template_type)
 
@@ -370,6 +552,11 @@ def update_prompt_payload(request):
     prompt_payload['metadata']['owner_user_id'] = request.user.id
     prompt_payload['metadata']['owner_username'] = request.user.get_username()
     prompt_payload['metadata']['template_name'] = template_type
+    prompt_payload['metadata']['input_mode'] = input_mode
+    if structured_input_labels:
+        prompt_payload['metadata']['structured_input_labels'] = structured_input_labels
+    elif previous_prompt_metadata.get('structured_input_labels'):
+        prompt_payload['metadata']['structured_input_labels'] = previous_prompt_metadata.get('structured_input_labels')
     restore_payload = {
         'source_id': source_id,
         'restore_map': restore_map,
@@ -386,6 +573,7 @@ def update_prompt_payload(request):
         source_id=source_id,
         name=prompt_name,
         content=prompt_content,
+        source_input_data=source_input_data,
         updated_at=timezone.now(),
     )
     prompt = _owned_queryset(Prompt.objects.all(), request.user).filter(source_id=source_id).order_by('-updated_at').first()
@@ -394,6 +582,7 @@ def update_prompt_payload(request):
             source_id=source_id,
             name=prompt_name,
             content=prompt_content,
+            source_input_data=source_input_data,
             owner=request.user,
             status='draft',
         )
@@ -440,6 +629,7 @@ def dmz_export(request):
                 payload['metadata']['owner_username'] = metadata.owner.get_username() if metadata.owner else ''
                 payload['metadata']['sent_by'] = request.user.get_username()
                 payload['metadata']['sent_at'] = timezone.now().isoformat()
+                payload['metadata']['input_mode'] = payload['metadata'].get('input_mode') or (metadata.prompt_json or {}).get('metadata', {}).get('input_mode') or 'free'
 
                 dmz_dir.mkdir(parents=True, exist_ok=True)
                 filename = _prompt_json_filename(source_id)
@@ -590,6 +780,7 @@ def result_import(request):
     restored_text = restore_text(result_text_value, metadata.restore_map)
     template_type = result_payload.get('template_type') or metadata.template_type
     reviewer = result_payload.get('metadata', {}).get('reviewer') or ''
+    input_mode = result_payload.get('metadata', {}).get('input_mode') or ''
     result_record = RestoredResult.objects.create(
         source_id=source_id,
         result_id=result_payload.get('id') or '',
@@ -620,6 +811,7 @@ def result_import(request):
         'filename': filename,
         'source_id': source_id,
         'template_type': template_type,
+        'input_mode': input_mode,
         'result_text': result_text_value,
         'restored_text': restored_text,
         'result_html': result_html,
@@ -739,6 +931,7 @@ def prompt_send_to_dmz(request, pk):
     payload['metadata']['owner_username'] = owner.get_username()
     payload['metadata']['sent_by'] = request.user.get_username()
     payload['metadata']['sent_at'] = timezone.now().isoformat()
+    payload['metadata']['input_mode'] = payload['metadata'].get('input_mode') or (metadata.prompt_json or {}).get('metadata', {}).get('input_mode') or 'free'
     output_filename = _prompt_json_filename(source_id)
     output_path = dmz_dir / output_filename
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')

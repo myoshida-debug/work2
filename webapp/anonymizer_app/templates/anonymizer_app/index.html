@@ -140,9 +140,21 @@
 
     .workspace-form {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(380px, 0.82fr);
       gap: 20px;
       align-items: start;
+    }
+
+    .workspace-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .workspace-column {
+      display: grid;
+      gap: 20px;
+      min-width: 0;
     }
 
     .panel {
@@ -180,10 +192,85 @@
       gap: 20px;
     }
 
+    .input-mode-panel .panel-body {
+      display: grid;
+      gap: 14px;
+    }
+
+    .input-mode-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .input-mode-options label {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .input-mode-options input {
+      margin: 0;
+    }
+
+    .mode-actions {
+      justify-content: flex-start;
+    }
+
+    .structured-input-panel[hidden],
+    .editor-grid[hidden],
+    .free-input-panel[hidden] {
+      display: none;
+    }
+
+    .structured-fields {
+      display: grid;
+      gap: 16px;
+    }
+
+    .structured-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .structured-field-input {
+      min-height: 102px;
+    }
+
+    .required-mark {
+      margin-left: 8px;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .schema-note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
     .editor-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 20px;
+    }
+
+    .editor-grid.structured-mode {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .editor-grid.structured-mode .input-text {
+      display: none;
     }
 
     .editor-column {
@@ -370,10 +457,6 @@
       color: var(--danger);
     }
 
-    .compare-panel {
-      grid-column: 1 / -1;
-    }
-
     .diff-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -459,7 +542,7 @@
       }
 
       .header-inner,
-      .workspace-form,
+      .workspace-columns,
       .editor-grid,
       .diff-grid,
       .json-grid,
@@ -515,128 +598,181 @@
     </header>
 
     <div class="content">
-      {% if form.errors %}
+      {% if form.errors or structured_field_errors %}
         <div class="error-list">
           入力内容を確認してください。
           {{ form.non_field_errors }}
           {{ form.text.errors }}
           {{ form.template.errors }}
+          {{ form.input_mode.errors }}
+          {{ form.structured_input.errors }}
+          {% for field in structured_fields %}
+            {% if field.error %}
+              <div>{{ field.error }}</div>
+            {% endif %}
+          {% endfor %}
         </div>
       {% endif %}
 
       <form method="post" id="anonymize-form" class="workspace-form">
         {% csrf_token %}
+        {{ form.structured_input }}
 
-        <section class="panel input-panel" aria-labelledby="text-panel-title">
+        <section class="panel input-mode-panel" aria-labelledby="input-mode-panel-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="text-panel-title">文章編集</h2>
+            <h2 class="panel-title" id="input-mode-panel-title">入力方式</h2>
           </div>
           <div class="panel-body">
-            <div class="editor-grid">
-              <div class="editor-column input-text">
-                <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
-                {{ form.text }}
-                <div class="actions-row">
-                  <button class="plain-button" type="button" id="clear-text">クリア</button>
-                  <button class="plain-button primary-button" type="submit">匿名化</button>
-                </div>
-              </div>
-
-              <div class="editor-column">
-                <label class="field-label" for="anonymized-output">匿名化文章</label>
-                <textarea class="field-area anonymized-output" id="anonymized-output">{% if text_items %}{{ text_items.0.anonymized }}{% endif %}</textarea>
-                <div class="actions-row">
-                  <button class="plain-button amber-button" type="button" id="reanonymize-from-labels">再匿名化</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="template-row">
-              <div class="template-field">
-                <label class="field-label" for="{{ form.template.id_for_label }}">テンプレート</label>
-                {{ form.template }}
-              </div>
-              <button class="plain-button green-button" type="button" id="build-prompt-button">プロンプト作成</button>
+            <div class="input-mode-options">
+              {{ form.input_mode }}
             </div>
           </div>
         </section>
 
-        <section class="panel label-panel" aria-labelledby="label-panel-title">
-          <div class="panel-header">
-            <h2 class="panel-title" id="label-panel-title">匿名ラベル</h2>
-          </div>
-          <div class="panel-body">
-            <div class="label-table-wrap">
-              <table class="label-items">
-                <thead>
-                  <tr>
-                    <th>匿名前文字</th>
-                    <th>匿名後文字</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="label-items-body">
-                  {% for label, original in restore_map_items %}
-                    <tr class="label-row" data-current-label="{{ label }}">
-                      <td>
-                        <input class="label-edit-input original-value" type="text" value="{{ original }}" aria-label="匿名前文字">
-                      </td>
-                      <td>
-                        <input class="label-edit-input label-value" type="text" value="{{ label }}" aria-label="匿名後文字">
-                      </td>
-                      <td>
-                        <button class="label-action-button label-delete-button delete-label-row" type="button">削除</button>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            <div class="label-actions">
-              <button class="label-action-button" type="button" id="add-label-row">匿名ラベル追加</button>
-              <button class="label-action-button primary-button" type="button" id="apply-label-edits" {% if not restore_map_items %}disabled{% endif %}>ラベル反映</button>
-            </div>
-            <div class="edit-status" id="edit-status" aria-live="polite"></div>
-          </div>
-        </section>
-
-        {% if text_items %}
-          <section class="panel compare-panel" aria-labelledby="compare-panel-title">
-            <div class="panel-header">
-              <h2 class="panel-title" id="compare-panel-title">匿名化前後の変更箇所</h2>
-            </div>
-            <div class="panel-body">
-              <div class="diff-grid">
-                <div class="diff-document">
-                  <label class="field-label">匿名化前文書</label>
-                  <pre class="diff-output">{{ text_items.0.original_html|safe }}</pre>
+        <div class="workspace-columns">
+          <div class="workspace-column">
+            <section class="panel input-panel" aria-labelledby="text-panel-title">
+              <div class="panel-header">
+                <h2 class="panel-title" id="text-panel-title">文章編集</h2>
+              </div>
+              <div class="panel-body">
+                <div class="template-row">
+                  <div class="template-field">
+                    <label class="field-label" for="{{ form.template.id_for_label }}">テンプレート</label>
+                    {{ form.template }}
+                  </div>
+                  <button class="plain-button green-button" type="button" id="build-prompt-button">プロンプト作成</button>
                 </div>
-                <div class="diff-document">
-                  <label class="field-label">匿名化後文書</label>
-                  <pre class="diff-output">{{ text_items.0.anonymized_html|safe }}</pre>
+
+                <div class="actions-row mode-actions">
+                  <button class="plain-button" type="button" id="clear-input">クリア</button>
+                  <button class="plain-button primary-button" type="submit">匿名化する</button>
+                </div>
+
+                <div id="structured-input-panel" class="panel structured-input-panel" {% if input_mode != 'structured' %}hidden{% endif %}>
+                  <div class="panel-header">
+                    <h3 class="panel-title">テンプレート項目入力</h3>
+                  </div>
+                  <div class="panel-body">
+                    <div id="structured-input-fields" class="structured-fields">
+                      {% for field in structured_fields %}
+                        <div class="structured-field" data-field-key="{{ field.key }}">
+                          <label class="field-label" for="structured-{{ field.key }}">
+                            {{ field.label }}
+                            {% if field.required %}<span class="required-mark">必須</span>{% endif %}
+                          </label>
+                          <textarea
+                            class="field-area structured-field-input"
+                            id="structured-{{ field.key }}"
+                            name="structured__{{ field.key }}"
+                            data-structured-key="{{ field.key }}"
+                            rows="3"
+                          >{% if field.value %}{{ field.value }}{% endif %}</textarea>
+                          {% if field.error %}<div class="field-error">{{ field.error }}</div>{% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                    <p class="schema-note">文書種別に応じた項目を入力すると、本文を自動生成して匿名化します。</p>
+                  </div>
+                </div>
+
+                <div class="editor-grid {% if input_mode == 'structured' %}structured-mode{% endif %}" id="anonymize-grid">
+                  <div class="editor-column input-text free-input-panel" id="free-input-panel" {% if input_mode == 'structured' %}hidden{% endif %}>
+                    <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
+                    {{ form.text }}
+                  </div>
+
+                  <div class="editor-column">
+                    <label class="field-label" for="anonymized-output">匿名化文章</label>
+                    <textarea class="field-area anonymized-output" id="anonymized-output">{% if text_items %}{{ text_items.0.anonymized }}{% endif %}</textarea>
+                    <div class="actions-row">
+                      <button class="plain-button amber-button" type="button" id="reanonymize-from-labels">再匿名化</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
-        {% endif %}
+            </section>
 
-        <section class="panel json-panel" aria-labelledby="json-panel-title">
-          <div class="panel-header">
-            <h2 class="panel-title" id="json-panel-title">JSON</h2>
+            {% if text_items %}
+              <section class="panel compare-panel" aria-labelledby="compare-panel-title">
+                <div class="panel-header">
+                  <h2 class="panel-title" id="compare-panel-title">匿名化前後の変更箇所</h2>
+                </div>
+                <div class="panel-body">
+                  <div class="diff-grid">
+                    <div class="diff-document">
+                      <label class="field-label">匿名化前文書</label>
+                      <pre class="diff-output">{{ text_items.0.original_html|safe }}</pre>
+                    </div>
+                    <div class="diff-document">
+                      <label class="field-label">匿名化後文書</label>
+                      <pre class="diff-output">{{ text_items.0.anonymized_html|safe }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            {% endif %}
           </div>
-          <div class="panel-body">
-            <div class="json-grid">
-              <div>
-                <label class="field-label" for="prompt-json">作成JSON</label>
-                <textarea class="field-area prompt-json" id="prompt-json" readonly>{{ prompt_json|default_if_none:"" }}</textarea>
+
+          <div class="workspace-column">
+            <section class="panel label-panel" aria-labelledby="label-panel-title">
+              <div class="panel-header">
+                <h2 class="panel-title" id="label-panel-title">匿名ラベル</h2>
               </div>
-              <div>
-                <label class="field-label" for="restore-json">復元用JSON</label>
-                <textarea class="field-area restore-json" id="restore-json" readonly>{{ restore_json|default_if_none:"" }}</textarea>
+              <div class="panel-body">
+                <div class="label-table-wrap">
+                  <table class="label-items">
+                    <thead>
+                      <tr>
+                        <th>匿名前文字</th>
+                        <th>匿名後文字</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="label-items-body">
+                      {% for label, original in restore_map_items %}
+                        <tr class="label-row" data-current-label="{{ label }}">
+                          <td>
+                            <input class="label-edit-input original-value" type="text" value="{{ original }}" aria-label="匿名前文字">
+                          </td>
+                          <td>
+                            <input class="label-edit-input label-value" type="text" value="{{ label }}" aria-label="匿名後文字">
+                          </td>
+                          <td>
+                            <button class="label-action-button label-delete-button delete-label-row" type="button">削除</button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                <div class="label-actions">
+                  <button class="label-action-button" type="button" id="add-label-row">匿名ラベル追加</button>
+                  <button class="label-action-button primary-button" type="button" id="apply-label-edits" {% if not restore_map_items %}disabled{% endif %}>ラベル反映</button>
+                </div>
+                <div class="edit-status" id="edit-status" aria-live="polite"></div>
               </div>
-            </div>
+            </section>
+
+            <section class="panel json-panel" aria-labelledby="json-panel-title">
+              <div class="panel-header">
+                <h2 class="panel-title" id="json-panel-title">JSON</h2>
+              </div>
+              <div class="panel-body">
+                <div class="json-grid">
+                  <div>
+                    <label class="field-label" for="prompt-json">作成JSON</label>
+                    <textarea class="field-area prompt-json" id="prompt-json" readonly>{{ prompt_json|default_if_none:"" }}</textarea>
+                  </div>
+                  <div>
+                    <label class="field-label" for="restore-json">復元用JSON</label>
+                    <textarea class="field-area restore-json" id="restore-json" readonly>{{ restore_json|default_if_none:"" }}</textarea>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
       </form>
     </div>
 
@@ -647,6 +783,8 @@
     </form>
   </main>
 
+  {{ template_input_schemas|json_script:"template-input-schemas" }}
+
   <script>
     const anonymizeForm = document.getElementById('anonymize-form');
     const textArea = document.querySelector('textarea[name="text"]');
@@ -656,35 +794,23 @@
     const restoreJsonArea = document.getElementById('restore-json');
     const statusArea = document.getElementById('edit-status');
     const labelItemsBody = document.getElementById('label-items-body');
+    const inputModeRadios = Array.from(document.querySelectorAll('input[name="input_mode"]'));
+    const structuredPanel = document.getElementById('structured-input-panel');
+    const structuredFieldsHost = document.getElementById('structured-input-fields');
+    const freeInputPanel = document.getElementById('free-input-panel');
+    const inputGrid = document.getElementById('anonymize-grid');
+    const structuredInputHidden = document.querySelector('input[name="structured_input"]');
+    const templateInputSchemasScript = document.getElementById('template-input-schemas');
+    const templateInputSchemas = templateInputSchemasScript ? JSON.parse(templateInputSchemasScript.textContent || '{}') : {};
+    const clearButton = document.getElementById('clear-input');
+    const reanonymizeButton = document.getElementById('reanonymize-from-labels');
+    const anonymizedOutput = document.getElementById('anonymized-output');
+    let freeTextSnapshot = textArea ? textArea.value : '';
 
     if (textArea) {
       textArea.classList.add('field-area');
       textArea.removeAttribute('rows');
       textArea.removeAttribute('cols');
-    }
-
-    const clearButton = document.getElementById('clear-text');
-    if (clearButton && textArea) {
-      clearButton.addEventListener('click', () => {
-        textArea.value = '';
-        document.getElementById('anonymized-output').value = '';
-        textArea.focus();
-      });
-    }
-
-    const reanonymizeButton = document.getElementById('reanonymize-from-labels');
-    const anonymizedOutput = document.getElementById('anonymized-output');
-    if (reanonymizeButton && textArea && anonymizedOutput) {
-      reanonymizeButton.addEventListener('click', async () => {
-        try {
-          if (reanonymizeFromLabels()) {
-            await saveEditedPayload({ replaceLabels: false });
-          }
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message);
-        }
-      });
     }
 
     function getCsrfToken() {
@@ -698,6 +824,148 @@
       }
     }
 
+    function getSelectedInputMode() {
+      const selected = inputModeRadios.find((radio) => radio.checked);
+      return selected ? selected.value : 'free';
+    }
+
+    function getSchemaForTemplate(templateName) {
+      return templateInputSchemas[templateName] || templateInputSchemas.__default__ || [];
+    }
+
+    function setStructuredInputHiddenValue(values) {
+      if (!structuredInputHidden) {
+        return;
+      }
+      structuredInputHidden.value = JSON.stringify(values || {});
+    }
+
+    function collectStructuredFieldValues() {
+      const values = {};
+      if (!structuredFieldsHost) {
+        return values;
+      }
+      structuredFieldsHost.querySelectorAll('[data-structured-key]').forEach((field) => {
+        const key = field.dataset.structuredKey || field.name.replace(/^structured__/, '');
+        values[key] = field.value.trim();
+      });
+      return values;
+    }
+
+    function collectStructuredInputLabels() {
+      const labels = [];
+      const schema = getSchemaForTemplate(templateSelect ? templateSelect.value : '');
+      const values = collectStructuredFieldValues();
+      schema.forEach((field) => {
+        const value = (values[field.key] || '').trim();
+        if (value) {
+          labels.push(field.label || field.key);
+        }
+      });
+      return labels;
+    }
+
+    function buildStructuredSourceText(templateName, values) {
+      const blocks = [];
+      getSchemaForTemplate(templateName).forEach((field) => {
+        const value = (values[field.key] || '').trim();
+        if (!value) {
+          return;
+        }
+        blocks.push(`【${field.label}】\n${value}`);
+      });
+      return blocks.join('\n\n');
+    }
+
+    function syncStructuredSourceText() {
+      if (!textArea) {
+        return '';
+      }
+      const mode = getSelectedInputMode();
+      const values = collectStructuredFieldValues();
+      setStructuredInputHiddenValue(values);
+      if (mode !== 'structured') {
+        return textArea.value;
+      }
+      const sourceText = buildStructuredSourceText(templateSelect ? templateSelect.value : '', values);
+      textArea.value = sourceText;
+      return sourceText;
+    }
+
+    function renderStructuredFields(templateName, values = {}) {
+      if (!structuredFieldsHost) {
+        return;
+      }
+      const schema = getSchemaForTemplate(templateName);
+      structuredFieldsHost.innerHTML = '';
+
+      schema.forEach((field) => {
+        const fieldWrap = document.createElement('div');
+        fieldWrap.className = 'structured-field';
+        fieldWrap.dataset.fieldKey = field.key;
+
+        const label = document.createElement('label');
+        label.className = 'field-label';
+        label.htmlFor = `structured-${field.key}`;
+        label.append(document.createTextNode(field.label || field.key));
+        if (field.required) {
+          const requiredMark = document.createElement('span');
+          requiredMark.className = 'required-mark';
+          requiredMark.textContent = '必須';
+          label.appendChild(requiredMark);
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'field-area structured-field-input';
+        textarea.id = `structured-${field.key}`;
+        textarea.name = `structured__${field.key}`;
+        textarea.dataset.structuredKey = field.key;
+        textarea.rows = 3;
+        const hasValue = Object.prototype.hasOwnProperty.call(values, field.key);
+        textarea.value = hasValue ? (values[field.key] || '') : (field.default || '');
+
+        const error = document.createElement('div');
+        error.className = 'field-error';
+        error.textContent = '';
+
+        fieldWrap.appendChild(label);
+        fieldWrap.appendChild(textarea);
+        fieldWrap.appendChild(error);
+        structuredFieldsHost.appendChild(fieldWrap);
+      });
+
+      updateModeUI({ preserveFreeTextSnapshot: true });
+    }
+
+    function updateModeUI(options = {}) {
+      const { preserveFreeTextSnapshot = false } = options;
+      const mode = getSelectedInputMode();
+      const isStructured = mode === 'structured';
+
+      if (structuredPanel) {
+        structuredPanel.hidden = !isStructured;
+      }
+      if (freeInputPanel) {
+        freeInputPanel.hidden = isStructured;
+      }
+      if (inputGrid) {
+        inputGrid.classList.toggle('structured-mode', isStructured);
+      }
+      if (textArea) {
+        if (isStructured) {
+          if (!preserveFreeTextSnapshot) {
+            freeTextSnapshot = textArea.value;
+          }
+          textArea.readOnly = true;
+          syncStructuredSourceText();
+        } else {
+          textArea.readOnly = false;
+          textArea.value = freeTextSnapshot;
+          setStructuredInputHiddenValue(collectStructuredFieldValues());
+        }
+      }
+    }
+
     function markEdited() {
       if (sourceIdField && sourceIdField.value) {
         setStatus('未反映の編集があります');
@@ -705,11 +973,154 @@
       updateLabelActionState();
     }
 
+    function clearCurrentInput() {
+      const mode = getSelectedInputMode();
+      if (mode === 'structured') {
+        if (structuredFieldsHost) {
+          structuredFieldsHost.querySelectorAll('[data-structured-key]').forEach((field) => {
+            field.value = '';
+          });
+        }
+        syncStructuredSourceText();
+        setStatus('テンプレート項目入力をクリアしました');
+      } else {
+        freeTextSnapshot = '';
+        if (textArea) {
+          textArea.value = '';
+        }
+        setStructuredInputHiddenValue({});
+        setStatus('入力文章をクリアしました');
+      }
+
+      setAnonymizedOutputText('', { emitInputEvent: false });
+      if (mode === 'structured' && structuredFieldsHost) {
+        const firstField = structuredFieldsHost.querySelector('[data-structured-key]');
+        if (firstField) {
+          firstField.focus();
+          return;
+        }
+      }
+      if (textArea) {
+        textArea.focus();
+      }
+    }
+
     function replaceAllText(text, before, after) {
       if (!before || before === after) {
         return text;
       }
       return text.split(before).join(after);
+    }
+
+    function replaceNormalizedText(text, before, after) {
+      return replaceAllText(
+        normalizeFullWidthText(text),
+        normalizeFullWidthText(before),
+        normalizeFullWidthText(after),
+      );
+    }
+
+    function normalizeFullWidthText(text) {
+      if (!text) {
+        return text;
+      }
+
+      const replacements = {
+        '０': '0',
+        '１': '1',
+        '２': '2',
+        '３': '3',
+        '４': '4',
+        '５': '5',
+        '６': '6',
+        '７': '7',
+        '８': '8',
+        '９': '9',
+        'Ａ': 'A',
+        'Ｂ': 'B',
+        'Ｃ': 'C',
+        'Ｄ': 'D',
+        'Ｅ': 'E',
+        'Ｆ': 'F',
+        'Ｇ': 'G',
+        'Ｈ': 'H',
+        'Ｉ': 'I',
+        'Ｊ': 'J',
+        'Ｋ': 'K',
+        'Ｌ': 'L',
+        'Ｍ': 'M',
+        'Ｎ': 'N',
+        'Ｏ': 'O',
+        'Ｐ': 'P',
+        'Ｑ': 'Q',
+        'Ｒ': 'R',
+        'Ｓ': 'S',
+        'Ｔ': 'T',
+        'Ｕ': 'U',
+        'Ｖ': 'V',
+        'Ｗ': 'W',
+        'Ｘ': 'X',
+        'Ｙ': 'Y',
+        'Ｚ': 'Z',
+        'ａ': 'a',
+        'ｂ': 'b',
+        'ｃ': 'c',
+        'ｄ': 'd',
+        'ｅ': 'e',
+        'ｆ': 'f',
+        'ｇ': 'g',
+        'ｈ': 'h',
+        'ｉ': 'i',
+        'ｊ': 'j',
+        'ｋ': 'k',
+        'ｌ': 'l',
+        'ｍ': 'm',
+        'ｎ': 'n',
+        'ｏ': 'o',
+        'ｐ': 'p',
+        'ｑ': 'q',
+        'ｒ': 'r',
+        'ｓ': 's',
+        'ｔ': 't',
+        'ｕ': 'u',
+        'ｖ': 'v',
+        'ｗ': 'w',
+        'ｘ': 'x',
+        'ｙ': 'y',
+        'ｚ': 'z',
+        '：': ':',
+        '－': '-',
+        '，': ',',
+        '．': '.',
+        '（': '(',
+        '）': ')',
+      };
+
+      return text.replace(/[０-９Ａ-Ｚａ-ｚ：－，．（）]/g, (character) => replacements[character] || character);
+    }
+
+    function setAnonymizedOutputText(text, options = {}) {
+      if (!anonymizedOutput) {
+        return;
+      }
+      const { emitInputEvent = true } = options;
+      const nextText = text ?? '';
+      anonymizedOutput.value = nextText;
+      anonymizedOutput.defaultValue = nextText;
+      anonymizedOutput.textContent = nextText;
+      if (emitInputEvent) {
+        anonymizedOutput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    function nextAnimationFrame() {
+      return new Promise((resolve) => {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve());
+          return;
+        }
+        setTimeout(resolve, 0);
+      });
     }
 
     function collectLabelRows() {
@@ -806,6 +1217,9 @@
 
     function reanonymizeFromLabels() {
       if (!textArea || !anonymizedOutput) return false;
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
       const rows = collectLabelRows()
         .filter(({ original, label }) => original && label)
         .sort((a, b) => b.original.length - a.original.length);
@@ -817,10 +1231,11 @@
 
       let editedText = textArea.value;
       rows.forEach(({ row, original, label }) => {
-        editedText = replaceAllText(editedText, original, label);
+        editedText = replaceNormalizedText(editedText, original, label);
         row.dataset.currentLabel = label;
       });
-      anonymizedOutput.value = editedText;
+      editedText = normalizeFullWidthText(editedText);
+      setAnonymizedOutputText(editedText);
       setStatus('匿名ラベルに従って再匿名化しました');
       return true;
     }
@@ -828,20 +1243,27 @@
     function applyLabelChangesToText(rows) {
       if (!anonymizedOutput) return;
       let editedText = anonymizedOutput.value;
-      rows.forEach(({ row, oldLabel, label }) => {
+      const sortedRows = rows.slice().sort((a, b) => (b.oldLabel || '').length - (a.oldLabel || '').length);
+      sortedRows.forEach(({ row, oldLabel, label }) => {
         if (oldLabel && label && oldLabel !== label) {
-          editedText = replaceAllText(editedText, oldLabel, label);
+          editedText = replaceNormalizedText(editedText, oldLabel, label);
         }
         row.dataset.currentLabel = label;
       });
-      anonymizedOutput.value = editedText;
+      setAnonymizedOutputText(editedText);
     }
 
     async function saveEditedPayload({ replaceLabels = false } = {}) {
       const rows = collectLabelRows();
       if (replaceLabels) {
         applyLabelChangesToText(rows);
+        await nextAnimationFrame();
       }
+
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
+      setStructuredInputHiddenValue(collectStructuredFieldValues());
 
       const restoreMap = buildRestoreMap(rows);
       const sourceId = sourceIdField ? sourceIdField.value : '';
@@ -868,6 +1290,10 @@
         body: JSON.stringify({
           source_id: sourceId,
           template_type: templateSelect ? templateSelect.value : '',
+          input_mode: getSelectedInputMode(),
+          source_text: textArea ? textArea.value : '',
+          structured_input: getSelectedInputMode() === 'structured' ? collectStructuredFieldValues() : {},
+          structured_input_labels: getSelectedInputMode() === 'structured' ? collectStructuredInputLabels() : [],
           anonymized_text: anonymizedOutput ? anonymizedOutput.value : '',
           restore_map: restoreMap,
         }),
@@ -890,6 +1316,75 @@
       setStatus('反映しました');
       return data;
     }
+
+    if (structuredFieldsHost) {
+      structuredFieldsHost.addEventListener('input', () => {
+        setStructuredInputHiddenValue(collectStructuredFieldValues());
+        if (getSelectedInputMode() === 'structured') {
+          syncStructuredSourceText();
+        }
+        markEdited();
+      });
+    }
+
+    if (templateSelect) {
+      templateSelect.addEventListener('change', () => {
+        const currentValues = collectStructuredFieldValues();
+        renderStructuredFields(templateSelect.value, currentValues);
+        if (getSelectedInputMode() === 'structured') {
+          syncStructuredSourceText();
+        }
+        markEdited();
+      });
+    }
+
+    inputModeRadios.forEach((radio) => {
+      radio.addEventListener('change', () => {
+        updateModeUI();
+        markEdited();
+      });
+    });
+
+    if (textArea) {
+      textArea.addEventListener('input', () => {
+        if (getSelectedInputMode() === 'free') {
+          freeTextSnapshot = textArea.value;
+        }
+        markEdited();
+      });
+    }
+
+    if (clearButton) {
+      clearButton.addEventListener('click', () => {
+        clearCurrentInput();
+      });
+    }
+
+    if (reanonymizeButton && textArea && anonymizedOutput) {
+      reanonymizeButton.addEventListener('click', async () => {
+        try {
+          if (reanonymizeFromLabels()) {
+            await nextAnimationFrame();
+            await saveEditedPayload({ replaceLabels: false });
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    if (anonymizeForm) {
+      anonymizeForm.addEventListener('submit', () => {
+        if (getSelectedInputMode() === 'structured') {
+          syncStructuredSourceText();
+        }
+        setStructuredInputHiddenValue(collectStructuredFieldValues());
+      });
+    }
+
+    updateModeUI();
+    setStructuredInputHiddenValue(collectStructuredFieldValues());
 
     const addLabelButton = document.getElementById('add-label-row');
     if (addLabelButton) {

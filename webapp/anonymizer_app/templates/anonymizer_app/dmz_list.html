@@ -24,6 +24,7 @@
               <th>source_id</th>
               <th>作成者</th>
               <th>文書種別</th>
+              <th>入力方式</th>
               <th>サイズ</th>
               <th>更新日時</th>
               <th>操作</th>
@@ -36,6 +37,7 @@
                 <td>{{ file.source_id|default:"-" }}</td>
                 <td>{{ file.owner_username|default:"-" }}</td>
                 <td>{{ file.template_type|default:"-" }}</td>
+                <td>{{ file.input_mode|default:"-" }}</td>
                 <td>{{ file.size }}</td>
                 <td>{{ file.modified }}</td>
                 <td>
