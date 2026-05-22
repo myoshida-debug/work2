@@ -58,6 +58,7 @@ def build_source_input_data(
     input_mode: str,
     source_text: str,
     structured_input: dict[str, str] | None = None,
+    transcript_source: str = '',
 ) -> dict[str, object]:
     normalized_input_mode = str(input_mode or 'free').strip() or 'free'
     normalized_text = str(source_text or '').strip()
@@ -66,12 +67,16 @@ def build_source_input_data(
         for key, value in structured_input.items():
             normalized_structured_input[str(key)] = str(value or '').strip()
 
-    return {
+    payload = {
         'template_type': str(template_type or '').strip(),
         'input_mode': normalized_input_mode,
         'text': normalized_text,
         'structured_input': normalized_structured_input,
     }
+    normalized_transcript_source = str(transcript_source or '').strip()
+    if normalized_transcript_source:
+        payload['transcript_source'] = normalized_transcript_source
+    return payload
 
 
 def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
@@ -81,6 +86,7 @@ def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
             'input_mode': 'free',
             'text': '',
             'structured_input': {},
+            'transcript_source': '',
         }
 
     structured_input_data = source_input_data.get('structured_input') or {}
@@ -94,6 +100,7 @@ def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
         'input_mode': str(source_input_data.get('input_mode') or 'free').strip() or 'free',
         'text': str(source_input_data.get('text') or '').strip(),
         'structured_input': structured_input,
+        'transcript_source': str(source_input_data.get('transcript_source') or '').strip(),
     }
 
 

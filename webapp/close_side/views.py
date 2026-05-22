@@ -355,10 +355,13 @@ def home(request):
             if not isinstance(structured_input, dict):
                 structured_input = {}
             source_text = build_source_text_from_source_input_data(prompt.source_input_data)
+            transcript_source = str(source_input_data.get('transcript_source') or 'manual_input').strip() or 'manual_input'
             form = AnonymizeForm(initial={
                 'template': template_name,
                 'input_mode': input_mode,
-                'text': source_text,
+                'text': source_text if input_mode != 'voice' else '',
+                'transcript_text': source_text if input_mode == 'voice' else '',
+                'transcript_source': transcript_source if input_mode == 'voice' else 'manual_input',
             })
             return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
                 form,
@@ -382,6 +385,7 @@ def home(request):
     if request.method == 'POST' and form.is_valid():
         template_name = form.cleaned_data['template']
         input_mode = form.cleaned_data.get('input_mode') or 'free'
+        transcript_source = 'manual_input'
 
         if input_mode == 'structured':
             structured_input = collect_structured_input(request.POST)
@@ -395,6 +399,17 @@ def home(request):
                     source_text=source_text,
                     structured_input=structured_input,
                     structured_field_errors=structured_field_errors,
+                ))
+        elif input_mode == 'voice':
+            source_text = (form.cleaned_data.get('transcript_text') or '').strip()
+            transcript_source = str(form.cleaned_data.get('transcript_source') or 'manual_input').strip() or 'manual_input'
+            if not source_text:
+                form.add_error('transcript_text', '文字起こし結果が空です。録音または入力してください。')
+                return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                    form,
+                    template_type=template_name,
+                    input_mode=input_mode,
+                    source_text=source_text,
                 ))
         else:
             source_text = (form.cleaned_data.get('text') or '').strip()
@@ -420,7 +435,15 @@ def home(request):
         payload['metadata']['input_mode'] = input_mode
         if input_mode == 'structured':
             payload['metadata']['structured_input_labels'] = build_structured_input_labels(template_name, structured_input)
-        source_input_data = build_source_input_data(template_name, input_mode, source_text, structured_input)
+        if input_mode == 'voice':
+            payload['metadata']['transcript_source'] = transcript_source
+        source_input_data = build_source_input_data(
+            template_name,
+            input_mode,
+            source_text,
+            structured_input,
+            transcript_source=transcript_source if input_mode == 'voice' else '',
+        )
         restore_data = {
             'source_id': source_id,
             'restore_map': restore_map,
@@ -531,6 +554,8 @@ def update_prompt_payload(request):
     template_type = str(data.get('template_type') or metadata.template_type)
     input_mode = str(data.get('input_mode') or previous_prompt_metadata.get('input_mode') or 'free')
     source_text = str(data.get('source_text') or '').strip()
+    if input_mode == 'voice' and not source_text:
+        return JsonResponse({'error': '文字起こし結果が空です。録音または入力してください。'}, status=400)
     structured_input_data = data.get('structured_input')
     if isinstance(structured_input_data, dict):
         structured_input = {str(key): str(value or '').strip() for key, value in structured_input_data.items()}
@@ -544,8 +569,20 @@ def update_prompt_payload(request):
         structured_input_labels = [str(label).strip() for label in structured_input_labels if str(label).strip()]
     else:
         structured_input_labels = []
+    transcript_source = str(
+        data.get('transcript_source')
+        or previous_prompt_metadata.get('transcript_source')
+        or 'manual_input'
+    ).strip() or 'manual_input'
     if template_type != metadata.template_type:
         source_id = _make_prompt_source_id(template_type)
+    source_input_data = build_source_input_data(
+        template_type,
+        input_mode,
+        source_text,
+        structured_input,
+        transcript_source=transcript_source if input_mode == 'voice' else '',
+    )
 
     prompt_payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id, title=template_type)
     prompt_payload['metadata']['created_at'] = None
@@ -557,6 +594,8 @@ def update_prompt_payload(request):
         prompt_payload['metadata']['structured_input_labels'] = structured_input_labels
     elif previous_prompt_metadata.get('structured_input_labels'):
         prompt_payload['metadata']['structured_input_labels'] = previous_prompt_metadata.get('structured_input_labels')
+    if input_mode == 'voice':
+        prompt_payload['metadata']['transcript_source'] = transcript_source
     restore_payload = {
         'source_id': source_id,
         'restore_map': restore_map,

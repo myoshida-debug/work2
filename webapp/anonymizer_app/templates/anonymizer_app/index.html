@@ -222,6 +222,7 @@
 
     .structured-input-panel[hidden],
     .editor-grid[hidden],
+    .voice-input-panel[hidden],
     .free-input-panel[hidden] {
       display: none;
     }
@@ -259,6 +260,33 @@
       font-size: 13px;
     }
 
+    .voice-controls {
+      display: grid;
+      gap: 14px;
+    }
+
+    .voice-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .voice-preview audio {
+      width: 100%;
+    }
+
+    .voice-transcript .field-area {
+      min-height: 220px;
+    }
+
+    .voice-status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .editor-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -269,7 +297,12 @@
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .editor-grid.structured-mode .input-text {
+    .editor-grid.voice-mode {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .editor-grid.structured-mode .input-text,
+    .editor-grid.voice-mode .input-text {
       display: none;
     }
 
@@ -603,6 +636,7 @@
           入力内容を確認してください。
           {{ form.non_field_errors }}
           {{ form.text.errors }}
+          {{ form.transcript_text.errors }}
           {{ form.template.errors }}
           {{ form.input_mode.errors }}
           {{ form.structured_input.errors }}
@@ -617,6 +651,7 @@
       <form method="post" id="anonymize-form" class="workspace-form">
         {% csrf_token %}
         {{ form.structured_input }}
+        {{ form.transcript_source }}
 
         <section class="panel input-mode-panel" aria-labelledby="input-mode-panel-title">
           <div class="panel-header">
@@ -676,8 +711,37 @@
                   </div>
                 </div>
 
-                <div class="editor-grid {% if input_mode == 'structured' %}structured-mode{% endif %}" id="anonymize-grid">
-                  <div class="editor-column input-text free-input-panel" id="free-input-panel" {% if input_mode == 'structured' %}hidden{% endif %}>
+                <div id="voice-input-panel" class="panel voice-input-panel" {% if input_mode != 'voice' %}hidden{% endif %}>
+                  <div class="panel-header">
+                    <h3 class="panel-title">録音・文字起こし入力</h3>
+                  </div>
+                  <div class="panel-body">
+                    <div class="voice-controls">
+                      <div class="voice-toolbar">
+                        <button class="plain-button primary-button" type="button" id="voice-record-start">録音開始</button>
+                        <button class="plain-button" type="button" id="voice-record-stop" disabled>録音停止</button>
+                        <button class="plain-button" type="button" id="voice-transcribe">文字起こし実行</button>
+                      </div>
+                      <div class="voice-upload">
+                        <label class="field-label" for="voice-audio-file">音声ファイルアップロード</label>
+                        <input id="voice-audio-file" type="file" accept="audio/*">
+                      </div>
+                      <div class="voice-preview">
+                        <label class="field-label" for="voice-audio-preview">録音再生プレビュー</label>
+                        <audio id="voice-audio-preview" controls hidden preload="none"></audio>
+                      </div>
+                      <div class="voice-transcript">
+                        <label class="field-label" for="{{ form.transcript_text.id_for_label }}">文字起こし結果</label>
+                        {{ form.transcript_text }}
+                      </div>
+                      <p class="schema-note">この文字起こし結果を匿名化前文章として使用します。</p>
+                      <div class="voice-status" id="voice-status" aria-live="polite"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="editor-grid {% if input_mode == 'structured' %}structured-mode{% elif input_mode == 'voice' %}voice-mode{% endif %}" id="anonymize-grid">
+                  <div class="editor-column input-text free-input-panel" id="free-input-panel" {% if input_mode != 'free' %}hidden{% endif %}>
                     <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
                     {{ form.text }}
                   </div>
@@ -799,16 +863,30 @@
     const compareAnonymizedOutput = compareOutputs[1] || null;
     const inputModeRadios = Array.from(document.querySelectorAll('input[name="input_mode"]'));
     const structuredPanel = document.getElementById('structured-input-panel');
+    const voicePanel = document.getElementById('voice-input-panel');
     const structuredFieldsHost = document.getElementById('structured-input-fields');
     const freeInputPanel = document.getElementById('free-input-panel');
     const inputGrid = document.getElementById('anonymize-grid');
     const structuredInputHidden = document.querySelector('input[name="structured_input"]');
+    const transcriptTextArea = document.querySelector('textarea[name="transcript_text"]');
+    const transcriptSourceField = document.querySelector('input[name="transcript_source"]');
     const templateInputSchemasScript = document.getElementById('template-input-schemas');
     const templateInputSchemas = templateInputSchemasScript ? JSON.parse(templateInputSchemasScript.textContent || '{}') : {};
     const clearButton = document.getElementById('clear-input');
     const reanonymizeButton = document.getElementById('reanonymize-from-labels');
     const anonymizedOutput = document.getElementById('anonymized-output');
+    const voiceRecordStartButton = document.getElementById('voice-record-start');
+    const voiceRecordStopButton = document.getElementById('voice-record-stop');
+    const voiceTranscribeButton = document.getElementById('voice-transcribe');
+    const voiceAudioFileInput = document.getElementById('voice-audio-file');
+    const voiceAudioPreview = document.getElementById('voice-audio-preview');
+    const voiceStatusArea = document.getElementById('voice-status');
     let freeTextSnapshot = textArea ? textArea.value : '';
+    let voiceRecordingStream = null;
+    let voiceRecorder = null;
+    let voiceRecordedChunks = [];
+    let voicePreviewObjectUrl = '';
+    let voiceResetPending = false;
 
     if (textArea) {
       textArea.classList.add('field-area');
@@ -944,15 +1022,20 @@
       const { preserveFreeTextSnapshot = false } = options;
       const mode = getSelectedInputMode();
       const isStructured = mode === 'structured';
+      const isVoice = mode === 'voice';
 
       if (structuredPanel) {
         structuredPanel.hidden = !isStructured;
       }
       if (freeInputPanel) {
-        freeInputPanel.hidden = isStructured;
+        freeInputPanel.hidden = isStructured || isVoice;
+      }
+      if (voicePanel) {
+        voicePanel.hidden = !isVoice;
       }
       if (inputGrid) {
         inputGrid.classList.toggle('structured-mode', isStructured);
+        inputGrid.classList.toggle('voice-mode', isVoice);
       }
       if (textArea) {
         if (isStructured) {
@@ -961,11 +1044,21 @@
           }
           textArea.readOnly = true;
           syncStructuredSourceText();
+        } else if (isVoice) {
+          textArea.readOnly = false;
         } else {
           textArea.readOnly = false;
           textArea.value = freeTextSnapshot;
           setStructuredInputHiddenValue(collectStructuredFieldValues());
         }
+      }
+      if (isVoice) {
+        if (!hasVoiceRecordingSupport()) {
+          setVoiceStatus('このブラウザでは録音機能を利用できません');
+        }
+        updateVoiceRecordingControls(Boolean(voiceRecorder && voiceRecorder.state === 'recording'));
+      } else if (voiceRecorder && voiceRecorder.state === 'recording') {
+        stopVoiceRecording();
       }
     }
 
@@ -986,6 +1079,17 @@
         }
         syncStructuredSourceText();
         setStatus('テンプレート項目入力をクリアしました');
+      } else if (mode === 'voice') {
+        if (voiceRecorder && voiceRecorder.state === 'recording') {
+          voiceResetPending = true;
+          stopVoiceRecording();
+        }
+        if (transcriptTextArea) {
+          transcriptTextArea.value = '';
+        }
+        clearVoiceInputs();
+        setVoiceStatus('録音音声と文字起こし結果をクリアしました');
+        setStatus('録音・文字起こし入力をクリアしました');
       } else {
         freeTextSnapshot = '';
         if (textArea) {
@@ -1124,6 +1228,142 @@
       compareAnonymizedOutput.innerHTML = anonymizedHtml || '';
     }
 
+    function setVoiceStatus(message) {
+      if (voiceStatusArea) {
+        voiceStatusArea.textContent = message;
+      }
+    }
+
+    function setTranscriptSource(source) {
+      if (transcriptSourceField) {
+        transcriptSourceField.value = source || 'manual_input';
+      }
+    }
+
+    function hasVoiceRecordingSupport() {
+      return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+    }
+
+    function updateVoiceRecordingControls(isRecording) {
+      if (voiceRecordStartButton) {
+        voiceRecordStartButton.disabled = isRecording || !hasVoiceRecordingSupport();
+      }
+      if (voiceRecordStopButton) {
+        voiceRecordStopButton.disabled = !isRecording;
+      }
+    }
+
+    function revokeVoicePreviewUrl() {
+      if (voicePreviewObjectUrl) {
+        URL.revokeObjectURL(voicePreviewObjectUrl);
+        voicePreviewObjectUrl = '';
+      }
+    }
+
+    function setVoicePreviewSource(url) {
+      if (!voiceAudioPreview) {
+        return;
+      }
+      revokeVoicePreviewUrl();
+      if (!url) {
+        voiceAudioPreview.removeAttribute('src');
+        voiceAudioPreview.hidden = true;
+        voiceAudioPreview.load();
+        return;
+      }
+      voicePreviewObjectUrl = url;
+      voiceAudioPreview.src = url;
+      voiceAudioPreview.hidden = false;
+      voiceAudioPreview.load();
+    }
+
+    function clearVoiceInputs() {
+      setVoicePreviewSource('');
+      if (voiceAudioFileInput) {
+        voiceAudioFileInput.value = '';
+      }
+      setTranscriptSource('manual_input');
+      updateVoiceRecordingControls(false);
+    }
+
+    function getCurrentSourceText() {
+      const mode = getSelectedInputMode();
+      if (mode === 'voice') {
+        return transcriptTextArea ? transcriptTextArea.value.trim() : '';
+      }
+      if (mode === 'structured') {
+        return syncStructuredSourceText();
+      }
+      return textArea ? textArea.value : '';
+    }
+
+    async function startVoiceRecording() {
+      if (!hasVoiceRecordingSupport()) {
+        setVoiceStatus('このブラウザでは録音機能を利用できません');
+        updateVoiceRecordingControls(false);
+        return;
+      }
+
+      try {
+        if (voiceRecordingStream) {
+          voiceRecordingStream.getTracks().forEach((track) => track.stop());
+        }
+        voiceRecordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceRecordedChunks = [];
+        voiceResetPending = false;
+        voiceRecorder = new MediaRecorder(voiceRecordingStream);
+        voiceRecorder.addEventListener('dataavailable', (event) => {
+          if (event.data && event.data.size > 0) {
+            voiceRecordedChunks.push(event.data);
+          }
+        });
+        voiceRecorder.addEventListener('stop', () => {
+          if (voiceResetPending) {
+            voiceResetPending = false;
+            if (voiceRecordingStream) {
+              voiceRecordingStream.getTracks().forEach((track) => track.stop());
+              voiceRecordingStream = null;
+            }
+            voiceRecorder = null;
+            voiceRecordedChunks = [];
+            clearVoiceInputs();
+            if (transcriptTextArea) {
+              transcriptTextArea.value = '';
+            }
+            setVoiceStatus('録音音声と文字起こし結果をクリアしました');
+            return;
+          }
+          const mimeType = voiceRecorder && voiceRecorder.mimeType ? voiceRecorder.mimeType : 'audio/webm';
+          const blob = new Blob(voiceRecordedChunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          setVoicePreviewSource(url);
+          setTranscriptSource('browser_recording');
+          setVoiceStatus('録音を停止しました。文字起こし結果を入力してください。');
+          if (voiceRecordingStream) {
+            voiceRecordingStream.getTracks().forEach((track) => track.stop());
+            voiceRecordingStream = null;
+          }
+          voiceRecorder = null;
+          voiceRecordedChunks = [];
+          updateVoiceRecordingControls(false);
+        });
+        voiceRecorder.start();
+        setTranscriptSource('browser_recording');
+        setVoiceStatus('録音中です');
+        updateVoiceRecordingControls(true);
+      } catch (error) {
+        console.error(error);
+        setVoiceStatus('録音の開始に失敗しました');
+        updateVoiceRecordingControls(false);
+      }
+    }
+
+    function stopVoiceRecording() {
+      if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+        voiceRecorder.stop();
+      }
+    }
+
     function nextAnimationFrame() {
       return new Promise((resolve) => {
         if (typeof requestAnimationFrame === 'function') {
@@ -1231,6 +1471,7 @@
       if (getSelectedInputMode() === 'structured') {
         syncStructuredSourceText();
       }
+      const sourceText = getCurrentSourceText();
       const rows = collectLabelRows()
         .filter(({ original, label }) => original && label)
         .sort((a, b) => b.original.length - a.original.length);
@@ -1239,8 +1480,12 @@
         setStatus('匿名ラベルを追加してください');
         return false;
       }
+      if (!sourceText) {
+        setStatus(getSelectedInputMode() === 'voice' ? '文字起こし結果を入力してください' : '入力文章を入力してください');
+        return false;
+      }
 
-      let editedText = textArea.value;
+      let editedText = sourceText;
       rows.forEach(({ row, original, label }) => {
         editedText = replaceNormalizedText(editedText, original, label);
         row.dataset.currentLabel = label;
@@ -1302,9 +1547,10 @@
           source_id: sourceId,
           template_type: templateSelect ? templateSelect.value : '',
           input_mode: getSelectedInputMode(),
-          source_text: textArea ? textArea.value : '',
+          source_text: getCurrentSourceText(),
           structured_input: getSelectedInputMode() === 'structured' ? collectStructuredFieldValues() : {},
           structured_input_labels: getSelectedInputMode() === 'structured' ? collectStructuredInputLabels() : [],
+          transcript_source: getSelectedInputMode() === 'voice' ? (transcriptSourceField ? transcriptSourceField.value : 'manual_input') : '',
           anonymized_text: anonymizedOutput ? anonymizedOutput.value : '',
           restore_map: restoreMap,
         }),
@@ -1368,6 +1614,12 @@
       });
     }
 
+    if (transcriptTextArea) {
+      transcriptTextArea.addEventListener('input', () => {
+        markEdited();
+      });
+    }
+
     if (clearButton) {
       clearButton.addEventListener('click', () => {
         clearCurrentInput();
@@ -1388,6 +1640,44 @@
       });
     }
 
+    if (voiceRecordStartButton) {
+      voiceRecordStartButton.addEventListener('click', async () => {
+        await startVoiceRecording();
+      });
+    }
+
+    if (voiceRecordStopButton) {
+      voiceRecordStopButton.addEventListener('click', () => {
+        stopVoiceRecording();
+      });
+    }
+
+    if (voiceAudioFileInput) {
+      voiceAudioFileInput.addEventListener('change', () => {
+        const file = voiceAudioFileInput.files && voiceAudioFileInput.files[0] ? voiceAudioFileInput.files[0] : null;
+        if (!file) {
+          setVoicePreviewSource('');
+          setVoiceStatus('');
+          setTranscriptSource('manual_input');
+          markEdited();
+          return;
+        }
+        setVoicePreviewSource(URL.createObjectURL(file));
+        setTranscriptSource('uploaded_audio');
+        setVoiceStatus(`選択した音声ファイルをプレビューしています: ${file.name}`);
+        markEdited();
+      });
+    }
+
+    if (voiceTranscribeButton) {
+      voiceTranscribeButton.addEventListener('click', () => {
+        if (transcriptTextArea) {
+          transcriptTextArea.focus();
+        }
+        setVoiceStatus('音声を確認して、文字起こし結果を入力してください。');
+      });
+    }
+
     if (anonymizeForm) {
       anonymizeForm.addEventListener('submit', () => {
         if (getSelectedInputMode() === 'structured') {
@@ -1399,6 +1689,10 @@
 
     updateModeUI();
     setStructuredInputHiddenValue(collectStructuredFieldValues());
+    updateVoiceRecordingControls(false);
+    if (getSelectedInputMode() === 'voice' && !hasVoiceRecordingSupport()) {
+      setVoiceStatus('このブラウザでは録音機能を利用できません');
+    }
 
     const addLabelButton = document.getElementById('add-label-row');
     if (addLabelButton) {

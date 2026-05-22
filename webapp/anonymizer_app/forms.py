@@ -13,6 +13,7 @@ TEMPLATE_CHOICES = [
 INPUT_MODE_CHOICES = [
     ('structured', 'テンプレート項目入力'),
     ('free', 'フリー入力'),
+    ('voice', '録音・文字起こし入力'),
 ]
 
 
@@ -29,6 +30,12 @@ class AnonymizeForm(forms.Form):
         widget=forms.Textarea(attrs={'rows': 8}),
         required=False,
     )
+    transcript_text = forms.CharField(
+        label='文字起こし結果',
+        widget=forms.Textarea(attrs={'rows': 8}),
+        required=False,
+    )
+    transcript_source = forms.CharField(required=False, widget=forms.HiddenInput, initial='manual_input')
     structured_input = forms.JSONField(required=False, widget=forms.HiddenInput)
     reviewer = forms.CharField(label='レビュワー', required=False)
 
