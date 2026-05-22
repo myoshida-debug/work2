@@ -44,6 +44,12 @@ from anonymizer_app.prompt_template_store import (
     sync_templates_to_db,
     write_template_source,
 )
+from close_side.transcription import (
+    TranscriptionConfigurationError,
+    TranscriptionRequestError,
+    TranscriptionServiceError,
+    transcribe_audio_file,
+)
 
 
 def _is_admin(user) -> bool:
@@ -88,6 +94,44 @@ def _prompt_text_from_payload(payload: dict) -> str:
         or payload.get('content', {}).get('text')
         or json.dumps(payload, ensure_ascii=False, indent=2)
     )
+
+
+_LOCAL_ONLY_PROMPT_JSON_KEYS = {
+    'audio_data',
+    'audio_file',
+    'audio_file_name',
+    'audio_filename',
+    'audio_name',
+    'audio_blob',
+    'original_text',
+    'raw_text',
+    'source_input_data',
+    'source_text',
+    'transcript_text',
+    'transcript_source',
+    'voice_audio',
+    'voice_file',
+    'voice_file_name',
+}
+_LOCAL_ONLY_PROMPT_JSON_PREFIXES = (
+    'audio_',
+    'voice_',
+)
+
+
+def _sanitize_prompt_payload_for_dmz(value):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, child in value.items():
+            key_name = str(key)
+            key_lower = key_name.lower()
+            if key_lower in _LOCAL_ONLY_PROMPT_JSON_KEYS or any(key_lower.startswith(prefix) for prefix in _LOCAL_ONLY_PROMPT_JSON_PREFIXES):
+                continue
+            sanitized[key] = _sanitize_prompt_payload_for_dmz(child)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_prompt_payload_for_dmz(item) for item in value]
+    return value
 
 
 def _safe_token(value: str) -> str:
@@ -435,8 +479,6 @@ def home(request):
         payload['metadata']['input_mode'] = input_mode
         if input_mode == 'structured':
             payload['metadata']['structured_input_labels'] = build_structured_input_labels(template_name, structured_input)
-        if input_mode == 'voice':
-            payload['metadata']['transcript_source'] = transcript_source
         source_input_data = build_source_input_data(
             template_name,
             input_mode,
@@ -444,6 +486,7 @@ def home(request):
             structured_input,
             transcript_source=transcript_source if input_mode == 'voice' else '',
         )
+        payload = _sanitize_prompt_payload_for_dmz(payload)
         restore_data = {
             'source_id': source_id,
             'restore_map': restore_map,
@@ -503,8 +546,9 @@ def home(request):
 
 def download_prompt(request, source_id):
     metadata = get_object_or_404(_owned_queryset(RestoreMetadata.objects.all(), request.user), source_id=source_id)
+    prompt_payload = _sanitize_prompt_payload_for_dmz(metadata.prompt_json or {})
     response = HttpResponse(
-        json.dumps(metadata.prompt_json, ensure_ascii=False, indent=2),
+        json.dumps(prompt_payload, ensure_ascii=False, indent=2),
         content_type='application/json',
     )
     response['Content-Disposition'] = f'attachment; filename="{metadata.source_id}.json"'
@@ -563,7 +607,6 @@ def update_prompt_payload(request):
         structured_input = {}
     if input_mode == 'structured' and not source_text:
         source_text = build_source_text_from_structured_input(template_type, structured_input)
-    source_input_data = build_source_input_data(template_type, input_mode, source_text, structured_input)
     structured_input_labels = data.get('structured_input_labels')
     if isinstance(structured_input_labels, list):
         structured_input_labels = [str(label).strip() for label in structured_input_labels if str(label).strip()]
@@ -594,8 +637,7 @@ def update_prompt_payload(request):
         prompt_payload['metadata']['structured_input_labels'] = structured_input_labels
     elif previous_prompt_metadata.get('structured_input_labels'):
         prompt_payload['metadata']['structured_input_labels'] = previous_prompt_metadata.get('structured_input_labels')
-    if input_mode == 'voice':
-        prompt_payload['metadata']['transcript_source'] = transcript_source
+    prompt_payload = _sanitize_prompt_payload_for_dmz(prompt_payload)
     restore_payload = {
         'source_id': source_id,
         'restore_map': restore_map,
@@ -665,7 +707,7 @@ def dmz_export(request):
                     messages.error(request, f'source_id {source_id} が見つかりません')
                     return render(request, 'anonymizer_app/dmz_export.html', {'form': form, 'saved': saved})
 
-                payload = metadata.prompt_json or {}
+                payload = _sanitize_prompt_payload_for_dmz(metadata.prompt_json or {})
                 payload.setdefault('metadata', {})
                 payload['metadata']['source_id'] = metadata.source_id
                 payload['metadata']['owner_user_id'] = metadata.owner_id
@@ -865,6 +907,31 @@ def result_import(request):
 
 
 @require_http_methods(["POST"])
+def transcribe_audio(request):
+    audio_file = request.FILES.get('audio_file') or request.FILES.get('file')
+    if audio_file is None:
+        return JsonResponse({'error': '音声ファイルが必要です。'}, status=400)
+
+    template_type = str(request.POST.get('template_type') or '').strip()
+    transcript_source = str(request.POST.get('transcript_source') or '').strip() or 'uploaded_audio'
+
+    try:
+        transcription = transcribe_audio_file(audio_file, template_type=template_type)
+    except TranscriptionConfigurationError as e:
+        return JsonResponse({'error': str(e)}, status=503)
+    except TranscriptionRequestError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except TranscriptionServiceError as e:
+        return JsonResponse({'error': str(e)}, status=502)
+
+    return JsonResponse({
+        'text': transcription['text'],
+        'model': transcription['model'],
+        'transcript_source': transcript_source,
+    })
+
+
+@require_http_methods(["POST"])
 def result_delete(request, pk):
     result = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
     target_id = result.result_id or result.source_id or str(result.pk)
@@ -968,6 +1035,7 @@ def prompt_send_to_dmz(request, pk):
     dmz_dir.mkdir(parents=True, exist_ok=True)
     payload = metadata.prompt_json or build_prompt_payload(metadata.template_type, {'text': prompt.content}, source_id)
     owner = metadata.owner or prompt.owner or request.user
+    payload = _sanitize_prompt_payload_for_dmz(payload)
     payload.setdefault('metadata', {})
     payload['metadata']['source_id'] = source_id
     payload['metadata']['owner_user_id'] = owner.id

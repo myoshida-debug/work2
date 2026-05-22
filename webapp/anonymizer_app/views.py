@@ -17,6 +17,7 @@ from .prompt_template_store import (
     sync_templates_to_db,
     write_template_source,
 )
+from close_side.views import _sanitize_prompt_payload_for_dmz
 import os
 from django.contrib import messages
 from pathlib import Path
@@ -65,6 +66,7 @@ def home(request):
             source_id = f'prompt_{template_type.replace(" ", "_")}_{uuid.uuid4().hex[:8]}'
             payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id)
             payload['metadata']['created_at'] = None
+            payload = _sanitize_prompt_payload_for_dmz(payload)
             prompt_json = payload
             restore_data = {
                 'source_id': source_id,
@@ -103,7 +105,7 @@ def home(request):
 
 def download_prompt(request, source_id):
     metadata = get_object_or_404(RestoreMetadata, source_id=source_id)
-    payload = metadata.prompt_json
+    payload = _sanitize_prompt_payload_for_dmz(metadata.prompt_json or {})
     response = HttpResponse(json.dumps(payload, ensure_ascii=False, indent=2), content_type='application/json')
     response['Content-Disposition'] = f'attachment; filename="{metadata.source_id}.json"'
     return response
@@ -212,7 +214,7 @@ def dmz_export(request):
                     if not metadata:
                         messages.error(request, f'source_id {source_id} が見つかりません')
                         return render(request, 'anonymizer_app/dmz_export.html', {'form': form})
-                    payload = metadata.prompt_json
+                    payload = _sanitize_prompt_payload_for_dmz(metadata.prompt_json or {})
                     content = json.dumps(payload, ensure_ascii=False, indent=2)
                 else:
                     messages.error(request, 'source_id を指定してください')

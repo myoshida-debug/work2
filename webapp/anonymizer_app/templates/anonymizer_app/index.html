@@ -878,6 +878,7 @@
     const voiceRecordStartButton = document.getElementById('voice-record-start');
     const voiceRecordStopButton = document.getElementById('voice-record-stop');
     const voiceTranscribeButton = document.getElementById('voice-transcribe');
+    const voiceTranscribeButtonLabel = voiceTranscribeButton ? voiceTranscribeButton.textContent : '文字起こし実行';
     const voiceAudioFileInput = document.getElementById('voice-audio-file');
     const voiceAudioPreview = document.getElementById('voice-audio-preview');
     const voiceStatusArea = document.getElementById('voice-status');
@@ -885,6 +886,7 @@
     let voiceRecordingStream = null;
     let voiceRecorder = null;
     let voiceRecordedChunks = [];
+    let voiceRecordedBlob = null;
     let voicePreviewObjectUrl = '';
     let voiceResetPending = false;
 
@@ -1282,8 +1284,55 @@
       if (voiceAudioFileInput) {
         voiceAudioFileInput.value = '';
       }
+      voiceRecordedBlob = null;
       setTranscriptSource('manual_input');
       updateVoiceRecordingControls(false);
+    }
+
+    function setVoiceTranscribeBusy(isBusy) {
+      if (voiceTranscribeButton) {
+        voiceTranscribeButton.disabled = Boolean(isBusy);
+        voiceTranscribeButton.textContent = isBusy ? '文字起こし中...' : voiceTranscribeButtonLabel;
+      }
+    }
+
+    function getVoiceTranscribeSource() {
+      if (voiceRecorder && voiceRecorder.state === 'recording') {
+        setVoiceStatus('録音中は文字起こしできません。先に録音を停止してください。');
+        return null;
+      }
+
+      const uploadedFile = voiceAudioFileInput && voiceAudioFileInput.files && voiceAudioFileInput.files[0]
+        ? voiceAudioFileInput.files[0]
+        : null;
+      if (uploadedFile) {
+        return {
+          file: uploadedFile,
+          transcriptSource: 'uploaded_audio',
+          label: uploadedFile.name || '音声ファイル',
+        };
+      }
+
+      if (voiceRecordedBlob) {
+        const mimeType = voiceRecordedBlob.type || 'audio/webm';
+        const extension = mimeType.includes('/') ? mimeType.split('/')[1] : 'webm';
+        return {
+          file: voiceRecordedBlob,
+          transcriptSource: 'browser_recording',
+          label: '録音音声',
+          fileType: mimeType,
+          extension: extension || 'webm',
+        };
+      }
+
+      return null;
+    }
+
+    function buildLocalAudioFilename(source) {
+      const mimeType = (source && source.file && source.file.type) ? source.file.type : (source && source.fileType) ? source.fileType : 'audio/webm';
+      const extension = mimeType.includes('/') ? mimeType.split('/')[1] : 'webm';
+      const prefix = source && source.transcriptSource === 'uploaded_audio' ? 'uploaded_audio' : 'recording';
+      return `${prefix}.${extension || 'webm'}`.replace(/[^A-Za-z0-9._-]/g, '_');
     }
 
     function getCurrentSourceText() {
@@ -1335,6 +1384,7 @@
           }
           const mimeType = voiceRecorder && voiceRecorder.mimeType ? voiceRecorder.mimeType : 'audio/webm';
           const blob = new Blob(voiceRecordedChunks, { type: mimeType });
+          voiceRecordedBlob = blob;
           const url = URL.createObjectURL(blob);
           setVoicePreviewSource(url);
           setTranscriptSource('browser_recording');
@@ -1670,11 +1720,51 @@
     }
 
     if (voiceTranscribeButton) {
-      voiceTranscribeButton.addEventListener('click', () => {
-        if (transcriptTextArea) {
-          transcriptTextArea.focus();
+      voiceTranscribeButton.addEventListener('click', async () => {
+        const source = getVoiceTranscribeSource();
+        if (!source || !transcriptTextArea) {
+          if (!source) {
+            setVoiceStatus('文字起こしする音声ファイルを選択するか、録音してください。');
+          }
+          return;
         }
-        setVoiceStatus('音声を確認して、文字起こし結果を入力してください。');
+
+        setVoiceTranscribeBusy(true);
+        setVoiceStatus(`ローカルWhisperで文字起こし中です: ${source.label}`);
+        try {
+          const formData = new FormData();
+          formData.append('audio_file', source.file, buildLocalAudioFilename(source));
+          formData.append('template_type', templateSelect ? templateSelect.value : '');
+          formData.append('transcript_source', source.transcriptSource);
+
+          const response = await fetch('{% url "close_side:transcribe_audio" %}', {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: formData,
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || '文字起こしに失敗しました');
+          }
+          const transcriptText = (data.text || '').trim();
+          if (!transcriptText) {
+            throw new Error('文字起こし結果が空でした');
+          }
+
+          transcriptTextArea.value = transcriptText;
+          setTranscriptSource(data.transcript_source || source.transcriptSource);
+          transcriptTextArea.dispatchEvent(new Event('input', { bubbles: true }));
+          setVoiceStatus(`ローカルWhisperで文字起こしが完了しました: ${source.label}`);
+          setStatus('文字起こし結果を反映しました');
+          transcriptTextArea.focus();
+        } catch (error) {
+          console.error(error);
+          setVoiceStatus(error.message || '文字起こしに失敗しました');
+        } finally {
+          setVoiceTranscribeBusy(false);
+        }
       });
     }
 

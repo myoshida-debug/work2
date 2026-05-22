@@ -26,6 +26,7 @@ urlpatterns = [
     path('dmz/results/', close_login_required(views.result_import_list), name='result_import_list'),
     path('dmz/results/import/', close_login_required(views.result_import), name='result_import'),
     path('dmz/results/<int:pk>/delete/', close_login_required(views.result_delete), name='result_delete'),
+    path('api/transcribe/', close_login_required(views.transcribe_audio), name='transcribe_audio'),
     path('api/update-payload/', close_login_required(views.update_prompt_payload), name='update_prompt_payload'),
     path('download/prompt/<str:source_id>/', close_login_required(views.download_prompt), name='download_prompt'),
     path('download/restore/<str:source_id>/', close_login_required(views.download_restore), name='download_restore'),

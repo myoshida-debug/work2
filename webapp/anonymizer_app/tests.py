@@ -180,7 +180,7 @@ class StructuredInputViewTests(TestCase):
         payload = metadata.prompt_json
 
         self.assertEqual(payload['metadata']['input_mode'], 'voice')
-        self.assertEqual(payload['metadata']['transcript_source'], 'browser_recording')
+        self.assertNotIn('transcript_source', payload['metadata'])
         self.assertEqual(payload['content']['text'], '匿名化済み本文')
         self.assertEqual(prompt.source_input_data['input_mode'], 'voice')
         self.assertEqual(prompt.source_input_data['text'], '患者は安静を保っている')
