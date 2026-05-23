@@ -28,6 +28,14 @@ class TemplateSource:
 
 TEMPLATE_SPECS = [
     TemplateSpec('admission.txt', '入院時サマリー', '入院時サマリー（詳細版）'),
+    TemplateSpec('psychiatric_admission.txt', '精神科入院時サマリー', '精神科入院時サマリー'),
+    TemplateSpec('psychiatric_discharge_doctor.txt', '精神科退院時サマリー（医師用）', '精神科退院時サマリー（医師用）'),
+    TemplateSpec('nursing_admission_summary.txt', '看護入院時サマリー', '看護入院時サマリー'),
+    TemplateSpec('nursing_midterm_summary.txt', '看護中間サマリー', '看護中間サマリー'),
+    TemplateSpec('nursing_discharge_summary.txt', '看護退院時サマリー', '看護退院時サマリー'),
+    TemplateSpec('ot_evaluation_summary.txt', 'OT評価サマリー', 'OT評価サマリー'),
+    TemplateSpec('psw_discharge_support_summary.txt', 'PSW退院支援サマリー', 'PSW退院支援サマリー'),
+    TemplateSpec('psychiatric_home_nursing_summary.txt', '精神科訪問看護サマリー', '精神科訪問看護サマリー'),
     TemplateSpec('discharge.txt', '退院時サマリー', '退院時サマリー'),
     TemplateSpec('midterm.txt', '中間サマリー', '中間サマリー'),
     TemplateSpec('incident.txt', 'インシデントレポート', 'インシデントレポート（様式1-3）'),

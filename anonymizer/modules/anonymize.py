@@ -280,6 +280,7 @@ def _template_file_candidates(template_type: str) -> list[str]:
     by_name = {
         '入院時サマリー': 'admission.txt',
         '入院時サマリー（詳細版）': 'admission.txt',
+        '精神科入院時サマリー': 'psychiatric_admission.txt',
         '退院時サマリー': 'discharge.txt',
         '中間サマリー': 'midterm.txt',
         'インシデントレポート': 'incident.txt',

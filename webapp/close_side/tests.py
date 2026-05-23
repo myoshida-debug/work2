@@ -17,6 +17,7 @@ from anonymizer_app.models import (
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
     TemplateInputDefault,
+    TemplateInputField,
 )
 from anonymizer_app.template_input_schemas import get_template_input_schema
 
@@ -330,6 +331,179 @@ class TemplateInputDefaultEditTests(TestCase):
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateInputFieldEditTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+
+    def test_template_input_fields_edit_add_row_returns_re_rendered_page_without_saving(self):
+        schema = get_template_input_schema('委員会議事録')
+        post_data = {
+            'deleted_field_keys': '',
+            'editor_action': 'add_row',
+        }
+        for index, field in enumerate(schema):
+            field_key = str(field['key'])
+            post_data[f'field__{field_key}__field_key'] = field_key
+            post_data[f'field__{field_key}__record_id'] = ''
+            post_data[f'field__{field_key}__source_kind'] = 'builtin'
+            post_data[f'field__{field_key}__label'] = str(field['label'])
+            post_data[f'field__{field_key}__input_type'] = str(field.get('input_type') or 'textarea')
+            post_data[f'field__{field_key}__section_title'] = str(field.get('section_title') or '')
+            post_data[f'field__{field_key}__textarea_rows'] = str(field.get('textarea_rows') or 3)
+            post_data[f'field__{field_key}__required'] = '1' if field.get('required') else '0'
+            post_data[f'field__{field_key}__allow_other'] = '1' if field.get('allow_other') else '0'
+            post_data[f'field__{field_key}__other_label'] = str(field.get('other_label') or 'その他')
+            post_data[f'field__{field_key}__other_placeholder'] = str(field.get('other_placeholder') or '自由入力')
+            post_data[f'field__{field_key}__help_text'] = str(field.get('help_text') or '')
+            post_data[f'field__{field_key}__position'] = str((index + 1) * 10)
+
+        response = self.client.post(
+            reverse('close_side:template_input_fields_edit', args=['委員会議事録']),
+            post_data,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('field_rows', response.context)
+        self.assertEqual(response.context['newly_added_row_key'], 'new_0')
+        self.assertEqual(len(response.context['field_rows']), len(schema) + 1)
+        self.assertTrue(response.context['field_rows'][-1]['row_key'].startswith('new_'))
+        self.assertEqual(response.context['field_rows'][-1]['source_kind'], 'new')
+        self.assertEqual(response.context['field_rows'][-1]['label'], '')
+        self.assertContains(response, 'is-newly-added')
+        self.assertContains(response, 'autofocus')
+
+    def test_template_input_fields_edit_updates_order_required_other_and_delete(self):
+        schema = get_template_input_schema('委員会議事録')
+        post_data = {
+            'deleted_field_keys': 'decisions',
+        }
+        for index, field in enumerate(schema):
+            field_key = str(field['key'])
+            if field_key == 'decisions':
+                continue
+            post_data[f'field__{field_key}__field_key'] = field_key
+            post_data[f'field__{field_key}__record_id'] = ''
+            post_data[f'field__{field_key}__source_kind'] = 'builtin'
+            post_data[f'field__{field_key}__label'] = '開催情報' if field_key == 'overview' else str(field['label'])
+            post_data[f'field__{field_key}__input_type'] = 'textarea'
+            post_data[f'field__{field_key}__section_title'] = '基本情報' if field_key == 'overview' else ''
+            post_data[f'field__{field_key}__textarea_rows'] = '8' if field_key == 'overview' else '3'
+            post_data[f'field__{field_key}__required'] = '1' if field_key == 'overview' else '0'
+            post_data[f'field__{field_key}__allow_other'] = '0'
+            post_data[f'field__{field_key}__other_label'] = 'その他'
+            post_data[f'field__{field_key}__other_placeholder'] = '自由入力'
+            post_data[f'field__{field_key}__help_text'] = ''
+            post_data[f'field__{field_key}__position'] = str((index + 1) * 10)
+
+        post_data.update({
+            'field__new_0__field_key': '',
+            'field__new_0__record_id': '',
+            'field__new_0__source_kind': 'new',
+            'field__new_0__label': '自由メモ',
+            'field__new_0__input_type': 'checkbox_group',
+            'field__new_0__section_title': '補足',
+            'field__new_0__textarea_rows': '4',
+            'field__new_0__required': '1',
+            'field__new_0__allow_other': '1',
+            'field__new_0__other_label': 'その他',
+            'field__new_0__other_placeholder': '自由入力',
+            'field__new_0__help_text': '',
+            'field__new_0__position': '0',
+        })
+
+        response = self.client.post(
+            reverse('close_side:template_input_fields_edit', args=['委員会議事録']),
+            post_data,
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        schema_after = get_template_input_schema('委員会議事録')
+        custom_field = next(field for field in schema_after if field['label'] == '自由メモ')
+        overview = next(field for field in schema_after if field['key'] == 'overview')
+
+        self.assertEqual(custom_field['input_type'], 'checkbox_group')
+        self.assertTrue(custom_field['required'])
+        self.assertTrue(custom_field['allow_other'])
+        self.assertEqual(custom_field['textarea_rows'], 4)
+        self.assertEqual(overview['label'], '開催情報')
+        self.assertEqual(overview['sort_order'], 10)
+        self.assertEqual(overview['textarea_rows'], 8)
+        self.assertNotIn('decisions', [field['key'] for field in schema_after])
+
+        overview_row = TemplateInputField.objects.get(template_type='委員会議事録', field_key='overview')
+        decisions_row = TemplateInputField.objects.get(template_type='委員会議事録', field_key='decisions')
+        custom_row = TemplateInputField.objects.get(template_type='委員会議事録', field_key=custom_field['key'])
+
+        self.assertTrue(overview_row.is_active)
+        self.assertEqual(overview_row.label, '開催情報')
+        self.assertEqual(overview_row.sort_order, 10)
+        self.assertEqual(overview_row.textarea_rows, 8)
+        self.assertFalse(decisions_row.is_active)
+        self.assertTrue(custom_row.is_active)
+        self.assertEqual(custom_row.input_type, 'checkbox_group')
+        self.assertTrue(custom_row.allow_other)
+        self.assertEqual(custom_row.textarea_rows, 4)
+
+    def test_template_input_fields_edit_renders_reorder_and_toggle_controls(self):
+        response = self.client.get(reverse('close_side:template_input_fields_edit', args=['委員会議事録']))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-add-field-row')
+        self.assertContains(response, 'value="date"')
+        self.assertContains(response, 'data-toggle-required')
+        self.assertContains(response, 'data-toggle-other')
+        self.assertContains(response, 'data-drag-handle')
+        self.assertContains(response, '一番上')
+        self.assertContains(response, 'その他')
+        self.assertContains(response, 'data-role="field-textarea-rows"')
+        self.assertContains(response, '大きさ（行数）')
+
+    def test_home_renders_date_fields_with_calendar_input(self):
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': 'OT評価サマリー',
+                'input_mode': 'structured',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertContains(response, 'type="date"')
+        self.assertContains(response, 'data-input-type="date"')
+        self.assertContains(response, 'class="field-area structured-field-input structured-date-input"')
+        self.assertContains(response, '.structured-date-input {')
+        self.assertContains(response, 'width: 12rem;')
+        self.assertContains(response, 'justify-self: start;')
+        self.assertLess(content.index('.field-area {'), content.index('.field-area.structured-date-input {'))
+        evaluation_date = next(field for field in response.context['structured_fields'] if field['key'] == 'evaluation_date')
+        self.assertEqual(evaluation_date['input_type'], 'date')
+
+    def test_home_renders_checkbox_groups_without_main_textarea(self):
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': '入院時サマリー',
+                'input_mode': 'structured',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        start = content.index('data-field-key="treatment_plan"')
+        next_field = content.find('data-field-key="', start + 1)
+        snippet = content[start: next_field if next_field != -1 else len(content)]
+        self.assertIn('type="checkbox"', snippet)
+        self.assertIn('data-structured-other-input="true"', snippet)
+        self.assertNotIn('data-structured-text-input="true"', snippet)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class TemplateCheckboxOptionsEditTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -378,6 +552,47 @@ class TemplateCheckboxOptionsEditTests(TestCase):
             ['安静(更新)', '薬剤調整'],
         )
 
+    def test_template_checkbox_options_edit_reorders_options_by_position(self):
+        group = TemplateInputCheckboxGroup.objects.get(
+            template_type='入院時サマリー',
+            field_key='treatment_plan',
+        )
+        group.options.all().delete()
+        first_option = TemplateInputCheckboxOption.objects.create(
+            group=group,
+            text='安静',
+            sort_order=0,
+        )
+        second_option = TemplateInputCheckboxOption.objects.create(
+            group=group,
+            text='輸液',
+            sort_order=10,
+        )
+        third_option = TemplateInputCheckboxOption.objects.create(
+            group=group,
+            text='薬剤調整',
+            sort_order=20,
+        )
+
+        response = self.client.post(
+            reverse('close_side:template_checkbox_options_edit', args=['入院時サマリー']),
+            {
+                f'checkbox__treatment_plan__opt_{first_option.pk}__id': str(first_option.pk),
+                f'checkbox__treatment_plan__opt_{first_option.pk}__text': '安静',
+                f'checkbox__treatment_plan__opt_{first_option.pk}__position': '20',
+                f'checkbox__treatment_plan__opt_{second_option.pk}__id': str(second_option.pk),
+                f'checkbox__treatment_plan__opt_{second_option.pk}__text': '輸液',
+                f'checkbox__treatment_plan__opt_{second_option.pk}__position': '0',
+                f'checkbox__treatment_plan__opt_{third_option.pk}__id': str(third_option.pk),
+                f'checkbox__treatment_plan__opt_{third_option.pk}__text': '薬剤調整',
+                f'checkbox__treatment_plan__opt_{third_option.pk}__position': '10',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        options = list(TemplateInputCheckboxOption.objects.filter(group=group).order_by('sort_order', 'id'))
+        self.assertEqual([option.text for option in options], ['輸液', '薬剤調整', '安静'])
+
     def test_template_checkbox_options_edit_supports_text_fields(self):
         response = self.client.post(
             reverse('close_side:template_checkbox_options_edit', args=['委員会議事録']),
@@ -396,3 +611,15 @@ class TemplateCheckboxOptionsEditTests(TestCase):
             [option['value'] for option in agenda.get('options') or []],
             ['検討事項'],
         )
+
+    def test_template_checkbox_options_edit_renders_reorder_controls(self):
+        response = self.client.get(reverse('close_side:template_checkbox_options_edit', args=['入院時サマリー']))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('data-add-option-row', content)
+        self.assertIn('data-drag-handle', content)
+        self.assertIn('data-move-row="top"', content)
+        self.assertIn('data-move-row="bottom"', content)
+        self.assertIn('const nextPosition = Number(', content)
+        self.assertIn('is-newly-added', content)

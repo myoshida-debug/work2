@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template
+from .models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputField
 
 
 @admin.register(RestoreMetadata)
@@ -26,6 +26,13 @@ class RestoredResultAdmin(admin.ModelAdmin):
 class TemplateAdmin(admin.ModelAdmin):
     list_display = ('name', 'template_type', 'source_filename', 'created_by', 'updated_at')
     readonly_fields = ('source_filename',)
+
+
+@admin.register(TemplateInputField)
+class TemplateInputFieldAdmin(admin.ModelAdmin):
+    list_display = ('template_type', 'field_key', 'label', 'input_type', 'textarea_rows', 'sort_order', 'is_active', 'updated_at')
+    search_fields = ('template_type', 'field_key', 'label')
+    list_filter = ('template_type', 'input_type', 'is_active')
 
 
 @admin.register(AnonymizationRule)

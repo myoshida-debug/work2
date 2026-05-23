@@ -86,6 +86,37 @@ def _field_uses_checkbox_options(field: Mapping[str, object] | None) -> bool:
     return bool(field.get('options')) or str(field.get('input_type') or 'textarea') == CHECKBOX_GROUP_INPUT_TYPE
 
 
+def _field_section_title(field: Mapping[str, object] | None) -> str:
+    if not isinstance(field, Mapping):
+        return ''
+    return _stringify_value(field.get('section_title'))
+
+
+def _checkbox_option_display_map(field: Mapping[str, object] | None) -> dict[str, str]:
+    if not isinstance(field, Mapping):
+        return {}
+
+    display_map: dict[str, str] = {}
+    for option in field.get('options') or []:
+        if isinstance(option, Mapping):
+            value = _stringify_value(option.get('value'))
+            label = _stringify_value(option.get('label') or option.get('value'))
+        else:
+            value = _stringify_value(option)
+            label = value
+        if not value:
+            continue
+        display_map[value] = label or value
+    return display_map
+
+
+def _display_checkbox_value(field: Mapping[str, object] | None, value: object) -> str:
+    text = _stringify_value(value)
+    if not text:
+        return ''
+    return _checkbox_option_display_map(field).get(text, text)
+
+
 def _compose_checkbox_group_text(
     field: Mapping[str, object] | None,
     selected_values: Sequence[str],
@@ -93,7 +124,7 @@ def _compose_checkbox_group_text(
     other_checked: bool,
 ) -> str:
     label = str(field.get('other_label') or 'その他') if isinstance(field, Mapping) else 'その他'
-    lines = [f'・{item}' for item in selected_values if str(item).strip()]
+    lines = [f'・{_display_checkbox_value(field, item)}' for item in selected_values if str(item).strip()]
     if other_text:
         lines.append(f'・{label}: {other_text}')
     elif other_checked:
@@ -237,10 +268,24 @@ def build_structured_input_labels(template_type: str, structured_input: dict[str
 def build_source_text_from_structured_input(template_type: str, structured_input: dict[str, object]) -> str:
     blocks: list[str] = []
     normalized_structured_input = normalize_structured_input(template_type, structured_input)
+    current_section_title = ''
+    current_section_blocks: list[str] = []
+    current_section_has_content = False
+
+    def flush_section() -> None:
+        nonlocal current_section_title, current_section_blocks, current_section_has_content
+        if current_section_title and current_section_has_content:
+            blocks.append(f'## {current_section_title}\n\n' + '\n\n'.join(current_section_blocks))
+        elif current_section_blocks:
+            blocks.extend(current_section_blocks)
+        current_section_title = ''
+        current_section_blocks = []
+        current_section_has_content = False
 
     for field in get_template_input_schema(template_type):
         key = str(field['key'])
         label = str(field['label'])
+        section_title = _field_section_title(field)
         is_checkbox_field = _field_uses_checkbox_options(field)
         value = normalized_structured_input.get(key)
 
@@ -256,7 +301,20 @@ def build_source_text_from_structured_input(template_type: str, structured_input
             field_text = _stringify_value(value)
 
         if field_text:
-            blocks.append(f'【{label}】\n{field_text}')
+            if section_title:
+                if section_title != current_section_title:
+                    flush_section()
+                    current_section_title = section_title
+                if label == section_title:
+                    current_section_blocks.append(field_text)
+                else:
+                    current_section_blocks.append(f'### {label}\n{field_text}')
+                current_section_has_content = True
+            else:
+                flush_section()
+                blocks.append(f'【{label}】\n{field_text}')
+
+    flush_section()
 
     return '\n\n'.join(blocks)
 

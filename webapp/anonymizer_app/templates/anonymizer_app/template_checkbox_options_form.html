@@ -6,6 +6,7 @@
 {% block page_subtitle %}<p class="page-subtitle">テンプレート項目のチェックボックス版を追加・編集・削除します。現在のテキスト入力欄はそのまま残ります。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+  <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=template_type %}">欄編集へ</a>
   <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template_type %}">入力欄初期値へ</a>
 {% endblock %}
 
@@ -108,9 +109,40 @@
     }
 
     .checkbox-row-actions {
-      display: flex;
-      align-items: flex-start;
+      display: grid;
       gap: 8px;
+      justify-items: end;
+      align-content: start;
+    }
+
+    .checkbox-row-order-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .checkbox-row-order-actions .button,
+    .checkbox-row-order-actions button {
+      min-height: 30px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .checkbox-row-drag-handle {
+      cursor: grab;
+    }
+
+    .checkbox-row.is-dragging {
+      opacity: 0.55;
+      background: #f6f8ff;
+      border-color: var(--blue);
+    }
+
+    .checkbox-row.is-newly-added {
+      background: #f7fbff;
+      border-color: #8cb9ff;
+      box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.12);
     }
 
     .checkbox-row input[type="text"] {
@@ -151,7 +183,7 @@
       <span class="badge">チェックボックス</span>
     </div>
     <div class="panel-body">
-      <p class="checkbox-note">項目名を入力して保存すると、匿名化画面で使うチェックボックスの選択肢が更新されます。空欄の行は保存時に無視されます。</p>
+      <p class="checkbox-note">項目名を入力して保存すると、匿名化画面で使うチェックボックスの選択肢が更新されます。ドラッグ、上へ、下へ、一番上、一番下で順番も変更できます。空欄の行は保存時に無視されます。</p>
 
       <form method="post" data-checkbox-option-editor>
         {% csrf_token %}
@@ -198,10 +230,10 @@
                               id="checkbox__{{ item.context.key }}__{{ row.row_key }}__text"
                               type="text"
                               name="checkbox__{{ item.context.key }}__{{ row.row_key }}__text"
-                              value="{{ row.text }}"
-                              data-role="option-text"
-                              placeholder="選択肢を入力"
-                            >
+                            value="{{ row.text }}"
+                            data-role="option-text"
+                            placeholder="選択肢を入力"
+                          >
                           </div>
                           <input
                             type="hidden"
@@ -217,6 +249,13 @@
                           >
                         </div>
                         <div class="checkbox-row-actions">
+                          <div class="checkbox-row-order-actions">
+                            <button type="button" class="button checkbox-row-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                            <button type="button" class="button" data-move-row="top">一番上</button>
+                            <button type="button" class="button" data-move-row="up">上へ</button>
+                            <button type="button" class="button" data-move-row="down">下へ</button>
+                            <button type="button" class="button" data-move-row="bottom">一番下</button>
+                          </div>
                           <button type="button" class="danger" data-remove-option-row>削除</button>
                         </div>
                       </div>
@@ -247,6 +286,13 @@
                       >
                     </div>
                     <div class="checkbox-row-actions">
+                      <div class="checkbox-row-order-actions">
+                        <button type="button" class="button checkbox-row-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                        <button type="button" class="button" data-move-row="top">一番上</button>
+                        <button type="button" class="button" data-move-row="up">上へ</button>
+                        <button type="button" class="button" data-move-row="down">下へ</button>
+                        <button type="button" class="button" data-move-row="bottom">一番下</button>
+                      </div>
                       <button type="button" class="danger" data-remove-option-row>削除</button>
                     </div>
                   </div>
@@ -271,8 +317,131 @@
         return;
       }
 
+      const EMPTY_MESSAGE_TEXT = 'まだ項目がありません。右上の「項目を追加」から登録してください。';
+      let draggingRow = null;
+
+      function getSectionList(section) {
+        return section ? section.querySelector('[data-option-row-list]') : null;
+      }
+
+      function getRows(section) {
+        const list = getSectionList(section);
+        if (!list) {
+          return [];
+        }
+        return Array.from(list.querySelectorAll('[data-option-row]'));
+      }
+
+      function syncEmptyState(section) {
+        const list = getSectionList(section);
+        if (!list) {
+          return;
+        }
+
+        const rows = getRows(section);
+        const emptyMessage = list.querySelector('.checkbox-group-empty');
+        if (!rows.length) {
+          if (!emptyMessage) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'checkbox-group-empty';
+            placeholder.textContent = EMPTY_MESSAGE_TEXT;
+            list.appendChild(placeholder);
+          }
+          return;
+        }
+
+        if (emptyMessage) {
+          emptyMessage.remove();
+        }
+      }
+
+      function updateMoveButtonState(section) {
+        const rows = getRows(section);
+        rows.forEach(function (row, index) {
+          row.querySelectorAll('[data-move-row]').forEach(function (button) {
+            const moveType = button.dataset.moveRow || '';
+            button.disabled = (
+              (moveType === 'top' && index === 0)
+              || (moveType === 'up' && index === 0)
+              || (moveType === 'down' && index === rows.length - 1)
+              || (moveType === 'bottom' && index === rows.length - 1)
+            );
+          });
+        });
+      }
+
+      function syncSection(section) {
+        const rows = getRows(section);
+        rows.forEach(function (row, index) {
+          const positionInput = row.querySelector('[data-role="option-position"]');
+          if (positionInput) {
+            positionInput.value = String(index * 10);
+          }
+        });
+        if (section) {
+          section.dataset.nextPosition = String(rows.length * 10);
+        }
+        updateMoveButtonState(section);
+        syncEmptyState(section);
+      }
+
+      function focusRowTextInput(row) {
+        const textInput = row ? row.querySelector('[data-role="option-text"]') : null;
+        if (textInput) {
+          textInput.focus();
+        }
+      }
+
+      function insertRowAt(row, index) {
+        const section = row ? row.closest('[data-checkbox-group-section]') : null;
+        const list = getSectionList(section);
+        if (!section || !list) {
+          return;
+        }
+
+        const rows = getRows(section).filter(function (item) {
+          return item !== row;
+        });
+        const targetRow = rows[index] || null;
+        if (targetRow) {
+          list.insertBefore(row, targetRow);
+        } else {
+          list.appendChild(row);
+        }
+        syncSection(section);
+        focusRowTextInput(row);
+      }
+
+      function moveRow(row, direction) {
+        const section = row ? row.closest('[data-checkbox-group-section]') : null;
+        if (!section) {
+          return;
+        }
+        const rows = getRows(section);
+        const currentIndex = rows.indexOf(row);
+        if (currentIndex < 0) {
+          return;
+        }
+
+        if (direction === 'top') {
+          insertRowAt(row, 0);
+          return;
+        }
+        if (direction === 'bottom') {
+          insertRowAt(row, rows.length - 1);
+          return;
+        }
+        if (direction === 'up') {
+          insertRowAt(row, Math.max(0, currentIndex - 1));
+          return;
+        }
+        if (direction === 'down') {
+          insertRowAt(row, Math.min(rows.length - 1, currentIndex + 1));
+        }
+      }
+
       function createRow(section) {
-        const list = section.querySelector('[data-option-row-list]');
+        const list = getSectionList(section);
         const template = section.querySelector('template[data-option-row-template]');
         if (!list || !template) {
           return;
@@ -280,7 +449,9 @@
 
         const fieldKey = section.dataset.fieldKey || '';
         const nextRowNumber = Number(section.dataset.nextRowNumber || list.querySelectorAll('[data-option-row]').length);
-        const nextPosition = Number(section.dataset.nextPosition || 10);
+        const nextPosition = Number(
+          section.dataset.nextPosition || (list.querySelectorAll('[data-option-row]').length * 10)
+        );
         const rowKey = `new_${nextRowNumber}`;
         section.dataset.nextRowNumber = String(nextRowNumber + 1);
         section.dataset.nextPosition = String(nextPosition + 10);
@@ -316,9 +487,18 @@
           label.htmlFor = textInput.id;
         }
 
+        row.classList.add('is-newly-added');
         list.appendChild(row);
+        syncSection(section);
         if (textInput) {
           textInput.focus();
+        }
+        if (typeof row.scrollIntoView === 'function') {
+          try {
+            row.scrollIntoView({block: 'center', behavior: 'smooth'});
+          } catch (error) {
+            row.scrollIntoView(true);
+          }
         }
       }
 
@@ -332,14 +512,105 @@
       });
 
       editor.addEventListener('click', function (event) {
+        const moveButton = event.target.closest('[data-move-row]');
+        if (moveButton) {
+          const row = moveButton.closest('[data-option-row]');
+          if (row) {
+            moveRow(row, moveButton.dataset.moveRow || '');
+          }
+          return;
+        }
+
         const removeButton = event.target.closest('[data-remove-option-row]');
         if (!removeButton) {
           return;
         }
         const row = removeButton.closest('[data-option-row]');
         if (row) {
+          const section = row.closest('[data-checkbox-group-section]');
           row.remove();
+          if (section) {
+            syncSection(section);
+          }
         }
+      });
+
+      editor.addEventListener('dragstart', function (event) {
+        const handle = event.target.closest('[data-drag-handle]');
+        if (!handle || !editor.contains(handle)) {
+          return;
+        }
+        const row = handle.closest('[data-option-row]');
+        if (!row) {
+          return;
+        }
+        draggingRow = row;
+        row.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          try {
+            event.dataTransfer.setData('text/plain', row.dataset.rowKey || '');
+          } catch (error) {
+            // ignore
+          }
+        }
+      });
+
+      editor.addEventListener('dragover', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        const targetRow = event.target.closest('[data-option-row]');
+        const list = event.target.closest('[data-option-row-list]');
+        if ((!targetRow && !list) || targetRow === draggingRow) {
+          return;
+        }
+        if (!list) {
+          return;
+        }
+
+        event.preventDefault();
+        if (!targetRow) {
+          list.appendChild(draggingRow);
+          return;
+        }
+
+        const rect = targetRow.getBoundingClientRect();
+        const shouldInsertBefore = event.clientY < rect.top + (rect.height / 2);
+        if (shouldInsertBefore) {
+          list.insertBefore(draggingRow, targetRow);
+        } else {
+          list.insertBefore(draggingRow, targetRow.nextElementSibling);
+        }
+      });
+
+      editor.addEventListener('drop', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        event.preventDefault();
+        const section = draggingRow.closest('[data-checkbox-group-section]');
+        if (section) {
+          syncSection(section);
+        }
+      });
+
+      editor.addEventListener('dragend', function () {
+        if (draggingRow) {
+          const section = draggingRow.closest('[data-checkbox-group-section]');
+          draggingRow.classList.remove('is-dragging');
+          if (section) {
+            syncSection(section);
+          }
+        }
+        draggingRow = null;
+        editor.querySelectorAll('[data-option-row]').forEach(function (row) {
+          row.classList.remove('is-dragging');
+        });
+      });
+
+      editor.querySelectorAll('[data-checkbox-group-section]').forEach(function (section) {
+        syncSection(section);
       });
     });
   </script>

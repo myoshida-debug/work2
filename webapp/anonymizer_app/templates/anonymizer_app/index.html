@@ -232,6 +232,18 @@
       gap: 16px;
     }
 
+    .structured-section-heading {
+      margin: 8px 0 0;
+      padding: 10px 14px;
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: #f7f9ff;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
     .structured-field {
       display: grid;
       gap: 8px;
@@ -399,6 +411,16 @@
     input:focus {
       border-color: var(--blue);
       box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .field-area.structured-date-input {
+      width: 12rem;
+      min-width: 12rem;
+      max-width: 100%;
+      min-height: 44px;
+      height: 44px;
+      justify-self: start;
+      align-self: start;
     }
 
     .actions-row {
@@ -657,6 +679,14 @@
         min-height: 240px;
       }
 
+      .field-area.structured-date-input {
+        width: min(100%, 12rem);
+        min-width: 0;
+        min-height: 44px;
+        height: 44px;
+        justify-self: start;
+      }
+
       .dmz-form {
         justify-content: flex-start;
         padding-left: 16px;
@@ -753,18 +783,16 @@
                   <div class="panel-body">
                     <div id="structured-input-fields" class="structured-fields">
                       {% for field in structured_fields %}
+                        {% if field.section_title %}
+                          {% ifchanged field.section_title %}
+                            <div class="structured-section-heading">{{ field.section_title }}</div>
+                          {% endifchanged %}
+                        {% endif %}
                         <div class="structured-field" data-field-key="{{ field.key }}" data-input-type="{{ field.input_type|default:'textarea' }}" data-has-checkbox-options="{% if field.has_checkbox_options %}true{% else %}false{% endif %}">
-                          <label class="field-label" for="structured-{{ field.key }}">
+                          <label class="field-label" {% if not field.has_checkbox_options %}for="structured-{{ field.key }}"{% endif %}>
                             {{ field.label }}
                             {% if field.required %}<span class="required-mark">必須</span>{% endif %}
                           </label>
-                          <textarea
-                            class="field-area structured-field-input"
-                            id="structured-{{ field.key }}"
-                            name="{% if field.has_checkbox_options %}structured__{{ field.key }}__text{% else %}structured__{{ field.key }}{% endif %}"
-                            {% if field.has_checkbox_options %}data-structured-text-input="true"{% else %}data-structured-input="true"{% endif %}
-                            rows="3"
-                          >{% if field.has_checkbox_options %}{% if field.text_value %}{{ field.text_value }}{% endif %}{% else %}{% if field.value %}{{ field.value }}{% endif %}{% endif %}</textarea>
                           {% if field.has_checkbox_options %}
                             <div class="structured-checkbox-group">
                               <div class="structured-checkbox-options">
@@ -804,6 +832,72 @@
                                     name="structured__{{ field.key }}__other"
                                     data-structured-other-input="true"
                                     rows="2"
+                                    style="min-height: calc(2 * 1.65em + 24px);"
+                                    placeholder="{{ field.other_placeholder|default:'自由入力' }}"
+                                  >{% if field.other_text %}{{ field.other_text }}{% endif %}</textarea>
+                                </div>
+                              {% endif %}
+                              {% if field.help_text %}<p class="field-help-text">{{ field.help_text }}</p>{% endif %}
+                            </div>
+                          {% elif field.input_type == 'date' %}
+                            <input
+                              class="field-area structured-field-input structured-date-input"
+                              id="structured-{{ field.key }}"
+                              type="date"
+                              name="structured__{{ field.key }}"
+                              data-structured-input="true"
+                              value="{% if field.value %}{{ field.value }}{% endif %}"
+                            >
+                          {% else %}
+                            <textarea
+                              class="field-area structured-field-input"
+                              id="structured-{{ field.key }}"
+                              name="structured__{{ field.key }}"
+                              data-structured-input="true"
+                              rows="{{ field.textarea_rows|default:3 }}"
+                              style="min-height: calc({{ field.textarea_rows|default:3 }} * 1.65em + 24px);"
+                            >{% if field.value %}{{ field.value }}{% endif %}</textarea>
+                          {% endif %}
+                          {% if field.has_checkbox_options %}
+                            <div class="structured-checkbox-group">
+                              <div class="structured-checkbox-options">
+                                {% if field.options %}
+                                  {% for option in field.options %}
+                                    {% with option_value=option.value|default:option option_label=option.label|default:option %}
+                                      <label class="structured-checkbox-option">
+                                        <input
+                                          type="checkbox"
+                                          name="structured__{{ field.key }}"
+                                          value="{{ option_value }}"
+                                          data-structured-option="true"
+                                          {% if field.selected_values and option_value in field.selected_values %}checked{% endif %}
+                                        >
+                                        <span>{{ option_label }}</span>
+                                      </label>
+                                    {% endwith %}
+                                  {% endfor %}
+                                {% else %}
+                                  <p class="field-help-text">チェックボックス項目はまだ登録されていません。</p>
+                                {% endif %}
+                              </div>
+                              {% if field.allow_other %}
+                                <div class="structured-other-row" data-structured-other-row="true">
+                                  <label class="structured-other-toggle">
+                                    <input
+                                      type="checkbox"
+                                      name="structured__{{ field.key }}__other_checked"
+                                      value="1"
+                                      data-structured-other-toggle="true"
+                                      {% if field.other_checked or field.other_text %}checked{% endif %}
+                                    >
+                                    <span>{{ field.other_label|default:"その他" }}</span>
+                                  </label>
+                                  <textarea
+                                    class="field-area structured-other-input"
+                                    name="structured__{{ field.key }}__other"
+                                    data-structured-other-input="true"
+                                    rows="2"
+                                    style="min-height: calc(2 * 1.65em + 24px);"
                                     placeholder="{{ field.other_placeholder|default:'自由入力' }}"
                                   >{% if field.other_text %}{{ field.other_text }}{% endif %}</textarea>
                                 </div>
@@ -1028,12 +1122,33 @@
       return field && field.input_type ? field.input_type : 'textarea';
     }
 
+    function normalizeTextareaRows(rows, fallback = 3) {
+      const parsed = Number.parseInt(String(rows || '').trim(), 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+      return fallback;
+    }
+
     function fieldHasCheckboxOptions(field) {
       return Boolean(field && Array.isArray(field.options) && field.options.length) || getFieldInputType(field) === 'checkbox_group';
     }
 
     function getFieldTextInputName(field) {
       return fieldHasCheckboxOptions(field) ? `structured__${field.key}__text` : `structured__${field.key}`;
+    }
+
+    function getFieldTextareaRows(field) {
+      return normalizeTextareaRows(field && field.textarea_rows, 3);
+    }
+
+    function applyTextareaRows(textarea, rows, fallback = 3) {
+      if (!textarea) {
+        return;
+      }
+      const normalizedRows = normalizeTextareaRows(rows, fallback);
+      textarea.rows = normalizedRows;
+      textarea.style.minHeight = `calc(${normalizedRows} * 1.65em + 24px)`;
     }
 
     function setStructuredInputHiddenValue(values) {
@@ -1110,6 +1225,26 @@
       return labels;
     }
 
+    function getCheckboxOptionDisplayMap(field) {
+      const map = {};
+      (field.options || []).forEach((option) => {
+        const optionValue = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'value'))
+          ? option.value
+          : option;
+        const optionLabel = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'label'))
+          ? option.label
+          : optionValue;
+        if (optionValue !== undefined && optionValue !== null && String(optionValue).trim()) {
+          map[String(optionValue)] = (optionLabel || optionValue).toString().trim();
+        }
+      });
+      return map;
+    }
+
+    function getFieldSectionTitle(field) {
+      return (field && field.section_title ? field.section_title : '').toString().trim();
+    }
+
     function formatCheckboxGroupFieldValue(field, value) {
       const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
       const textValue = (valueMap.text || '').toString().trim();
@@ -1119,8 +1254,15 @@
       const selected = Array.isArray(valueMap.selected) ? valueMap.selected : [];
       const otherText = (valueMap.other || '').toString().trim();
       const otherChecked = Boolean(valueMap.other_checked);
+      const displayMap = getCheckboxOptionDisplayMap(field);
       const lines = selected
-        .map((item) => (item || '').toString().trim())
+        .map((item) => {
+          const rawValue = (item || '').toString().trim();
+          if (!rawValue) {
+            return '';
+          }
+          return displayMap[rawValue] || rawValue;
+        })
         .filter(Boolean)
         .map((item) => `・${item}`);
 
@@ -1135,16 +1277,48 @@
 
     function buildStructuredSourceText(templateName, values) {
       const blocks = [];
+      let currentSectionTitle = '';
+      let currentSectionBlocks = [];
+      let currentSectionHasContent = false;
+
+      const flushSection = () => {
+        if (currentSectionTitle && currentSectionHasContent) {
+          blocks.push(`## ${currentSectionTitle}\n\n${currentSectionBlocks.join('\n\n')}`);
+        } else if (currentSectionBlocks.length) {
+          blocks.push(...currentSectionBlocks);
+        }
+        currentSectionTitle = '';
+        currentSectionBlocks = [];
+        currentSectionHasContent = false;
+      };
+
       getSchemaForTemplate(templateName).forEach((field) => {
+        const sectionTitle = getFieldSectionTitle(field);
         const value = values[field.key];
         const fieldValue = fieldHasCheckboxOptions(field)
           ? formatCheckboxGroupFieldValue(field, value)
           : (value || '').toString().trim();
-        if (!fieldValue) {
+        if (sectionTitle) {
+          if (sectionTitle !== currentSectionTitle) {
+            flushSection();
+            currentSectionTitle = sectionTitle;
+          }
+          if (fieldValue) {
+            const fieldLabel = field.label || field.key;
+            currentSectionBlocks.push(
+              fieldLabel === sectionTitle ? fieldValue : `### ${fieldLabel}\n${fieldValue}`,
+            );
+            currentSectionHasContent = true;
+          }
           return;
         }
-        blocks.push(`【${field.label}】\n${fieldValue}`);
+        flushSection();
+        if (fieldValue) {
+          blocks.push(`【${field.label}】\n${fieldValue}`);
+        }
       });
+
+      flushSection();
       return blocks.join('\n\n');
     }
 
@@ -1229,12 +1403,23 @@
       }
       const schema = getSchemaForTemplate(templateName);
       structuredFieldsHost.innerHTML = '';
+      let currentSectionTitle = '';
 
       schema.forEach((field) => {
+        const sectionTitle = getFieldSectionTitle(field);
+        if (sectionTitle && sectionTitle !== currentSectionTitle) {
+          const sectionHeading = document.createElement('div');
+          sectionHeading.className = 'structured-section-heading';
+          sectionHeading.textContent = sectionTitle;
+          structuredFieldsHost.appendChild(sectionHeading);
+          currentSectionTitle = sectionTitle;
+        }
+
         const fieldWrap = document.createElement('div');
         fieldWrap.className = 'structured-field';
         fieldWrap.dataset.fieldKey = field.key;
         fieldWrap.dataset.inputType = getFieldInputType(field);
+        const inputType = getFieldInputType(field);
         const hasCheckboxOptions = fieldHasCheckboxOptions(field);
         fieldWrap.dataset.hasCheckboxOptions = hasCheckboxOptions ? 'true' : 'false';
 
@@ -1250,26 +1435,30 @@
         }
 
         fieldWrap.appendChild(label);
-        const textInput = document.createElement('textarea');
-        textInput.className = 'field-area structured-field-input';
-        textInput.id = `structured-${field.key}`;
-        textInput.name = getFieldTextInputName(field);
-        textInput.dataset.structuredInput = 'true';
-        if (hasCheckboxOptions) {
-          textInput.dataset.structuredTextInput = 'true';
-        }
-        textInput.rows = 3;
-
         const hasValue = Object.prototype.hasOwnProperty.call(values, field.key);
+        let textInput = null;
         if (hasCheckboxOptions) {
-          const value = hasValue ? values[field.key] : {};
-          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-          const textValue = (valueMap.text || '').toString().trim();
-          textInput.value = hasValue ? (textValue || formatCheckboxGroupFieldValue(field, value)) : (field.default || '');
+          label.removeAttribute('for');
+        } else if (inputType === 'date') {
+          textInput = document.createElement('input');
+          textInput.type = 'date';
+          textInput.className = 'field-area structured-field-input structured-date-input';
+          textInput.id = `structured-${field.key}`;
+          textInput.name = getFieldTextInputName(field);
+          textInput.dataset.structuredInput = 'true';
+          textInput.value = hasValue ? (values[field.key] || '') : (field.default || '');
         } else {
+          textInput = document.createElement('textarea');
+          textInput.className = 'field-area structured-field-input';
+          textInput.id = `structured-${field.key}`;
+          textInput.name = getFieldTextInputName(field);
+          textInput.dataset.structuredInput = 'true';
+          applyTextareaRows(textInput, getFieldTextareaRows(field), 3);
           textInput.value = hasValue ? (values[field.key] || '') : (field.default || '');
         }
-        fieldWrap.appendChild(textInput);
+        if (textInput) {
+          fieldWrap.appendChild(textInput);
+        }
 
         if (hasCheckboxOptions) {
           const group = document.createElement('div');
@@ -1338,7 +1527,7 @@
             otherInput.className = 'field-area structured-other-input';
             otherInput.name = `structured__${field.key}__other`;
             otherInput.dataset.structuredOtherInput = 'true';
-            otherInput.rows = 2;
+            applyTextareaRows(otherInput, 2, 2);
             otherInput.placeholder = field.other_placeholder || '自由入力';
             otherInput.value = otherText || '';
             otherRow.appendChild(otherInput);

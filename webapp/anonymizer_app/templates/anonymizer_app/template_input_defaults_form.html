@@ -6,6 +6,7 @@
 {% block page_subtitle %}<p class="page-subtitle">テンプレート項目に最初から入れる文字を編集します。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+  <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=template_type %}">欄編集へ</a>
   <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template_type %}">チェックボックス項目へ</a>
 {% endblock %}
 

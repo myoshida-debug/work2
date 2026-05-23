@@ -26,6 +26,7 @@ from anonymizer_app.history_utils import (
 )
 from anonymizer_app.models import (
     AnonymizationRule,
+    FIELD_INPUT_TYPE_CHOICES,
     OperationLog,
     Prompt,
     RestoredResult,
@@ -34,6 +35,7 @@ from anonymizer_app.models import (
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
     TemplateInputDefault,
+    TemplateInputField,
 )
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
@@ -79,6 +81,9 @@ def _owned_queryset(queryset, user):
     return queryset.filter(owner=user)
 
 
+FIELD_INPUT_TYPE_VALUES = {value for value, _label in FIELD_INPUT_TYPE_CHOICES}
+
+
 def _checkbox_group_fields_for_template(template_type: str) -> list[dict[str, object]]:
     return [
         field
@@ -87,11 +92,167 @@ def _checkbox_group_fields_for_template(template_type: str) -> list[dict[str, ob
     ]
 
 
+def _field_rows_for_template(template_type: str) -> list[dict[str, object]]:
+    schema = get_template_input_schema(template_type)
+    existing_rows = {
+        row.field_key: row
+        for row in TemplateInputField.objects.filter(template_type=template_type)
+    }
+    rows: list[dict[str, object]] = []
+    for index, field in enumerate(schema):
+        field_key = str(field.get('key') or '')
+        row = existing_rows.get(field_key)
+        raw_input_type = str(field.get('input_type') or 'textarea').strip() or 'textarea'
+        has_checkbox_options = bool(field.get('options')) or raw_input_type == 'checkbox_group'
+        input_type = 'checkbox_group' if has_checkbox_options else (raw_input_type if raw_input_type in FIELD_INPUT_TYPE_VALUES else 'textarea')
+        rows.append({
+            'row_key': field_key,
+            'record_id': str(row.pk) if row else '',
+            'field_key': field_key,
+            'source_kind': 'db' if row else 'builtin',
+            'label': str(field.get('label') or field_key),
+            'input_type': input_type,
+            'section_title': str(field.get('section_title') or ''),
+            'required': bool(field.get('required')),
+            'allow_other': bool(field.get('allow_other')) if has_checkbox_options else False,
+            'other_label': str(field.get('other_label') or 'その他'),
+            'other_placeholder': str(field.get('other_placeholder') or '自由入力'),
+            'help_text': str(field.get('help_text') or ''),
+            'textarea_rows': _safe_int(field.get('textarea_rows'), default=3),
+            'position': _safe_int(field.get('sort_order'), default=index * 10),
+            'has_checkbox_options': has_checkbox_options,
+            'option_count': len(field.get('options') or []),
+        })
+    return rows
+
+
+def _parse_template_field_rows(post_data) -> list[dict[str, object]]:
+    prefix = 'field__'
+    row_payloads: dict[str, dict[str, object]] = {}
+    for key, value in post_data.items():
+        if not key.startswith(prefix):
+            continue
+        remainder = key[len(prefix):]
+        if '__' not in remainder:
+            continue
+        row_key, attr = remainder.split('__', 1)
+        row_payloads.setdefault(row_key, {'row_key': row_key})[attr] = value
+
+    parsed_rows: list[dict[str, object]] = []
+    for order, row_key in enumerate(row_payloads):
+        payload = row_payloads[row_key]
+        input_type = str(payload.get('input_type') or 'textarea').strip() or 'textarea'
+        parsed_rows.append({
+            'row_key': row_key,
+            'record_id': str(payload.get('record_id') or '').strip(),
+            'field_key': str(payload.get('field_key') or '').strip(),
+            'source_kind': str(payload.get('source_kind') or 'new').strip() or 'new',
+            'label': str(payload.get('label') or '').strip(),
+            'input_type': input_type,
+            'section_title': str(payload.get('section_title') or '').strip(),
+            'required': bool(_is_truthy(payload.get('required'))),
+            'allow_other': bool(_is_truthy(payload.get('allow_other'))),
+            'other_label': str(payload.get('other_label') or '').strip(),
+            'other_placeholder': str(payload.get('other_placeholder') or '').strip(),
+            'help_text': str(payload.get('help_text') or '').strip(),
+            'textarea_rows': max(1, _safe_int(payload.get('textarea_rows'), default=3)),
+            'position': _safe_int(payload.get('position'), default=order * 10),
+            'order': order,
+        })
+    return parsed_rows
+
+
+def _parse_deleted_template_field_keys(post_data) -> list[str]:
+    raw = str(post_data.get('deleted_field_keys') or '').strip()
+    if not raw:
+        return []
+    keys = []
+    seen: set[str] = set()
+    for item in raw.split(','):
+        key = str(item).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+    return keys
+
+
+def _generate_template_field_key(existing_keys: set[str]) -> str:
+    while True:
+        candidate = f'custom_{uuid.uuid4().hex[:8]}'
+        if candidate not in existing_keys:
+            return candidate
+
+
+def _next_new_template_field_row_number(parsed_rows: list[dict[str, object]]) -> int:
+    next_row_number = 0
+    for row in parsed_rows:
+        row_key = str(row.get('row_key') or '')
+        if not row_key.startswith('new_'):
+            continue
+        try:
+            next_row_number = max(next_row_number, int(row_key.split('_', 1)[1]) + 1)
+        except Exception:
+            next_row_number += 1
+    return next_row_number
+
+
+def _template_field_editor_context(
+    template_type: str,
+    *,
+    parsed_rows: list[dict[str, object]] | None = None,
+    field_errors: dict[str, str] | None = None,
+    deleted_field_keys: list[str] | None = None,
+) -> list[dict[str, object]]:
+    field_errors = field_errors or {}
+    deleted_field_keys = deleted_field_keys or []
+    if parsed_rows is None:
+        rows = _field_rows_for_template(template_type)
+    else:
+        rows = []
+        for row in parsed_rows:
+            input_type = str(row.get('input_type') or 'textarea')
+            rows.append({
+                'row_key': str(row.get('row_key') or ''),
+                'record_id': str(row.get('record_id') or ''),
+                'field_key': str(row.get('field_key') or ''),
+                'source_kind': str(row.get('source_kind') or 'new'),
+                'label': str(row.get('label') or ''),
+                'input_type': input_type,
+                'section_title': str(row.get('section_title') or ''),
+                'required': bool(row.get('required')),
+                'allow_other': bool(row.get('allow_other')),
+                'other_label': str(row.get('other_label') or 'その他'),
+                'other_placeholder': str(row.get('other_placeholder') or '自由入力'),
+                'help_text': str(row.get('help_text') or ''),
+                'textarea_rows': max(1, _safe_int(row.get('textarea_rows'), default=3)),
+                'position': _safe_int(row.get('position'), default=0),
+                'has_checkbox_options': input_type == 'checkbox_group',
+                'option_count': 0,
+                'error': field_errors.get(str(row.get('row_key') or ''), ''),
+                'is_deleted': False,
+            })
+        return rows
+
+    for row in rows:
+        row['error'] = field_errors.get(str(row.get('row_key') or ''), '')
+        row['is_deleted'] = str(row.get('field_key') or '') in deleted_field_keys
+    return rows
+
+
 def _safe_int(value, default: int = 0) -> int:
     try:
         return int(str(value).strip())
     except Exception:
         return default
+
+
+def _is_truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _load_checkbox_group_rows(field: dict[str, object], group: TemplateInputCheckboxGroup | None) -> list[dict[str, object]]:
@@ -111,7 +272,7 @@ def _load_checkbox_group_rows(field: dict[str, object], group: TemplateInputChec
 
     for index, option in enumerate(field.get('options') or []):
         if isinstance(option, dict):
-            text = str(option.get('value') or option.get('label') or '').strip()
+            text = str(option.get('label') or option.get('value') or '').strip()
         else:
             text = str(option or '').strip()
         if not text:
@@ -145,6 +306,7 @@ def _parse_checkbox_group_rows(post_data, field_key: str) -> list[dict[str, obje
             'id': str(payload.get('id') or '').strip(),
             'text': str(payload.get('text') or '').strip(),
             'position': _safe_int(payload.get('position'), default=order * 10),
+            'order': order,
         })
     return parsed_rows
 
@@ -1339,6 +1501,189 @@ def template_input_defaults_edit(request, template_type):
     })
 
 
+def template_input_fields_edit(request, template_type):
+    canonical_template_type = TEMPLATE_INPUT_SCHEMA_ALIASES.get(template_type, template_type)
+    if canonical_template_type not in TEMPLATE_INPUT_SCHEMAS:
+        return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
+
+    aliases = [alias for alias, canonical in TEMPLATE_INPUT_SCHEMA_ALIASES.items() if canonical == canonical_template_type]
+    template_schema = get_template_input_schema(canonical_template_type)
+    schema_map = {str(field.get('key') or ''): field for field in template_schema}
+    existing_rows = {
+        row.field_key: row
+        for row in TemplateInputField.objects.filter(template_type=canonical_template_type)
+    }
+    newly_added_row_key = None
+
+    if request.method == 'POST':
+        parsed_rows = _parse_template_field_rows(request.POST)
+        deleted_field_keys = _parse_deleted_template_field_keys(request.POST)
+        editor_action = str(request.POST.get('editor_action') or '').strip()
+
+        if editor_action == 'add_row':
+            next_row_number = _next_new_template_field_row_number(parsed_rows)
+            next_position = max(
+                [int(row.get('position') or 0) for row in parsed_rows] or [-10]
+            ) + 10
+            parsed_rows.append({
+                'row_key': f'new_{next_row_number}',
+                'record_id': '',
+                'field_key': '',
+                'source_kind': 'new',
+                'label': '',
+                'input_type': 'textarea',
+                'section_title': '',
+                'required': False,
+                'allow_other': False,
+                'other_label': 'その他',
+                'other_placeholder': '自由入力',
+                'help_text': '',
+                'textarea_rows': 3,
+                'position': next_position,
+                'order': len(parsed_rows),
+            })
+            newly_added_row_key = str(parsed_rows[-1].get('row_key') or '')
+            field_rows = _template_field_editor_context(
+                canonical_template_type,
+                parsed_rows=parsed_rows,
+                field_errors={},
+                deleted_field_keys=deleted_field_keys,
+            )
+        else:
+            field_errors: dict[str, str] = {}
+            existing_keys = set(schema_map.keys()) | set(existing_rows.keys()) | set(deleted_field_keys)
+            active_rows: list[dict[str, object]] = []
+
+            for row in parsed_rows:
+                row_key = str(row.get('row_key') or '')
+                source_kind = str(row.get('source_kind') or 'new')
+                label = str(row.get('label') or '').strip()
+                input_type = str(row.get('input_type') or 'textarea').strip() or 'textarea'
+                if not label:
+                    if source_kind == 'new':
+                        continue
+                    field_errors[row_key] = '欄名を入力してください。'
+                    continue
+
+                field_key = str(row.get('field_key') or '').strip()
+                if not field_key:
+                    field_key = row_key if source_kind in {'builtin', 'db'} and row_key else _generate_template_field_key(existing_keys)
+                existing_keys.add(field_key)
+
+                active_rows.append({
+                    'row_key': row_key,
+                    'record_id': str(row.get('record_id') or '').strip(),
+                    'field_key': field_key,
+                    'source_kind': source_kind,
+                    'label': label,
+                    'input_type': input_type if input_type in FIELD_INPUT_TYPE_VALUES else 'textarea',
+                    'section_title': str(row.get('section_title') or '').strip(),
+                    'required': bool(row.get('required')),
+                    'allow_other': bool(row.get('allow_other')),
+                    'other_label': str(row.get('other_label') or '').strip() or 'その他',
+                    'other_placeholder': str(row.get('other_placeholder') or '').strip() or '自由入力',
+                    'help_text': str(row.get('help_text') or '').strip(),
+                    'textarea_rows': max(1, _safe_int(row.get('textarea_rows'), default=3)),
+                    'position': _safe_int(row.get('position'), default=_safe_int(row.get('order'), 0)),
+                    'order': _safe_int(row.get('order'), 0),
+                })
+
+            active_rows.sort(key=lambda item: (int(item.get('position') or 0), int(item.get('order') or 0)))
+
+            if not field_errors:
+                active_field_keys = [str(row.get('field_key') or '').strip() for row in active_rows if str(row.get('field_key') or '').strip()]
+                active_field_key_set = set(active_field_keys)
+
+                with transaction.atomic():
+                    for sort_index, row in enumerate(active_rows):
+                        field_key = str(row.get('field_key') or '').strip()
+                        input_type = str(row.get('input_type') or 'textarea').strip() or 'textarea'
+                        defaults = {
+                            'label': str(row.get('label') or '').strip(),
+                            'input_type': input_type if input_type in FIELD_INPUT_TYPE_VALUES else 'textarea',
+                            'section_title': str(row.get('section_title') or '').strip(),
+                            'required': bool(row.get('required')),
+                            'allow_other': bool(row.get('allow_other')) if input_type == 'checkbox_group' else False,
+                            'other_label': str(row.get('other_label') or '').strip() or 'その他',
+                            'other_placeholder': str(row.get('other_placeholder') or '').strip() or '自由入力',
+                            'help_text': str(row.get('help_text') or '').strip(),
+                            'textarea_rows': max(1, _safe_int(row.get('textarea_rows'), default=3)),
+                            'sort_order': sort_index * 10,
+                            'is_active': True,
+                        }
+                        TemplateInputField.objects.update_or_create(
+                            template_type=canonical_template_type,
+                            field_key=field_key,
+                            defaults=defaults,
+                        )
+
+                        if input_type != 'checkbox_group':
+                            TemplateInputCheckboxGroup.objects.filter(
+                                template_type=canonical_template_type,
+                                field_key=field_key,
+                            ).delete()
+
+                    for deleted_key in deleted_field_keys:
+                        if deleted_key in active_field_key_set:
+                            continue
+                        deleted_row = existing_rows.get(deleted_key)
+                        if deleted_row is not None:
+                            if deleted_row.is_active:
+                                deleted_row.is_active = False
+                                deleted_row.save(update_fields=['is_active', 'updated_at'])
+                            continue
+
+                        base_field = schema_map.get(deleted_key)
+                        if base_field is None:
+                            continue
+
+                        TemplateInputField.objects.update_or_create(
+                            template_type=canonical_template_type,
+                            field_key=deleted_key,
+                            defaults={
+                                'label': str(base_field.get('label') or deleted_key),
+                                'input_type': str(base_field.get('input_type') or 'textarea'),
+                                'section_title': str(base_field.get('section_title') or ''),
+                                'required': bool(base_field.get('required')),
+                                'allow_other': bool(base_field.get('allow_other')),
+                                'other_label': str(base_field.get('other_label') or 'その他'),
+                                'other_placeholder': str(base_field.get('other_placeholder') or '自由入力'),
+                                'help_text': str(base_field.get('help_text') or ''),
+                                'textarea_rows': max(1, _safe_int(base_field.get('textarea_rows'), default=3)),
+                                'sort_order': _safe_int(base_field.get('sort_order'), 0),
+                                'is_active': False,
+                            },
+                        )
+
+                messages.success(request, f'{canonical_template_type} のテンプレート欄を更新しました。')
+                return redirect('close_side:template_input_fields_edit', template_type=canonical_template_type)
+
+            field_rows = _template_field_editor_context(
+                canonical_template_type,
+                parsed_rows=active_rows,
+                field_errors=field_errors,
+                deleted_field_keys=deleted_field_keys,
+            )
+    else:
+        field_rows = _template_field_editor_context(canonical_template_type)
+        deleted_field_keys = []
+
+    next_position = 10
+    if field_rows:
+        next_position = max(int(row.get('position') or 0) for row in field_rows) + 10
+
+    return render(request, 'anonymizer_app/template_input_fields_form.html', {
+        'template_type': canonical_template_type,
+        'template_aliases': aliases,
+        'field_rows': field_rows,
+        'field_input_type_choices': FIELD_INPUT_TYPE_CHOICES,
+        'next_row_number': len(field_rows),
+        'next_position': next_position,
+        'deleted_field_keys': ','.join(deleted_field_keys),
+        'newly_added_row_key': newly_added_row_key,
+    })
+
+
 def template_checkbox_options_edit(request, template_type):
     canonical_template_type = TEMPLATE_INPUT_SCHEMA_ALIASES.get(template_type, template_type)
     if canonical_template_type not in TEMPLATE_INPUT_SCHEMAS:
@@ -1410,7 +1755,7 @@ def template_checkbox_options_edit(request, template_type):
                         if option_id not in kept_option_ids:
                             option.delete()
 
-                    normalized_rows.sort(key=lambda row: (int(row.get('position') or 0), str(row.get('text') or '')))
+                    normalized_rows.sort(key=lambda row: (int(row.get('position') or 0), int(row.get('order') or 0)))
                     for sort_order, row in enumerate(normalized_rows):
                         row_id = str(row.get('row_id') or '').strip()
                         text = str(row.get('text') or '').strip()

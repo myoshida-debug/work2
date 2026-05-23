@@ -71,6 +71,14 @@ class Prompt(models.Model):
 # テンプレート用の定義（フォームと合わせてください）
 TEMPLATE_CHOICES = [
     ('入院時サマリー', '入院時サマリー'),
+    ('精神科入院時サマリー', '精神科入院時サマリー'),
+    ('精神科退院時サマリー（医師用）', '精神科退院時サマリー（医師用）'),
+    ('看護入院時サマリー', '看護入院時サマリー'),
+    ('看護中間サマリー', '看護中間サマリー'),
+    ('看護退院時サマリー', '看護退院時サマリー'),
+    ('OT評価サマリー', 'OT評価サマリー'),
+    ('PSW退院支援サマリー', 'PSW退院支援サマリー'),
+    ('精神科訪問看護サマリー', '精神科訪問看護サマリー'),
     ('退院時サマリー', '退院時サマリー'),
     ('中間サマリー', '中間サマリー'),
     ('インシデントレポート', 'インシデントレポート'),
@@ -113,6 +121,39 @@ class TemplateInputDefault(models.Model):
             models.UniqueConstraint(fields=['template_type', 'field_key'], name='unique_template_input_default'),
         ]
         ordering = ['template_type', 'field_key']
+
+    def __str__(self):
+        return f'{self.template_type}:{self.field_key}'
+
+
+FIELD_INPUT_TYPE_CHOICES = [
+    ('textarea', 'テキスト'),
+    ('date', '日付'),
+    ('checkbox_group', 'チェックボックス'),
+]
+
+
+class TemplateInputField(models.Model):
+    template_type = models.CharField(max_length=255, choices=TEMPLATE_CHOICES)
+    field_key = models.CharField(max_length=255)
+    label = models.CharField(max_length=255, blank=True, default='')
+    input_type = models.CharField(max_length=32, choices=FIELD_INPUT_TYPE_CHOICES, default='textarea')
+    section_title = models.CharField(max_length=255, blank=True, default='')
+    required = models.BooleanField(default=False)
+    allow_other = models.BooleanField(default=True)
+    other_label = models.CharField(max_length=255, blank=True, default='その他')
+    other_placeholder = models.CharField(max_length=255, blank=True, default='自由入力')
+    help_text = models.TextField(blank=True, default='')
+    textarea_rows = models.PositiveIntegerField(default=3)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['template_type', 'field_key'], name='unique_template_input_field'),
+        ]
+        ordering = ['template_type', 'sort_order', 'field_key']
 
     def __str__(self):
         return f'{self.template_type}:{self.field_key}'
