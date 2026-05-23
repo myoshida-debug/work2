@@ -7,6 +7,19 @@ DEFAULT_TEMPLATE_INPUT_SCHEMA = [
     {'key': 'text', 'label': '本文', 'required': True},
 ]
 
+TREATMENT_PLAN_CHECKBOX_OPTIONS = [
+    {'value': '安静', 'label': '安静'},
+    {'value': '輸液', 'label': '輸液'},
+    {'value': '食事制限', 'label': '食事制限'},
+    {'value': '薬剤調整', 'label': '薬剤調整'},
+    {'value': '抗菌薬投与', 'label': '抗菌薬投与'},
+    {'value': '酸素投与', 'label': '酸素投与'},
+    {'value': '検査・経過観察', 'label': '検査・経過観察'},
+    {'value': '処置・手術', 'label': '処置・手術'},
+    {'value': 'リハビリ', 'label': 'リハビリ'},
+    {'value': '退院・転院調整', 'label': '退院・転院調整'},
+]
+
 
 TEMPLATE_INPUT_SCHEMAS: dict[str, list[dict[str, object]]] = {
     '入院時サマリー': [
@@ -19,7 +32,17 @@ TEMPLATE_INPUT_SCHEMAS: dict[str, list[dict[str, object]]] = {
         {'key': 'test_findings', 'label': '検査所見', 'required': False},
         {'key': 'clinical_assessment', 'label': '臨床評価', 'required': False},
         {'key': 'admission_purpose', 'label': '入院目的', 'required': True},
-        {'key': 'treatment_plan', 'label': '治療方針', 'required': True},
+        {
+            'key': 'treatment_plan',
+            'label': '治療方針',
+            'required': True,
+            'input_type': 'checkbox_group',
+            'options': TREATMENT_PLAN_CHECKBOX_OPTIONS,
+            'allow_other': True,
+            'other_label': 'その他',
+            'other_placeholder': '自由入力',
+            'help_text': '複数選択できます。その他を選ぶ場合は内容を入力してください。',
+        },
         {'key': 'notes', 'label': '留意点', 'required': False},
     ],
     '退院時サマリー': [
@@ -99,11 +122,38 @@ def _load_template_input_default_overrides() -> dict[str, dict[str, object]]:
     return overrides
 
 
-def _schema_for_template(template_type: str, overrides: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:
+def _load_template_input_checkbox_option_overrides() -> dict[str, dict[str, dict[str, object]]]:
+    try:
+        from .models import TemplateInputCheckboxGroup
+    except Exception:
+        return {}
+
+    overrides: dict[str, dict[str, dict[str, object]]] = {}
+    try:
+        groups = TemplateInputCheckboxGroup.objects.prefetch_related('options').all().only('template_type', 'field_key')
+        for group in groups:
+            options = []
+            for option in group.options.all():
+                text = str(getattr(option, 'text', '') or '').strip()
+                if not text:
+                    continue
+                options.append({'value': text, 'label': text})
+            overrides.setdefault(group.template_type, {})[group.field_key] = {'options': options}
+    except Exception:
+        return {}
+    return overrides
+
+
+def _schema_for_template(
+    template_type: str,
+    overrides: dict[str, dict[str, object]] | None = None,
+    checkbox_option_overrides: dict[str, dict[str, dict[str, object]]] | None = None,
+) -> list[dict[str, object]]:
     canonical_template_type = _canonical_template_type(template_type)
     schema = TEMPLATE_INPUT_SCHEMAS.get(canonical_template_type, DEFAULT_TEMPLATE_INPUT_SCHEMA)
     merged_schema = [deepcopy(field) for field in schema]
     override_map = (overrides or {}).get(canonical_template_type, {})
+    checkbox_override_map = (checkbox_option_overrides or {}).get(canonical_template_type, {})
     for field in merged_schema:
         field_key = str(field.get('key') or '')
         override = override_map.get(field_key)
@@ -112,21 +162,27 @@ def _schema_for_template(template_type: str, overrides: dict[str, dict[str, obje
                 field['default'] = override.get('default_text', '')
             if override.get('required_override') is not None:
                 field['required'] = bool(override.get('required_override'))
+        checkbox_override = checkbox_override_map.get(field_key)
+        if isinstance(checkbox_override, dict):
+            field['options'] = deepcopy(checkbox_override.get('options') or [])
+        field.setdefault('input_type', 'textarea')
     return merged_schema
 
 
 def get_template_input_schema(template_type: str) -> list[dict[str, object]]:
     overrides = _load_template_input_default_overrides()
-    return _schema_for_template(template_type, overrides)
+    checkbox_option_overrides = _load_template_input_checkbox_option_overrides()
+    return _schema_for_template(template_type, overrides, checkbox_option_overrides)
 
 
 def get_template_input_schema_map() -> dict[str, list[dict[str, object]]]:
     overrides = _load_template_input_default_overrides()
+    checkbox_option_overrides = _load_template_input_checkbox_option_overrides()
     schema_map: dict[str, list[dict[str, object]]] = {
-        template_type: _schema_for_template(template_type, overrides)
+        template_type: _schema_for_template(template_type, overrides, checkbox_option_overrides)
         for template_type in TEMPLATE_INPUT_SCHEMAS
     }
     for alias in TEMPLATE_INPUT_SCHEMA_ALIASES:
-        schema_map[alias] = _schema_for_template(alias, overrides)
+        schema_map[alias] = _schema_for_template(alias, overrides, checkbox_option_overrides)
     schema_map['__default__'] = [deepcopy(field) for field in DEFAULT_TEMPLATE_INPUT_SCHEMA]
     return schema_map

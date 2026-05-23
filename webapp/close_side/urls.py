@@ -40,6 +40,7 @@ urlpatterns = [
     path('templates/new/', close_login_required(views.template_create), name='template_create'),
     path('templates/<int:pk>/edit/', close_login_required(views.template_edit), name='template_edit'),
     path('templates/<int:pk>/delete/', close_login_required(views.template_delete), name='template_delete'),
+    path('templates/<str:template_type>/checkbox-options/', close_login_required(views.template_checkbox_options_edit), name='template_checkbox_options_edit'),
     path('templates/<str:template_name>/', close_login_required(views.template_detail), name='template_detail'),
     path('templates/<str:template_type>/input-defaults/', close_login_required(views.template_input_defaults_edit), name='template_input_defaults_edit'),
     path('anonymization-rules/', close_login_required(views.anonymization_rules), name='anonymization_rules'),

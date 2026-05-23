@@ -8,6 +8,7 @@
   <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
   <a class="button primary" href="{% url 'close_side:template_edit' pk=template.pk %}">編集</a>
   <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template.template_type %}">入力欄初期値</a>
+  <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template.template_type %}">チェックボックス項目</a>
 {% endblock %}
 
 {% block content %}

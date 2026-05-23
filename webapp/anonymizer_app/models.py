@@ -118,6 +118,37 @@ class TemplateInputDefault(models.Model):
         return f'{self.template_type}:{self.field_key}'
 
 
+class TemplateInputCheckboxGroup(models.Model):
+    template_type = models.CharField(max_length=255, choices=TEMPLATE_CHOICES)
+    field_key = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['template_type', 'field_key'], name='unique_template_input_checkbox_group'),
+        ]
+        ordering = ['template_type', 'field_key']
+
+    def __str__(self):
+        return f'{self.template_type}:{self.field_key}'
+
+
+class TemplateInputCheckboxOption(models.Model):
+    group = models.ForeignKey(TemplateInputCheckboxGroup, related_name='options', on_delete=models.CASCADE)
+    text = models.CharField(max_length=255)
+    sort_order = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['group', 'text'], name='unique_template_input_checkbox_option'),
+        ]
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return f'{self.group.template_type}:{self.group.field_key}:{self.text}'
+
+
 class AnonymizationRule(models.Model):
     """Store editable anonymization rule text for admin editing and runtime display."""
     name = models.CharField(max_length=255, default='default')

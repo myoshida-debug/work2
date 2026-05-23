@@ -8,6 +8,7 @@ from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -23,7 +24,17 @@ from anonymizer_app.history_utils import (
     filter_history_items,
     operation_action_label,
 )
-from anonymizer_app.models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputDefault
+from anonymizer_app.models import (
+    AnonymizationRule,
+    OperationLog,
+    Prompt,
+    RestoredResult,
+    RestoreMetadata,
+    Template,
+    TemplateInputCheckboxGroup,
+    TemplateInputCheckboxOption,
+    TemplateInputDefault,
+)
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
 from anonymizer_app.structured_input import (
@@ -33,6 +44,7 @@ from anonymizer_app.structured_input import (
     build_structured_input_labels,
     collect_structured_input,
     normalize_source_input_data,
+    normalize_structured_input,
     validate_structured_input,
 )
 from anonymizer_app.template_input_schemas import (
@@ -65,6 +77,102 @@ def _owned_queryset(queryset, user):
     if _is_admin(user):
         return queryset
     return queryset.filter(owner=user)
+
+
+def _checkbox_group_fields_for_template(template_type: str) -> list[dict[str, object]]:
+    return [
+        field
+        for field in get_template_input_schema(template_type)
+        if str(field.get('key') or '')
+    ]
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def _load_checkbox_group_rows(field: dict[str, object], group: TemplateInputCheckboxGroup | None) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    if group is not None:
+        for option in group.options.all():
+            text = str(getattr(option, 'text', '') or '').strip()
+            if not text:
+                continue
+            rows.append({
+                'row_key': f'opt_{option.pk}',
+                'id': str(option.pk),
+                'text': text,
+                'position': int(getattr(option, 'sort_order', 0) or 0),
+            })
+        return rows
+
+    for index, option in enumerate(field.get('options') or []):
+        if isinstance(option, dict):
+            text = str(option.get('value') or option.get('label') or '').strip()
+        else:
+            text = str(option or '').strip()
+        if not text:
+            continue
+        rows.append({
+            'row_key': f'fallback_{index}',
+            'id': '',
+            'text': text,
+            'position': index * 10,
+        })
+    return rows
+
+
+def _parse_checkbox_group_rows(post_data, field_key: str) -> list[dict[str, object]]:
+    prefix = f'checkbox__{field_key}__'
+    row_payloads: dict[str, dict[str, object]] = {}
+    for key, value in post_data.items():
+        if not key.startswith(prefix):
+            continue
+        remainder = key[len(prefix):]
+        if '__' not in remainder:
+            continue
+        row_key, attr = remainder.split('__', 1)
+        row_payloads.setdefault(row_key, {'row_key': row_key})[attr] = value
+
+    parsed_rows: list[dict[str, object]] = []
+    for order, row_key in enumerate(row_payloads):
+        payload = row_payloads[row_key]
+        parsed_rows.append({
+            'row_key': row_key,
+            'id': str(payload.get('id') or '').strip(),
+            'text': str(payload.get('text') or '').strip(),
+            'position': _safe_int(payload.get('position'), default=order * 10),
+        })
+    return parsed_rows
+
+
+def _build_checkbox_group_field_context(
+    field: dict[str, object],
+    group: TemplateInputCheckboxGroup | None,
+    rows: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    key = str(field.get('key') or '')
+    label = str(field.get('label') or key)
+    if rows is None:
+        rows = _load_checkbox_group_rows(field, group)
+    next_position = 10
+    if rows:
+        next_position = max(int(row.get('position') or 0) for row in rows) + 10
+    return {
+        'key': key,
+        'label': label,
+        'help_text': str(field.get('help_text') or ''),
+        'allow_other': bool(field.get('allow_other')),
+        'other_label': str(field.get('other_label') or 'その他'),
+        'rows': rows,
+        'has_rows': bool(rows),
+        'next_row_number': len(rows),
+        'next_position': next_position,
+        'group_exists': group is not None,
+    }
 
 
 def _log_operation(
@@ -175,21 +283,52 @@ def _selected_input_mode(form: AnonymizeForm) -> str:
 
 def _structured_field_context(
     template_type: str,
-    structured_input: dict[str, str] | None = None,
+    structured_input: dict[str, object] | None = None,
     errors: dict[str, str] | None = None,
 ) -> list[dict[str, object]]:
-    structured_input = structured_input or {}
+    structured_input = normalize_structured_input(template_type, structured_input or {})
     errors = errors or {}
     fields = []
     for field in get_template_input_schema(template_type):
         key = str(field['key'])
+        input_type = str(field.get('input_type') or 'textarea')
+        has_checkbox_options = bool(field.get('options')) or input_type == 'checkbox_group'
         if key in structured_input:
-            value = str(structured_input.get(key, '') or '')
+            value = structured_input.get(key)
+        elif has_checkbox_options:
+            default_text = str(field.get('default', '') or '').strip()
+            value = {
+                'text': default_text,
+                'selected': [],
+                'other': '',
+                'other_checked': False,
+            }
         else:
             value = str(field.get('default', '') or '')
+        if has_checkbox_options:
+            value_map = value if isinstance(value, dict) else {
+                'text': str(value or ''),
+                'selected': [],
+                'other': '',
+                'other_checked': False,
+            }
+            text_value = str(value_map.get('text') or '')
+            selected_values = list(value_map.get('selected') or [])
+            other_text = str(value_map.get('other') or '')
+            other_checked = bool(value_map.get('other_checked'))
+        else:
+            text_value = ''
+            selected_values = []
+            other_text = ''
+            other_checked = False
         fields.append({
             **field,
             'value': value,
+            'has_checkbox_options': has_checkbox_options,
+            'text_value': text_value,
+            'selected_values': selected_values,
+            'other_text': other_text,
+            'other_checked': other_checked,
             'error': errors.get(key, ''),
         })
     return fields
@@ -201,7 +340,7 @@ def _anonymize_page_context(
     template_type: str,
     input_mode: str,
     source_text: str = '',
-    structured_input: dict[str, str] | None = None,
+    structured_input: dict[str, object] | None = None,
     structured_field_errors: dict[str, str] | None = None,
     structured_fields: list[dict[str, object]] | None = None,
     text_items: list[dict[str, object]] | None = None,
@@ -427,7 +566,7 @@ def home(request):
     form = AnonymizeForm(request.POST or None)
     template_name = _selected_template_name(form)
     input_mode = _selected_input_mode(form)
-    structured_input: dict[str, str] = {}
+    structured_input: dict[str, object] = {}
     structured_field_errors: dict[str, str] = {}
     source_text = ''
 
@@ -437,7 +576,7 @@ def home(request):
         transcript_source = 'manual_input'
 
         if input_mode == 'structured':
-            structured_input = collect_structured_input(request.POST)
+            structured_input = collect_structured_input(template_name, request.POST)
             structured_field_errors = validate_structured_input(template_name, structured_input)
             source_text = build_source_text_from_structured_input(template_name, structured_input)
             if structured_field_errors:
@@ -607,7 +746,7 @@ def update_prompt_payload(request):
         return JsonResponse({'error': '文字起こし結果が空です。録音または入力してください。'}, status=400)
     structured_input_data = data.get('structured_input')
     if isinstance(structured_input_data, dict):
-        structured_input = {str(key): str(value or '').strip() for key, value in structured_input_data.items()}
+        structured_input = normalize_structured_input(template_type, structured_input_data)
     else:
         structured_input = {}
     if input_mode == 'structured' and not source_text:
@@ -1185,6 +1324,7 @@ def template_input_defaults_edit(request, template_type):
         field_rows.append({
             'key': field_key,
             'label': str(field['label']),
+            'input_type': str(field.get('input_type') or 'textarea'),
             'required': bool(field.get('required')),
             'bound_default_field': form[f'default__{field_key}'],
             'bound_required_field': form[f'required__{field_key}'],
@@ -1193,6 +1333,134 @@ def template_input_defaults_edit(request, template_type):
     aliases = [alias for alias, canonical in TEMPLATE_INPUT_SCHEMA_ALIASES.items() if canonical == canonical_template_type]
     return render(request, 'anonymizer_app/template_input_defaults_form.html', {
         'form': form,
+        'template_type': canonical_template_type,
+        'template_aliases': aliases,
+        'field_rows': field_rows,
+    })
+
+
+def template_checkbox_options_edit(request, template_type):
+    canonical_template_type = TEMPLATE_INPUT_SCHEMA_ALIASES.get(template_type, template_type)
+    if canonical_template_type not in TEMPLATE_INPUT_SCHEMAS:
+        return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
+
+    checkbox_fields = _checkbox_group_fields_for_template(canonical_template_type)
+    if not checkbox_fields:
+        return render(request, 'anonymizer_app/error.html', {'message': 'チェックボックス項目が見つかりません'}, status=404)
+
+    aliases = [alias for alias, canonical in TEMPLATE_INPUT_SCHEMA_ALIASES.items() if canonical == canonical_template_type]
+
+    if request.method == 'POST':
+        parsed_rows_by_field: dict[str, list[dict[str, object]]] = {}
+        field_errors: dict[str, str] = {}
+        for field in checkbox_fields:
+            field_key = str(field['key'])
+            parsed_rows = _parse_checkbox_group_rows(request.POST, field_key)
+            parsed_rows_by_field[field_key] = parsed_rows
+            seen_texts: set[str] = set()
+            for row in parsed_rows:
+                text = str(row.get('text') or '').strip()
+                if not text:
+                    continue
+                if text in seen_texts:
+                    field_errors[field_key] = '同じ項目名が重複しています。'
+                    break
+                seen_texts.add(text)
+
+        if not field_errors:
+            with transaction.atomic():
+                for field in checkbox_fields:
+                    field_key = str(field['key'])
+                    group = TemplateInputCheckboxGroup.objects.filter(
+                        template_type=canonical_template_type,
+                        field_key=field_key,
+                    ).prefetch_related('options').first()
+                    existing_options = {
+                        str(option.pk): option
+                        for option in group.options.all()
+                    } if group is not None else {}
+                    normalized_rows: list[dict[str, object]] = []
+                    for order, row in enumerate(parsed_rows_by_field.get(field_key, [])):
+                        row_id = str(row.get('id') or '').strip()
+                        text = str(row.get('text') or '').strip()
+                        position = _safe_int(row.get('position'), default=order * 10)
+                        if not text:
+                            continue
+                        normalized_rows.append({
+                            'row_id': row_id,
+                            'text': text,
+                            'position': position,
+                        })
+
+                    if group is None and not normalized_rows:
+                        continue
+                    if group is None:
+                        group = TemplateInputCheckboxGroup.objects.create(
+                            template_type=canonical_template_type,
+                            field_key=field_key,
+                        )
+                        existing_options = {}
+
+                    kept_option_ids: set[str] = {
+                        str(row.get('row_id') or '').strip()
+                        for row in normalized_rows
+                        if str(row.get('row_id') or '').strip() in existing_options
+                    }
+                    for option_id, option in list(existing_options.items()):
+                        if option_id not in kept_option_ids:
+                            option.delete()
+
+                    normalized_rows.sort(key=lambda row: (int(row.get('position') or 0), str(row.get('text') or '')))
+                    for sort_order, row in enumerate(normalized_rows):
+                        row_id = str(row.get('row_id') or '').strip()
+                        text = str(row.get('text') or '').strip()
+                        if row_id and row_id in existing_options:
+                            option = existing_options[row_id]
+                            option.text = text
+                            option.sort_order = sort_order
+                            option.save(update_fields=['text', 'sort_order', 'updated_at'])
+                            kept_option_ids.add(row_id)
+                        else:
+                            TemplateInputCheckboxOption.objects.create(
+                                group=group,
+                                text=text,
+                                sort_order=sort_order,
+                            )
+
+                TemplateInputCheckboxGroup.objects.filter(template_type=canonical_template_type).exclude(
+                    field_key__in=[str(field['key']) for field in checkbox_fields]
+                ).delete()
+
+            messages.success(request, f'{canonical_template_type} のチェックボックス項目を更新しました。')
+            return redirect('close_side:template_checkbox_options_edit', template_type=canonical_template_type)
+
+        field_rows = []
+        for field in checkbox_fields:
+            field_key = str(field['key'])
+            group = TemplateInputCheckboxGroup.objects.filter(
+                template_type=canonical_template_type,
+                field_key=field_key,
+            ).prefetch_related('options').first()
+            field_rows.append({
+                'field': field,
+                'context': _build_checkbox_group_field_context(field, group, parsed_rows_by_field.get(field_key, [])),
+                'error': field_errors.get(field_key, ''),
+            })
+    else:
+        field_rows = []
+        for field in checkbox_fields:
+            field_key = str(field['key'])
+            group = TemplateInputCheckboxGroup.objects.filter(
+                template_type=canonical_template_type,
+                field_key=field_key,
+            ).prefetch_related('options').first()
+            field_rows.append({
+                'field': field,
+                'context': _build_checkbox_group_field_context(field, group),
+                'error': '',
+            })
+
+    return render(request, 'anonymizer_app/template_checkbox_options_form.html', {
         'template_type': canonical_template_type,
         'template_aliases': aliases,
         'field_rows': field_rows,
@@ -1288,6 +1556,8 @@ def template_detail(request, template_name):
         template = Template.objects.filter(source_filename=source.source_filename).first()
         if template is None:
             return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
-        return render(request, 'anonymizer_app/template_detail.html', {'template': template})
+        return render(request, 'anonymizer_app/template_detail.html', {
+            'template': template,
+        })
     except Template.DoesNotExist:
         return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)

@@ -5,15 +5,23 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.http import QueryDict
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from anonymizer_app.forms import AnonymizeForm
-from anonymizer_app.models import Prompt, RestoreMetadata, TemplateInputDefault
+from anonymizer_app.models import (
+    Prompt,
+    RestoreMetadata,
+    TemplateInputCheckboxGroup,
+    TemplateInputCheckboxOption,
+    TemplateInputDefault,
+)
 from anonymizer_app.structured_input import (
     build_source_input_data,
     build_source_text_from_structured_input,
     build_source_text_from_source_input_data,
+    collect_structured_input,
     validate_structured_input,
 )
 from anonymizer_app.template_input_schemas import get_template_input_schema, get_template_input_schema_map
@@ -29,7 +37,11 @@ class StructuredInputHelperTests(TestCase):
             'present_history': '2日前から発熱が持続',
             'past_history': '',
             'admission_purpose': '精査',
-            'treatment_plan': '安静と採血',
+            'treatment_plan': {
+                'selected': ['安静', '輸液'],
+                'other': '必要時鎮痛薬',
+                'other_checked': True,
+            },
         }
 
         source_text = build_source_text_from_structured_input('入院時サマリー', structured_input)
@@ -37,11 +49,85 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('【主訴】\n発熱', source_text)
         self.assertIn('【現病歴】\n2日前から発熱が持続', source_text)
         self.assertIn('【入院目的】\n精査', source_text)
-        self.assertIn('【治療方針】\n安静と採血', source_text)
+        self.assertIn('【治療方針】\n・安静\n・輸液\n・その他: 必要時鎮痛薬', source_text)
         self.assertNotIn('【既往歴】', source_text)
         self.assertEqual(
             build_source_text_from_structured_input('入院時サマリー（詳細版）', structured_input),
             source_text,
+        )
+
+    def test_build_source_text_from_structured_input_prefers_text_over_checkbox_selection(self):
+        structured_input = {
+            'treatment_plan': {
+                'text': '独自記載',
+                'selected': ['安静', '輸液'],
+                'other': '',
+                'other_checked': False,
+            },
+        }
+
+        source_text = build_source_text_from_structured_input('入院時サマリー', structured_input)
+
+        self.assertIn('【治療方針】\n独自記載', source_text)
+        self.assertNotIn('・安静', source_text)
+
+    def test_collect_structured_input_supports_checkbox_group_and_other(self):
+        post_data = QueryDict('', mutable=True)
+        post_data.update({
+            'structured__chief_complaint': '発熱',
+            'structured__present_history': '2日前から発熱が持続',
+            'structured__admission_purpose': '精査',
+            'structured__treatment_plan__other': '必要時鎮痛薬',
+            'structured__treatment_plan__other_checked': '1',
+        })
+        post_data.setlist('structured__treatment_plan', ['安静', '輸液'])
+
+        structured_input = collect_structured_input('入院時サマリー', post_data)
+
+        self.assertEqual(structured_input['treatment_plan']['selected'], ['安静', '輸液'])
+        self.assertEqual(structured_input['treatment_plan']['other'], '必要時鎮痛薬')
+        self.assertTrue(structured_input['treatment_plan']['other_checked'])
+
+    def test_treatment_plan_schema_uses_checkbox_group(self):
+        schema = get_template_input_schema('入院時サマリー')
+        treatment_plan = next(field for field in schema if field['key'] == 'treatment_plan')
+
+        self.assertEqual(treatment_plan.get('input_type'), 'checkbox_group')
+        self.assertTrue(treatment_plan.get('allow_other'))
+        self.assertGreaterEqual(len(treatment_plan.get('options') or []), 3)
+
+    def test_treatment_plan_schema_uses_db_checkbox_options(self):
+        group = TemplateInputCheckboxGroup.objects.get(
+            template_type='入院時サマリー',
+            field_key='treatment_plan',
+        )
+        group.options.all().delete()
+        TemplateInputCheckboxOption.objects.create(group=group, text='安静(更新)', sort_order=0)
+        TemplateInputCheckboxOption.objects.create(group=group, text='リハビリ強化', sort_order=10)
+
+        schema = get_template_input_schema('入院時サマリー')
+        treatment_plan = next(field for field in schema if field['key'] == 'treatment_plan')
+
+        self.assertEqual(
+            [option['value'] for option in treatment_plan.get('options') or []],
+            ['安静(更新)', 'リハビリ強化'],
+        )
+
+    def test_non_checkbox_field_schema_uses_db_checkbox_options(self):
+        group = TemplateInputCheckboxGroup.objects.create(
+            template_type='委員会議事録',
+            field_key='agenda',
+        )
+        TemplateInputCheckboxOption.objects.create(group=group, text='検討事項', sort_order=0)
+        TemplateInputCheckboxOption.objects.create(group=group, text='共有事項', sort_order=10)
+
+        schema = get_template_input_schema('委員会議事録')
+        agenda = next(field for field in schema if field['key'] == 'agenda')
+
+        self.assertEqual(agenda.get('input_type'), 'textarea')
+        self.assertEqual(
+            [option['value'] for option in agenda.get('options') or []],
+            ['検討事項', '共有事項'],
         )
 
     def test_validate_structured_input_flags_missing_required_fields(self):
@@ -152,7 +238,9 @@ class StructuredInputViewTests(TestCase):
             'structured__chief_complaint': '発熱',
             'structured__present_history': '2日前から発熱が持続',
             'structured__admission_purpose': '精査',
-            'structured__treatment_plan': '安静と採血',
+            'structured__treatment_plan': ['安静', '輸液'],
+            'structured__treatment_plan__other_checked': '1',
+            'structured__treatment_plan__other': '必要時鎮痛薬',
         }
 
         with patch(
@@ -180,9 +268,14 @@ class StructuredInputViewTests(TestCase):
         self.assertEqual(metadata.prompt_json['metadata']['input_mode'], 'structured')
         self.assertEqual(prompt.source_input_data['template_type'], template_name)
         self.assertEqual(prompt.source_input_data['input_mode'], 'structured')
-        self.assertEqual(prompt.source_input_data['text'], '【主訴】\n発熱\n\n【現病歴】\n2日前から発熱が持続\n\n【入院目的】\n精査\n\n【治療方針】\n安静と採血')
+        self.assertEqual(
+            prompt.source_input_data['text'],
+            '【主訴】\n発熱\n\n【現病歴】\n2日前から発熱が持続\n\n【入院目的】\n精査\n\n【治療方針】\n・安静\n・輸液\n・その他: 必要時鎮痛薬',
+        )
         self.assertEqual(prompt.source_input_data['structured_input']['chief_complaint'], '発熱')
         self.assertEqual(prompt.source_input_data['structured_input']['present_history'], '2日前から発熱が持続')
+        self.assertEqual(prompt.source_input_data['structured_input']['treatment_plan']['selected'], ['安静', '輸液'])
+        self.assertEqual(prompt.source_input_data['structured_input']['treatment_plan']['other'], '必要時鎮痛薬')
         self.assertEqual(prompt.content, metadata.prompt_json['prompt_text'])
         self.assertNotIn('発熱', payload_dump)
         self.assertNotIn('2日前から発熱が持続', payload_dump)

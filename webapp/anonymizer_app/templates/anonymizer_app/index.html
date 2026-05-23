@@ -241,6 +241,62 @@
       min-height: 102px;
     }
 
+    .structured-checkbox-group {
+      display: grid;
+      gap: 12px;
+    }
+
+    .structured-checkbox-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 14px;
+    }
+
+    .structured-checkbox-option {
+      display: inline-flex;
+      gap: 8px;
+      align-items: flex-start;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .structured-checkbox-option input {
+      margin-top: 4px;
+      flex: 0 0 auto;
+    }
+
+    .structured-other-row {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcff;
+    }
+
+    .structured-other-toggle {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .structured-other-toggle input {
+      margin: 0;
+    }
+
+    .structured-other-input {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .structured-other-hidden {
+      display: none;
+    }
+
     .required-mark {
       margin-left: 8px;
       color: var(--danger);
@@ -252,6 +308,12 @@
       color: var(--danger);
       font-size: 13px;
       font-weight: 700;
+    }
+
+    .field-help-text {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
     }
 
     .schema-note {
@@ -691,7 +753,7 @@
                   <div class="panel-body">
                     <div id="structured-input-fields" class="structured-fields">
                       {% for field in structured_fields %}
-                        <div class="structured-field" data-field-key="{{ field.key }}">
+                        <div class="structured-field" data-field-key="{{ field.key }}" data-input-type="{{ field.input_type|default:'textarea' }}" data-has-checkbox-options="{% if field.has_checkbox_options %}true{% else %}false{% endif %}">
                           <label class="field-label" for="structured-{{ field.key }}">
                             {{ field.label }}
                             {% if field.required %}<span class="required-mark">必須</span>{% endif %}
@@ -699,10 +761,56 @@
                           <textarea
                             class="field-area structured-field-input"
                             id="structured-{{ field.key }}"
-                            name="structured__{{ field.key }}"
-                            data-structured-key="{{ field.key }}"
+                            name="{% if field.has_checkbox_options %}structured__{{ field.key }}__text{% else %}structured__{{ field.key }}{% endif %}"
+                            {% if field.has_checkbox_options %}data-structured-text-input="true"{% else %}data-structured-input="true"{% endif %}
                             rows="3"
-                          >{% if field.value %}{{ field.value }}{% endif %}</textarea>
+                          >{% if field.has_checkbox_options %}{% if field.text_value %}{{ field.text_value }}{% endif %}{% else %}{% if field.value %}{{ field.value }}{% endif %}{% endif %}</textarea>
+                          {% if field.has_checkbox_options %}
+                            <div class="structured-checkbox-group">
+                              <div class="structured-checkbox-options">
+                                {% if field.options %}
+                                  {% for option in field.options %}
+                                    {% with option_value=option.value|default:option option_label=option.label|default:option %}
+                                      <label class="structured-checkbox-option">
+                                        <input
+                                          type="checkbox"
+                                          name="structured__{{ field.key }}"
+                                          value="{{ option_value }}"
+                                          data-structured-option="true"
+                                          {% if field.selected_values and option_value in field.selected_values %}checked{% endif %}
+                                        >
+                                        <span>{{ option_label }}</span>
+                                      </label>
+                                    {% endwith %}
+                                  {% endfor %}
+                                {% else %}
+                                  <p class="field-help-text">チェックボックス項目はまだ登録されていません。</p>
+                                {% endif %}
+                              </div>
+                              {% if field.allow_other %}
+                                <div class="structured-other-row" data-structured-other-row="true">
+                                  <label class="structured-other-toggle">
+                                    <input
+                                      type="checkbox"
+                                      name="structured__{{ field.key }}__other_checked"
+                                      value="1"
+                                      data-structured-other-toggle="true"
+                                      {% if field.other_checked or field.other_text %}checked{% endif %}
+                                    >
+                                    <span>{{ field.other_label|default:"その他" }}</span>
+                                  </label>
+                                  <textarea
+                                    class="field-area structured-other-input"
+                                    name="structured__{{ field.key }}__other"
+                                    data-structured-other-input="true"
+                                    rows="2"
+                                    placeholder="{{ field.other_placeholder|default:'自由入力' }}"
+                                  >{% if field.other_text %}{{ field.other_text }}{% endif %}</textarea>
+                                </div>
+                              {% endif %}
+                              {% if field.help_text %}<p class="field-help-text">{{ field.help_text }}</p>{% endif %}
+                            </div>
+                          {% endif %}
                           {% if field.error %}<div class="field-error">{{ field.error }}</div>{% endif %}
                         </div>
                       {% endfor %}
@@ -916,6 +1024,18 @@
       return templateInputSchemas[templateName] || templateInputSchemas.__default__ || [];
     }
 
+    function getFieldInputType(field) {
+      return field && field.input_type ? field.input_type : 'textarea';
+    }
+
+    function fieldHasCheckboxOptions(field) {
+      return Boolean(field && Array.isArray(field.options) && field.options.length) || getFieldInputType(field) === 'checkbox_group';
+    }
+
+    function getFieldTextInputName(field) {
+      return fieldHasCheckboxOptions(field) ? `structured__${field.key}__text` : `structured__${field.key}`;
+    }
+
     function setStructuredInputHiddenValue(values) {
       if (!structuredInputHidden) {
         return;
@@ -923,14 +1043,45 @@
       structuredInputHidden.value = JSON.stringify(values || {});
     }
 
+    function getStructuredFieldContainerValues(fieldWrap) {
+      if (!fieldWrap) {
+        return '';
+      }
+
+      const hasCheckboxOptions = fieldWrap.dataset.hasCheckboxOptions === 'true';
+      if (hasCheckboxOptions) {
+        const textInput = fieldWrap.querySelector('[data-structured-text-input]');
+        const selected = Array.from(fieldWrap.querySelectorAll('input[type="checkbox"][data-structured-option="true"]'))
+          .filter((checkbox) => checkbox.checked)
+          .map((checkbox) => checkbox.value.trim())
+          .filter(Boolean);
+        const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+        const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+        const otherText = otherInput ? otherInput.value.trim() : '';
+        const otherChecked = Boolean(otherToggle && otherToggle.checked) || Boolean(otherText);
+        return {
+          text: textInput ? textInput.value.trim() : '',
+          selected,
+          other: otherText,
+          other_checked: otherChecked,
+        };
+      }
+
+      const input = fieldWrap.querySelector('[data-structured-input]');
+      return input ? input.value.trim() : '';
+    }
+
     function collectStructuredFieldValues() {
       const values = {};
       if (!structuredFieldsHost) {
         return values;
       }
-      structuredFieldsHost.querySelectorAll('[data-structured-key]').forEach((field) => {
-        const key = field.dataset.structuredKey || field.name.replace(/^structured__/, '');
-        values[key] = field.value.trim();
+      structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+        const key = field.dataset.fieldKey || '';
+        if (!key) {
+          return;
+        }
+        values[key] = getStructuredFieldContainerValues(field);
       });
       return values;
     }
@@ -940,22 +1091,59 @@
       const schema = getSchemaForTemplate(templateSelect ? templateSelect.value : '');
       const values = collectStructuredFieldValues();
       schema.forEach((field) => {
-        const value = (values[field.key] || '').trim();
-        if (value) {
+        const value = values[field.key];
+        if (fieldHasCheckboxOptions(field)) {
+          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+          const textValue = (valueMap.text || '').toString().trim();
+          const selected = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+          const otherText = (valueMap.other || '').toString().trim();
+          if (textValue || selected.length || otherText) {
+            labels.push(field.label || field.key);
+          }
+          return;
+        }
+
+        if ((value || '').toString().trim()) {
           labels.push(field.label || field.key);
         }
       });
       return labels;
     }
 
+    function formatCheckboxGroupFieldValue(field, value) {
+      const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      const textValue = (valueMap.text || '').toString().trim();
+      if (textValue) {
+        return textValue;
+      }
+      const selected = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+      const otherText = (valueMap.other || '').toString().trim();
+      const otherChecked = Boolean(valueMap.other_checked);
+      const lines = selected
+        .map((item) => (item || '').toString().trim())
+        .filter(Boolean)
+        .map((item) => `・${item}`);
+
+      if (otherText) {
+        lines.push(`・${field.other_label || 'その他'}: ${otherText}`);
+      } else if (otherChecked) {
+        lines.push(`・${field.other_label || 'その他'}`);
+      }
+
+      return lines.join('\n').trim();
+    }
+
     function buildStructuredSourceText(templateName, values) {
       const blocks = [];
       getSchemaForTemplate(templateName).forEach((field) => {
-        const value = (values[field.key] || '').trim();
-        if (!value) {
+        const value = values[field.key];
+        const fieldValue = fieldHasCheckboxOptions(field)
+          ? formatCheckboxGroupFieldValue(field, value)
+          : (value || '').toString().trim();
+        if (!fieldValue) {
           return;
         }
-        blocks.push(`【${field.label}】\n${value}`);
+        blocks.push(`【${field.label}】\n${fieldValue}`);
       });
       return blocks.join('\n\n');
     }
@@ -975,6 +1163,66 @@
       return sourceText;
     }
 
+    function setStructuredCheckboxGroupState(fieldWrap) {
+      if (!fieldWrap || fieldWrap.dataset.hasCheckboxOptions !== 'true') {
+        return;
+      }
+      const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+      const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+      if (!otherInput) {
+        return;
+      }
+      const isChecked = Boolean(otherToggle && otherToggle.checked);
+      otherInput.hidden = !isChecked;
+      otherInput.disabled = !isChecked;
+      if (!isChecked) {
+        otherInput.value = '';
+      }
+    }
+
+    function syncAllStructuredCheckboxGroupState() {
+      if (!structuredFieldsHost) {
+        return;
+      }
+      structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+        setStructuredCheckboxGroupState(field);
+      });
+    }
+
+    function handleStructuredFieldInteraction(event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const fieldWrap = target.closest('.structured-field');
+      if (!fieldWrap) {
+        return;
+      }
+
+      const hasCheckboxOptions = fieldWrap.dataset.hasCheckboxOptions === 'true';
+      if (hasCheckboxOptions) {
+        if (target.matches('[data-structured-other-toggle]')) {
+          setStructuredCheckboxGroupState(fieldWrap);
+          const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+          if (otherInput && !otherInput.hidden && !otherInput.disabled && target.checked) {
+            otherInput.focus();
+          }
+        } else if (target.matches('[data-structured-other-input]')) {
+          const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+          if (otherToggle && target.value.trim() && !otherToggle.checked) {
+            otherToggle.checked = true;
+            setStructuredCheckboxGroupState(fieldWrap);
+          }
+        }
+      }
+
+      setStructuredInputHiddenValue(collectStructuredFieldValues());
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
+      markEdited();
+    }
+
     function renderStructuredFields(templateName, values = {}) {
       if (!structuredFieldsHost) {
         return;
@@ -986,6 +1234,9 @@
         const fieldWrap = document.createElement('div');
         fieldWrap.className = 'structured-field';
         fieldWrap.dataset.fieldKey = field.key;
+        fieldWrap.dataset.inputType = getFieldInputType(field);
+        const hasCheckboxOptions = fieldHasCheckboxOptions(field);
+        fieldWrap.dataset.hasCheckboxOptions = hasCheckboxOptions ? 'true' : 'false';
 
         const label = document.createElement('label');
         label.className = 'field-label';
@@ -998,21 +1249,116 @@
           label.appendChild(requiredMark);
         }
 
-        const textarea = document.createElement('textarea');
-        textarea.className = 'field-area structured-field-input';
-        textarea.id = `structured-${field.key}`;
-        textarea.name = `structured__${field.key}`;
-        textarea.dataset.structuredKey = field.key;
-        textarea.rows = 3;
+        fieldWrap.appendChild(label);
+        const textInput = document.createElement('textarea');
+        textInput.className = 'field-area structured-field-input';
+        textInput.id = `structured-${field.key}`;
+        textInput.name = getFieldTextInputName(field);
+        textInput.dataset.structuredInput = 'true';
+        if (hasCheckboxOptions) {
+          textInput.dataset.structuredTextInput = 'true';
+        }
+        textInput.rows = 3;
+
         const hasValue = Object.prototype.hasOwnProperty.call(values, field.key);
-        textarea.value = hasValue ? (values[field.key] || '') : (field.default || '');
+        if (hasCheckboxOptions) {
+          const value = hasValue ? values[field.key] : {};
+          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+          const textValue = (valueMap.text || '').toString().trim();
+          textInput.value = hasValue ? (textValue || formatCheckboxGroupFieldValue(field, value)) : (field.default || '');
+        } else {
+          textInput.value = hasValue ? (values[field.key] || '') : (field.default || '');
+        }
+        fieldWrap.appendChild(textInput);
+
+        if (hasCheckboxOptions) {
+          const group = document.createElement('div');
+          group.className = 'structured-checkbox-group';
+
+          const optionsWrap = document.createElement('div');
+          optionsWrap.className = 'structured-checkbox-options';
+          const value = hasValue ? values[field.key] : {};
+          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+          const selectedValues = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+          const otherText = (valueMap.other || '').toString().trim();
+          const otherChecked = Boolean(valueMap.other_checked || otherText);
+
+          (field.options || []).forEach((option) => {
+            const optionValue = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'value'))
+              ? option.value
+              : option;
+            const optionLabel = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'label'))
+              ? option.label
+              : optionValue;
+            const optionLabelWrap = document.createElement('label');
+            optionLabelWrap.className = 'structured-checkbox-option';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = `structured__${field.key}`;
+            checkbox.value = optionValue;
+            checkbox.dataset.structuredOption = 'true';
+            if (selectedValues.some((selectedValue) => String(selectedValue) === String(optionValue))) {
+              checkbox.checked = true;
+            }
+
+            const text = document.createElement('span');
+            text.textContent = optionLabel;
+            optionLabelWrap.appendChild(checkbox);
+            optionLabelWrap.appendChild(text);
+            optionsWrap.appendChild(optionLabelWrap);
+          });
+
+          group.appendChild(optionsWrap);
+
+          if (field.allow_other) {
+            const otherRow = document.createElement('div');
+            otherRow.className = 'structured-other-row';
+            otherRow.dataset.structuredOtherRow = 'true';
+
+            const otherToggleLabel = document.createElement('label');
+            otherToggleLabel.className = 'structured-other-toggle';
+
+            const otherToggle = document.createElement('input');
+            otherToggle.type = 'checkbox';
+            otherToggle.name = `structured__${field.key}__other_checked`;
+            otherToggle.value = '1';
+            otherToggle.dataset.structuredOtherToggle = 'true';
+            if (otherChecked) {
+              otherToggle.checked = true;
+            }
+
+            const otherToggleText = document.createElement('span');
+            otherToggleText.textContent = field.other_label || 'その他';
+            otherToggleLabel.appendChild(otherToggle);
+            otherToggleLabel.appendChild(otherToggleText);
+            otherRow.appendChild(otherToggleLabel);
+
+            const otherInput = document.createElement('textarea');
+            otherInput.className = 'field-area structured-other-input';
+            otherInput.name = `structured__${field.key}__other`;
+            otherInput.dataset.structuredOtherInput = 'true';
+            otherInput.rows = 2;
+            otherInput.placeholder = field.other_placeholder || '自由入力';
+            otherInput.value = otherText || '';
+            otherRow.appendChild(otherInput);
+            group.appendChild(otherRow);
+          }
+
+          if (field.help_text) {
+            const helpText = document.createElement('p');
+            helpText.className = 'field-help-text';
+            helpText.textContent = field.help_text;
+            group.appendChild(helpText);
+          }
+
+          fieldWrap.appendChild(group);
+          setStructuredCheckboxGroupState(fieldWrap);
+        }
 
         const error = document.createElement('div');
         error.className = 'field-error';
         error.textContent = '';
-
-        fieldWrap.appendChild(label);
-        fieldWrap.appendChild(textarea);
         fieldWrap.appendChild(error);
         structuredFieldsHost.appendChild(fieldWrap);
       });
@@ -1075,10 +1421,31 @@
       const mode = getSelectedInputMode();
       if (mode === 'structured') {
         if (structuredFieldsHost) {
-          structuredFieldsHost.querySelectorAll('[data-structured-key]').forEach((field) => {
-            field.value = '';
+          structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+            const hasCheckboxOptions = field.dataset.hasCheckboxOptions === 'true';
+            if (hasCheckboxOptions) {
+              field.querySelectorAll('input[type="checkbox"][data-structured-option="true"]').forEach((checkbox) => {
+                checkbox.checked = false;
+              });
+              const otherToggle = field.querySelector('[data-structured-other-toggle]');
+              if (otherToggle) {
+                otherToggle.checked = false;
+              }
+              const textInput = field.querySelector('[data-structured-text-input]');
+              if (textInput) {
+                textInput.value = '';
+              }
+              setStructuredCheckboxGroupState(field);
+              return;
+            }
+
+            const input = field.querySelector('[data-structured-input]');
+            if (input) {
+              input.value = '';
+            }
           });
         }
+        setStructuredInputHiddenValue(collectStructuredFieldValues());
         syncStructuredSourceText();
         setStatus('テンプレート項目入力をクリアしました');
       } else if (mode === 'voice') {
@@ -1103,9 +1470,14 @@
 
       setAnonymizedOutputText('', { emitInputEvent: false });
       if (mode === 'structured' && structuredFieldsHost) {
-        const firstField = structuredFieldsHost.querySelector('[data-structured-key]');
+        const firstField = structuredFieldsHost.querySelector('.structured-field');
         if (firstField) {
-          firstField.focus();
+          const firstFocusTarget = firstField.querySelector(
+            '[data-structured-text-input], [data-structured-input], [data-structured-option="true"], [data-structured-other-toggle], [data-structured-other-input]'
+          );
+          if (firstFocusTarget && typeof firstFocusTarget.focus === 'function') {
+            firstFocusTarget.focus();
+          }
           return;
         }
       }
@@ -1628,13 +2000,8 @@
     }
 
     if (structuredFieldsHost) {
-      structuredFieldsHost.addEventListener('input', () => {
-        setStructuredInputHiddenValue(collectStructuredFieldValues());
-        if (getSelectedInputMode() === 'structured') {
-          syncStructuredSourceText();
-        }
-        markEdited();
-      });
+      structuredFieldsHost.addEventListener('input', handleStructuredFieldInteraction);
+      structuredFieldsHost.addEventListener('change', handleStructuredFieldInteraction);
     }
 
     if (templateSelect) {
@@ -1778,6 +2145,7 @@
     }
 
     updateModeUI();
+    syncAllStructuredCheckboxGroupState();
     setStructuredInputHiddenValue(collectStructuredFieldValues());
     updateVoiceRecordingControls(false);
     if (getSelectedInputMode() === 'voice' && !hasVoiceRecordingSupport()) {

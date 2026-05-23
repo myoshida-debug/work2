@@ -1,0 +1,346 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}チェックボックス項目編集{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}チェックボックス項目編集{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">テンプレート項目のチェックボックス版を追加・編集・削除します。現在のテキスト入力欄はそのまま残ります。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+  <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template_type %}">入力欄初期値へ</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .checkbox-note {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .aliases-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .checkbox-group-list {
+      display: grid;
+      gap: 18px;
+    }
+
+    .checkbox-group-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .checkbox-group-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      padding: 14px 16px;
+    }
+
+    .checkbox-group-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .checkbox-group-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .checkbox-group-body {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .checkbox-group-help {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .checkbox-group-empty {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .checkbox-group-rows {
+      display: grid;
+      gap: 10px;
+    }
+
+    .checkbox-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .checkbox-row-fields {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .checkbox-row-fields label {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .checkbox-row-actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .checkbox-row input[type="text"] {
+      width: 100%;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .form-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .checkbox-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h3 class="panel-title">{{ template_type }}</h3>
+        {% if template_aliases %}
+          <div class="aliases-row">
+            {% for alias in template_aliases %}
+              <span class="badge">{{ alias }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+      <span class="badge">チェックボックス</span>
+    </div>
+    <div class="panel-body">
+      <p class="checkbox-note">項目名を入力して保存すると、匿名化画面で使うチェックボックスの選択肢が更新されます。空欄の行は保存時に無視されます。</p>
+
+      <form method="post" data-checkbox-option-editor>
+        {% csrf_token %}
+
+        <div class="checkbox-group-list">
+          {% for item in field_rows %}
+            <section
+              class="checkbox-group-card"
+              data-checkbox-group-section
+              data-field-key="{{ item.context.key }}"
+              data-next-row-number="{{ item.context.next_row_number }}"
+              data-next-position="{{ item.context.next_position }}"
+            >
+              <div class="checkbox-group-head">
+                <div>
+                  <h4 class="checkbox-group-title">{{ item.context.label }}</h4>
+                  <div class="checkbox-group-meta">
+                    <span class="badge">複数選択</span>
+                    {% if item.context.allow_other %}<span class="badge">その他あり</span>{% endif %}
+                    {% if item.context.group_exists %}<span class="badge">保存済み</span>{% else %}<span class="badge">未保存</span>{% endif %}
+                  </div>
+                </div>
+                <div class="actions">
+                  <button type="button" class="button primary" data-add-option-row>項目を追加</button>
+                </div>
+              </div>
+
+              <div class="checkbox-group-body">
+                {% if item.context.help_text %}
+                  <p class="checkbox-group-help">{{ item.context.help_text }}</p>
+                {% endif %}
+                {% if item.error %}
+                  <div class="field-error">{{ item.error }}</div>
+                {% endif %}
+
+                <div class="checkbox-group-rows" data-option-row-list>
+                  {% if item.context.rows %}
+                    {% for row in item.context.rows %}
+                      <div class="checkbox-row" data-option-row data-row-key="{{ row.row_key }}">
+                        <div class="checkbox-row-fields">
+                          <div>
+                            <label for="checkbox__{{ item.context.key }}__{{ row.row_key }}__text">項目名</label>
+                            <input
+                              id="checkbox__{{ item.context.key }}__{{ row.row_key }}__text"
+                              type="text"
+                              name="checkbox__{{ item.context.key }}__{{ row.row_key }}__text"
+                              value="{{ row.text }}"
+                              data-role="option-text"
+                              placeholder="選択肢を入力"
+                            >
+                          </div>
+                          <input
+                            type="hidden"
+                            name="checkbox__{{ item.context.key }}__{{ row.row_key }}__id"
+                            value="{{ row.id }}"
+                            data-role="option-id"
+                          >
+                          <input
+                            type="hidden"
+                            name="checkbox__{{ item.context.key }}__{{ row.row_key }}__position"
+                            value="{{ row.position }}"
+                            data-role="option-position"
+                          >
+                        </div>
+                        <div class="checkbox-row-actions">
+                          <button type="button" class="danger" data-remove-option-row>削除</button>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <p class="checkbox-group-empty">まだ項目がありません。右上の「項目を追加」から登録してください。</p>
+                  {% endif %}
+                </div>
+
+                <template data-option-row-template>
+                  <div class="checkbox-row" data-option-row>
+                    <div class="checkbox-row-fields">
+                      <div>
+                        <label data-role="option-label" for="checkbox-option-text">項目名</label>
+                        <input
+                          type="text"
+                          data-role="option-text"
+                          placeholder="選択肢を入力"
+                        >
+                      </div>
+                      <input
+                        type="hidden"
+                        data-role="option-id"
+                      >
+                      <input
+                        type="hidden"
+                        data-role="option-position"
+                      >
+                    </div>
+                    <div class="checkbox-row-actions">
+                      <button type="button" class="danger" data-remove-option-row>削除</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+          <button class="primary" type="submit">保存</button>
+          <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const editor = document.querySelector('[data-checkbox-option-editor]');
+      if (!editor) {
+        return;
+      }
+
+      function createRow(section) {
+        const list = section.querySelector('[data-option-row-list]');
+        const template = section.querySelector('template[data-option-row-template]');
+        if (!list || !template) {
+          return;
+        }
+
+        const fieldKey = section.dataset.fieldKey || '';
+        const nextRowNumber = Number(section.dataset.nextRowNumber || list.querySelectorAll('[data-option-row]').length);
+        const nextPosition = Number(section.dataset.nextPosition || 10);
+        const rowKey = `new_${nextRowNumber}`;
+        section.dataset.nextRowNumber = String(nextRowNumber + 1);
+        section.dataset.nextPosition = String(nextPosition + 10);
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = template.innerHTML;
+
+        const row = wrapper.firstElementChild;
+        if (!row) {
+          return;
+        }
+        row.dataset.rowKey = rowKey;
+
+        const textInput = row.querySelector('[data-role="option-text"]');
+        const idInput = row.querySelector('[data-role="option-id"]');
+        const positionInput = row.querySelector('[data-role="option-position"]');
+        const label = row.querySelector('[data-role="option-label"]');
+
+        if (textInput) {
+          textInput.name = `checkbox__${fieldKey}__${rowKey}__text`;
+          textInput.id = `checkbox__${fieldKey}__${rowKey}__text`;
+          textInput.value = '';
+        }
+        if (idInput) {
+          idInput.name = `checkbox__${fieldKey}__${rowKey}__id`;
+          idInput.value = '';
+        }
+        if (positionInput) {
+          positionInput.name = `checkbox__${fieldKey}__${rowKey}__position`;
+          positionInput.value = String(nextPosition);
+        }
+        if (label && textInput) {
+          label.htmlFor = textInput.id;
+        }
+
+        list.appendChild(row);
+        if (textInput) {
+          textInput.focus();
+        }
+      }
+
+      editor.querySelectorAll('[data-add-option-row]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const section = button.closest('[data-checkbox-group-section]');
+          if (section) {
+            createRow(section);
+          }
+        });
+      });
+
+      editor.addEventListener('click', function (event) {
+        const removeButton = event.target.closest('[data-remove-option-row]');
+        if (!removeButton) {
+          return;
+        }
+        const row = removeButton.closest('[data-option-row]');
+        if (row) {
+          row.remove();
+        }
+      });
+    });
+  </script>
+{% endblock %}

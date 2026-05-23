@@ -6,6 +6,7 @@
 {% block page_subtitle %}<p class="page-subtitle">テンプレート項目に最初から入れる文字を編集します。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+  <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template_type %}">チェックボックス項目へ</a>
 {% endblock %}
 
 {% block content %}
@@ -38,6 +39,13 @@
       flex-wrap: wrap;
       align-items: center;
       gap: 8px;
+    }
+
+    .default-field .field-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
     }
 
     .default-field .field-label {
@@ -99,6 +107,7 @@
                 </label>
                 {% if row.required %}<span class="badge">現在: 必須</span>{% else %}<span class="badge">現在: 任意</span>{% endif %}
               </div>
+              <p class="field-note">テキスト入力欄の初期値です。チェックボックス版の選択肢は別ページで管理します。</p>
               {{ row.bound_default_field }}
               {% if row.bound_default_field.errors %}
                 <div class="field-error">{{ row.bound_default_field.errors }}</div>

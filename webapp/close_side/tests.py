@@ -11,7 +11,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from anonymizer_app.models import Prompt, RestoreMetadata, TemplateInputDefault
+from anonymizer_app.models import (
+    Prompt,
+    RestoreMetadata,
+    TemplateInputCheckboxGroup,
+    TemplateInputCheckboxOption,
+    TemplateInputDefault,
+)
 from anonymizer_app.template_input_schemas import get_template_input_schema
 
 
@@ -321,3 +327,72 @@ class TemplateInputDefaultEditTests(TestCase):
         overview = next(field for field in home_response.context['structured_fields'] if field['key'] == 'overview')
         self.assertEqual(overview['value'], '会議名：\n開催日時：\n開催場所：\n参加者：\n出席状況：')
         self.assertFalse(overview['required'])
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateCheckboxOptionsEditTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+
+    def test_template_checkbox_options_edit_adds_updates_and_deletes_options(self):
+        group = TemplateInputCheckboxGroup.objects.get(
+            template_type='入院時サマリー',
+            field_key='treatment_plan',
+        )
+        group.options.all().delete()
+        existing_option = TemplateInputCheckboxOption.objects.create(
+            group=group,
+            text='安静',
+            sort_order=0,
+        )
+        TemplateInputCheckboxOption.objects.create(
+            group=group,
+            text='輸液',
+            sort_order=10,
+        )
+
+        response = self.client.post(
+            reverse('close_side:template_checkbox_options_edit', args=['入院時サマリー']),
+            {
+                f'checkbox__treatment_plan__opt_{existing_option.pk}__id': str(existing_option.pk),
+                f'checkbox__treatment_plan__opt_{existing_option.pk}__text': '安静(更新)',
+                f'checkbox__treatment_plan__opt_{existing_option.pk}__position': '0',
+                'checkbox__treatment_plan__new_0__id': '',
+                'checkbox__treatment_plan__new_0__text': '薬剤調整',
+                'checkbox__treatment_plan__new_0__position': '10',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        options = list(TemplateInputCheckboxOption.objects.filter(group=group).order_by('sort_order', 'id'))
+        self.assertEqual([option.text for option in options], ['安静(更新)', '薬剤調整'])
+
+        schema = get_template_input_schema('入院時サマリー')
+        treatment_plan = next(field for field in schema if field['key'] == 'treatment_plan')
+        self.assertEqual(
+            [option['value'] for option in treatment_plan.get('options') or []],
+            ['安静(更新)', '薬剤調整'],
+        )
+
+    def test_template_checkbox_options_edit_supports_text_fields(self):
+        response = self.client.post(
+            reverse('close_side:template_checkbox_options_edit', args=['委員会議事録']),
+            {
+                'checkbox__agenda__new_0__id': '',
+                'checkbox__agenda__new_0__text': '検討事項',
+                'checkbox__agenda__new_0__position': '0',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        schema = get_template_input_schema('委員会議事録')
+        agenda = next(field for field in schema if field['key'] == 'agenda')
+        self.assertEqual(
+            [option['value'] for option in agenda.get('options') or []],
+            ['検討事項'],
+        )
