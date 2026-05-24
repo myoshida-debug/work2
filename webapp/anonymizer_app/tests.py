@@ -808,6 +808,19 @@ class StructuredInputViewTests(TestCase):
         self.assertContains(response, 'rows="6"')
         self.assertContains(response, 'min-height: calc(6 * 1.65em + 24px);')
 
+    def test_home_post_structured_mode_renders_checkbox_options_once(self):
+        template_name = '入院時サマリー'
+
+        response = self.client.post(reverse('close_side:home'), {
+            'template': template_name,
+            'input_mode': 'structured',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        treatment_plan = next(field for field in get_template_input_schema(template_name) if field['key'] == 'treatment_plan')
+        expected_count = len(treatment_plan.get('options') or [])
+        self.assertEqual(response.content.count(b'name="structured__treatment_plan"'), expected_count)
+
     def test_update_prompt_payload_returns_refreshed_compare_html(self):
         source_id = 'prompt_compare_1234'
         RestoreMetadata.objects.create(

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AnonymizationRule, OperationLog, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputField
+from .models import AnonymizationRule, OperationLog, Patient, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputField
 
 
 @admin.register(RestoreMetadata)
@@ -19,6 +19,14 @@ class PromptAdmin(admin.ModelAdmin):
 class RestoredResultAdmin(admin.ModelAdmin):
     list_display = ('result_id', 'source_id', 'template_type', 'owner', 'reviewer', 'status', 'created_at')
     search_fields = ('result_id', 'source_id', 'template_type', 'reviewer', 'owner__username')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(Patient)
+class PatientAdmin(admin.ModelAdmin):
+    list_display = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'sex', 'birth_date', 'primary_diagnosis', 'updated_at')
+    search_fields = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'primary_diagnosis')
+    list_filter = ('sex',)
     readonly_fields = ('created_at', 'updated_at')
 
 

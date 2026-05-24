@@ -1,0 +1,178 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 患者管理{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}患者管理{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">患者マスタの検索、追加、編集、削除、CSV取込を行います。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+  <a class="button" href="{% url 'close_side:patient_import' %}">CSV取込</a>
+  <a class="button primary" href="{% url 'close_side:patient_create' %}">新規追加</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .patient-search-form {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px 14px;
+      align-items: end;
+    }
+
+    .patient-search-field {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .patient-search-field .field-label {
+      margin-bottom: 0;
+    }
+
+    .patient-search-field input,
+    .patient-search-field select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .patient-search-field input:focus,
+    .patient-search-field select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .patient-search-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .patient-table .patient-id-cell {
+      white-space: nowrap;
+    }
+
+    .patient-table .patient-actions {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 980px) {
+      .patient-search-form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">患者マスタ一覧</h3>
+      <span class="badge">{{ query_count }}件</span>
+    </div>
+    <div class="panel-body">
+      <form method="get" class="patient-search-form">
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.patient_id.id_for_label }}">ID</label>
+          {{ form.patient_id }}
+        </div>
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.kana.id_for_label }}">ふりかな</label>
+          {{ form.kana }}
+        </div>
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.sex.id_for_label }}">性別</label>
+          {{ form.sex }}
+        </div>
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.birth_date.id_for_label }}">生年月日</label>
+          {{ form.birth_date }}
+        </div>
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.primary_diagnosis.id_for_label }}">主病名</label>
+          {{ form.primary_diagnosis }}
+        </div>
+        <div class="patient-search-field">
+          <label class="field-label" for="{{ form.sort.id_for_label }}">ソート</label>
+          {{ form.sort }}
+        </div>
+        <div class="patient-search-actions">
+          <button class="primary" type="submit">検索</button>
+          {% if has_filters %}
+            <a class="button" href="{% url 'close_side:patient_list' %}">検索解除</a>
+          {% endif %}
+          <span class="muted">検索キー: ID、ふりかな、性別、生年月日、主病名</span>
+        </div>
+      </form>
+
+      {% if form.errors %}
+        <div class="error-list" style="margin-top: 16px;">
+          {% for field in form %}
+            {% if field.errors %}
+              {% for error in field.errors %}
+                <div>{{ field.label }}: {{ error }}</div>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+          {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if patients %}
+        <div class="table-scroll" style="margin-top: 16px;">
+          <table class="history-table patient-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>氏名</th>
+                <th>ふりかな</th>
+                <th>生年月日</th>
+                <th>性別</th>
+                <th>主病名</th>
+                <th>更新日時</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for patient in patients %}
+                <tr>
+                  <td class="patient-id-cell"><strong>{{ patient.patient_id }}</strong></td>
+                  <td>{{ patient.full_name|default:"-" }}</td>
+                  <td>{{ patient.kana_full_name|default:"-" }}</td>
+                  <td>{{ patient.birth_date|date:"Y-m-d"|default:"-" }}</td>
+                  <td>{{ patient.get_sex_display|default:"-" }}</td>
+                  <td>{{ patient.primary_diagnosis|default:"-"|truncatechars:60 }}</td>
+                  <td>{{ patient.updated_at|date:"Y-m-d H:i:s" }}</td>
+                  <td class="patient-actions">
+                    <div class="actions">
+                      <a class="button" href="{% url 'close_side:patient_edit' pk=patient.pk %}">編集</a>
+                      <form
+                        class="inline-form"
+                        method="post"
+                        action="{% url 'close_side:patient_delete' pk=patient.pk %}"
+                        onsubmit="return confirm('この患者マスタを削除しますか？');"
+                      >
+                        {% csrf_token %}
+                        <button class="danger" type="submit">削除</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">患者マスタがありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

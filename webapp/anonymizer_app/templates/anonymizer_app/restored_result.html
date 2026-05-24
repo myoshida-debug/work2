@@ -3,7 +3,7 @@
 {% block title %}CloseSide 復元結果確認{% endblock %}
 {% block brand %}CloseSide{% endblock %}
 {% block page_title %}復元結果確認{% endblock %}
-{% block page_subtitle %}<p class="page-subtitle">AI生成後文書と復元後文書の変更点をハイライト表示します。</p>{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">AI生成後文書と復元後文書の変更点をハイライト表示します。匿名ラベルを編集して再復元できます。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴へ</a>
   <a class="button" href="{% url 'close_side:result_import_list' %}">返却DMZから取り込みへ</a>
@@ -11,6 +11,49 @@
 {% endblock %}
 
 {% block content %}
+  <style>
+    .restore-editor-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .restore-table .label-value,
+    .restore-table .original-value {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .restore-table .label-value {
+      min-width: 220px;
+    }
+
+    .restore-table .original-value {
+      min-width: 260px;
+    }
+
+    .restore-table td:last-child {
+      width: 110px;
+      white-space: nowrap;
+    }
+
+    .restore-label-row .danger {
+      min-height: 34px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .restore-actions {
+      margin-top: 14px;
+      justify-content: flex-end;
+    }
+
+    .restore-empty-row td {
+      color: var(--muted);
+      font-weight: 700;
+    }
+  </style>
+
   <section class="panel">
     <div class="panel-header">
       <h3 class="panel-title">取り込み情報</h3>
@@ -60,36 +103,55 @@
         });
       </script>
     </div>
- </section>
-
- <!--
-    <div class="panel">
-      <div class="panel-header"><h3 class="panel-title">復元後文書</h3></div>
-      <div class="panel-body">
-        <pre>{{ restored_html|safe }}</pre>
-      </div>
-    </div>
-  -->
-  
+  </section>
 
   <section class="panel">
-    <div class="panel-header"><h3 class="panel-title">匿名化ラベル一覧</h3></div>
+    <div class="panel-header">
+      <h3 class="panel-title">匿名ラベル編集</h3>
+      <span class="badge">{{ restore_map_items|length }}件</span>
+    </div>
     <div class="panel-body">
-      <table>
-        <thead>
-          <tr><th>匿名化ラベル</th><th>元文言</th></tr>
-        </thead>
-        <tbody>
-          {% for label, original in restore_map_items %}
-            <tr>
-              <td><strong>{{ label }}</strong></td>
-              <td>{{ original }}</td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="2">復元マップはありません。</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <form method="post" action="{% url 'close_side:result_rerestore' pk=record.pk %}" id="restore-map-form">
+        {% csrf_token %}
+        <p class="restore-editor-note">匿名ラベルまたは元文言を修正し、必要なら追加・削除してから「再復元する」を押してください。</p>
+        <input type="hidden" name="restore_rows_json" id="restore-rows-json" value="[]">
+
+        <div class="table-scroll compact">
+          <table class="history-table restore-table">
+            <thead>
+              <tr>
+                <th>匿名後文字</th>
+                <th>元文言</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="restore-map-body">
+              {% for label, original in restore_map_items %}
+                <tr class="restore-label-row" data-current-label="{{ label }}">
+                  <td>
+                    <input class="label-edit-input label-value" type="text" value="{{ label }}" aria-label="匿名後文字">
+                  </td>
+                  <td>
+                    <input class="label-edit-input original-value" type="text" value="{{ original }}" aria-label="元文言">
+                  </td>
+                  <td>
+                    <button type="button" class="danger delete-label-row">削除</button>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr class="restore-empty-row">
+                  <td colspan="3">復元ラベルはありません。追加ボタンから登録できます。</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="actions restore-actions">
+          <button type="button" class="button" id="add-label-row">匿名ラベル追加</button>
+          <button type="submit" class="button primary" id="rerestore-button">再復元する</button>
+        </div>
+      </form>
     </div>
   </section>
 
@@ -97,4 +159,130 @@
     <summary>返却JSON</summary>
     <pre>{{ result_json }}</pre>
   </details>
+
+  <script>
+    const restoreMapForm = document.getElementById('restore-map-form');
+    const restoreMapBody = document.getElementById('restore-map-body');
+    const restoreRowsJsonField = document.getElementById('restore-rows-json');
+    const addLabelButton = document.getElementById('add-label-row');
+
+    function getRestoreRows() {
+      if (!restoreMapBody) {
+        return [];
+      }
+      return Array.from(restoreMapBody.querySelectorAll('.restore-label-row')).map((row) => {
+        const labelInput = row.querySelector('.label-value');
+        const originalInput = row.querySelector('.original-value');
+        return {
+          old_label: row.dataset.currentLabel || '',
+          label: labelInput ? labelInput.value.trim() : '',
+          original: originalInput ? originalInput.value.trim() : '',
+        };
+      });
+    }
+
+    function setRestoreRowsJson() {
+      if (restoreRowsJsonField) {
+        restoreRowsJsonField.value = JSON.stringify(getRestoreRows());
+      }
+    }
+
+    function ensureEmptyState() {
+      if (!restoreMapBody) {
+        return;
+      }
+      const existingRows = restoreMapBody.querySelectorAll('.restore-label-row').length;
+      const emptyRow = restoreMapBody.querySelector('.restore-empty-row');
+      if (existingRows > 0 && emptyRow) {
+        emptyRow.remove();
+      } else if (existingRows === 0 && !emptyRow) {
+        const row = document.createElement('tr');
+        row.className = 'restore-empty-row';
+        const cell = document.createElement('td');
+        cell.colSpan = 3;
+        cell.textContent = '復元ラベルはありません。追加ボタンから登録できます。';
+        row.appendChild(cell);
+        restoreMapBody.appendChild(row);
+      }
+    }
+
+    function registerDeleteButton(button) {
+      if (!button) {
+        return;
+      }
+      button.addEventListener('click', () => {
+        const row = button.closest('.restore-label-row');
+        if (row) {
+          row.remove();
+          ensureEmptyState();
+          setRestoreRowsJson();
+        }
+      });
+    }
+
+    function createRestoreRow(label = '', original = '', currentLabel = '') {
+      if (!restoreMapBody) {
+        return null;
+      }
+
+      const emptyRow = restoreMapBody.querySelector('.restore-empty-row');
+      if (emptyRow) {
+        emptyRow.remove();
+      }
+
+      const row = document.createElement('tr');
+      row.className = 'restore-label-row';
+      row.dataset.currentLabel = currentLabel;
+
+      const labelCell = document.createElement('td');
+      const labelInput = document.createElement('input');
+      labelInput.className = 'label-edit-input label-value';
+      labelInput.type = 'text';
+      labelInput.value = label;
+      labelInput.setAttribute('aria-label', '匿名後文字');
+      labelCell.appendChild(labelInput);
+
+      const originalCell = document.createElement('td');
+      const originalInput = document.createElement('input');
+      originalInput.className = 'label-edit-input original-value';
+      originalInput.type = 'text';
+      originalInput.value = original;
+      originalInput.setAttribute('aria-label', '元文言');
+      originalCell.appendChild(originalInput);
+
+      const actionCell = document.createElement('td');
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'danger delete-label-row';
+      deleteButton.textContent = '削除';
+      actionCell.appendChild(deleteButton);
+
+      row.appendChild(labelCell);
+      row.appendChild(originalCell);
+      row.appendChild(actionCell);
+      restoreMapBody.appendChild(row);
+      registerDeleteButton(deleteButton);
+      labelInput.focus();
+      setRestoreRowsJson();
+      return row;
+    }
+
+    if (restoreMapForm) {
+      restoreMapForm.addEventListener('submit', () => {
+        setRestoreRowsJson();
+      });
+    }
+
+    if (addLabelButton) {
+      addLabelButton.addEventListener('click', () => {
+        createRestoreRow();
+      });
+    }
+
+    if (restoreMapBody) {
+      restoreMapBody.querySelectorAll('.delete-label-row').forEach(registerDeleteButton);
+    }
+
+    setRestoreRowsJson();
+  </script>
 {% endblock %}

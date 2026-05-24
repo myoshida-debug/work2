@@ -48,6 +48,55 @@ class RestoredResult(models.Model):
         return f'{self.result_id or self.source_id} ({self.template_type})'
 
 
+class Patient(models.Model):
+    SEX_CHOICES = [
+        ('male', '男'),
+        ('female', '女'),
+        ('other', 'その他'),
+        ('unknown', '不明'),
+    ]
+
+    patient_id = models.CharField(max_length=255, unique=True, db_index=True)
+    surname = models.CharField(max_length=255, blank=True, default='')
+    given_name = models.CharField(max_length=255, blank=True, default='')
+    kana_surname = models.CharField(max_length=255, blank=True, default='')
+    kana_given_name = models.CharField(max_length=255, blank=True, default='')
+    birth_date = models.DateField(null=True, blank=True)
+    sex = models.CharField(max_length=16, blank=True, default='', choices=SEX_CHOICES)
+    primary_diagnosis = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['patient_id']
+
+    def __str__(self):
+        return f'{self.patient_id} {self.full_name}'.strip()
+
+    @property
+    def full_name(self) -> str:
+        return f'{self.surname}{self.given_name}'.strip()
+
+    @property
+    def kana_full_name(self) -> str:
+        return f'{self.kana_surname}{self.kana_given_name}'.strip()
+
+    def name_variants(self) -> list[str]:
+        full_name = self.full_name
+        if not full_name:
+            return []
+
+        variants: list[str] = []
+        for candidate in (
+            full_name,
+            f'{self.surname} {self.given_name}'.strip(),
+            f'{self.surname}　{self.given_name}'.strip(),
+        ):
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+        return variants
+
+
 class Prompt(models.Model):
     STATUS_CHOICES = [
         ('draft', '作成済み'),

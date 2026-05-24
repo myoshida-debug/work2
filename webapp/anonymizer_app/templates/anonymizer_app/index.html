@@ -485,6 +485,73 @@
       align-items: end;
     }
 
+    .patient-panel[hidden] {
+      display: none;
+    }
+
+    .patient-panel .panel-body {
+      display: grid;
+      gap: 14px;
+    }
+
+    .patient-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 16px;
+    }
+
+    .patient-summary-field {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .patient-summary-field.is-full-width {
+      grid-column: 1 / -1;
+    }
+
+    .patient-summary-input,
+    .patient-summary-textarea {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 15px;
+      line-height: 1.5;
+      outline: none;
+    }
+
+    .patient-summary-input {
+      min-height: 44px;
+      height: 44px;
+    }
+
+    .patient-summary-textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .patient-summary-input:focus,
+    .patient-summary-textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .patient-summary-input[readonly],
+    .patient-summary-textarea[readonly] {
+      background: #f8fafc;
+      color: #31415b;
+    }
+
+    .patient-message {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .template-field select {
       width: 100%;
       min-height: 42px;
@@ -709,6 +776,7 @@
           <a href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴</a>
           <a href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
           <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
+          <a href="{% url 'close_side:patient_list' %}">患者管理</a>
           <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
           {% if request.user.is_staff or request.user.is_superuser %}
             <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>
@@ -732,6 +800,7 @@
           {{ form.template.errors }}
           {{ form.input_mode.errors }}
           {{ form.structured_input.errors }}
+          {{ form.patient_id.errors }}
           {% for field in structured_fields %}
             {% if field.error %}
               <div>{{ field.error }}</div>
@@ -770,6 +839,46 @@
                   </div>
                   <button class="plain-button green-button" type="button" id="build-prompt-button">プロンプト作成</button>
                 </div>
+
+                {% if show_patient_panel %}
+                  <section class="panel patient-panel" id="patient-panel" data-lookup-url-template="{{ patient_lookup_url_template }}">
+                    <div class="panel-header">
+                      <h3 class="panel-title">患者マスタ連携</h3>
+                      <span class="badge">会議以外</span>
+                    </div>
+                    <div class="panel-body">
+                      <p class="schema-note">患者IDを入力すると、氏名、生年月日、性別、主病名を自動取得します。</p>
+                      <div class="patient-summary-grid">
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="{{ form.patient_id.id_for_label }}">患者ID</label>
+                          {{ form.patient_id }}
+                          {% if form.patient_id.errors %}<div class="field-error">{{ form.patient_id.errors }}</div>{% endif %}
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-full-name">氏名</label>
+                          <input class="patient-summary-input" id="patient-full-name" type="text" readonly value="{{ patient_profile.full_name|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-kana-full-name">ふりかな</label>
+                          <input class="patient-summary-input" id="patient-kana-full-name" type="text" readonly value="{{ patient_profile.kana_full_name|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-birth-date">生年月日</label>
+                          <input class="patient-summary-input" id="patient-birth-date" type="text" readonly value="{{ patient_profile.birth_date_display|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-sex">性別</label>
+                          <input class="patient-summary-input" id="patient-sex" type="text" readonly value="{{ patient_profile.sex_display|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field is-full-width">
+                          <label class="field-label" for="patient-primary-diagnosis">主病名</label>
+                          <textarea class="patient-summary-textarea" id="patient-primary-diagnosis" readonly rows="2">{% if patient_profile.primary_diagnosis %}{{ patient_profile.primary_diagnosis }}{% endif %}</textarea>
+                        </div>
+                        <div class="patient-message is-full-width" id="patient-lookup-message" aria-live="polite"></div>
+                      </div>
+                    </div>
+                  </section>
+                {% endif %}
 
                 <div class="actions-row mode-actions">
                   <button class="plain-button" type="button" id="clear-input">クリア</button>
@@ -857,53 +966,6 @@
                               rows="{{ field.textarea_rows|default:3 }}"
                               style="min-height: calc({{ field.textarea_rows|default:3 }} * 1.65em + 24px);"
                             >{% if field.value %}{{ field.value }}{% endif %}</textarea>
-                          {% endif %}
-                          {% if field.has_checkbox_options %}
-                            <div class="structured-checkbox-group">
-                              <div class="structured-checkbox-options">
-                                {% if field.options %}
-                                  {% for option in field.options %}
-                                    {% with option_value=option.value|default:option option_label=option.label|default:option %}
-                                      <label class="structured-checkbox-option">
-                                        <input
-                                          type="checkbox"
-                                          name="structured__{{ field.key }}"
-                                          value="{{ option_value }}"
-                                          data-structured-option="true"
-                                          {% if field.selected_values and option_value in field.selected_values %}checked{% endif %}
-                                        >
-                                        <span>{{ option_label }}</span>
-                                      </label>
-                                    {% endwith %}
-                                  {% endfor %}
-                                {% else %}
-                                  <p class="field-help-text">チェックボックス項目はまだ登録されていません。</p>
-                                {% endif %}
-                              </div>
-                              {% if field.allow_other %}
-                                <div class="structured-other-row" data-structured-other-row="true">
-                                  <label class="structured-other-toggle">
-                                    <input
-                                      type="checkbox"
-                                      name="structured__{{ field.key }}__other_checked"
-                                      value="1"
-                                      data-structured-other-toggle="true"
-                                      {% if field.other_checked or field.other_text %}checked{% endif %}
-                                    >
-                                    <span>{{ field.other_label|default:"その他" }}</span>
-                                  </label>
-                                  <textarea
-                                    class="field-area structured-other-input"
-                                    name="structured__{{ field.key }}__other"
-                                    data-structured-other-input="true"
-                                    rows="2"
-                                    style="min-height: calc(2 * 1.65em + 24px);"
-                                    placeholder="{{ field.other_placeholder|default:'自由入力' }}"
-                                  >{% if field.other_text %}{{ field.other_text }}{% endif %}</textarea>
-                                </div>
-                              {% endif %}
-                              {% if field.help_text %}<p class="field-help-text">{{ field.help_text }}</p>{% endif %}
-                            </div>
                           {% endif %}
                           {% if field.error %}<div class="field-error">{{ field.error }}</div>{% endif %}
                         </div>
@@ -1084,6 +1146,15 @@
     const voiceAudioFileInput = document.getElementById('voice-audio-file');
     const voiceAudioPreview = document.getElementById('voice-audio-preview');
     const voiceStatusArea = document.getElementById('voice-status');
+    const patientPanel = document.getElementById('patient-panel');
+    const patientLookupMessage = document.getElementById('patient-lookup-message');
+    const patientLookupUrlTemplate = patientPanel ? (patientPanel.dataset.lookupUrlTemplate || '') : '';
+    const patientIdInput = patientPanel ? patientPanel.querySelector('input[name="patient_id"]') : null;
+    const patientFullNameInput = document.getElementById('patient-full-name');
+    const patientKanaFullNameInput = document.getElementById('patient-kana-full-name');
+    const patientBirthDateInput = document.getElementById('patient-birth-date');
+    const patientSexInput = document.getElementById('patient-sex');
+    const patientPrimaryDiagnosisInput = document.getElementById('patient-primary-diagnosis');
     let freeTextSnapshot = textArea ? textArea.value : '';
     let voiceRecordingStream = null;
     let voiceRecorder = null;
@@ -1091,6 +1162,8 @@
     let voiceRecordedBlob = null;
     let voicePreviewObjectUrl = '';
     let voiceResetPending = false;
+    let patientLookupTimer = null;
+    let patientLookupRequestToken = 0;
 
     if (textArea) {
       textArea.classList.add('field-area');
@@ -1106,6 +1179,144 @@
     function setStatus(message) {
       if (statusArea) {
         statusArea.textContent = message;
+      }
+    }
+
+    function setPatientLookupMessage(message, isError = false) {
+      if (!patientLookupMessage) {
+        return;
+      }
+      patientLookupMessage.textContent = message || '';
+      patientLookupMessage.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+
+    function setPatientFieldValue(element, value) {
+      if (!element) {
+        return;
+      }
+      element.value = value || '';
+    }
+
+    function setPatientProfileFields(profile = {}) {
+      setPatientFieldValue(patientFullNameInput, profile.full_name || '');
+      setPatientFieldValue(patientKanaFullNameInput, profile.kana_full_name || '');
+      setPatientFieldValue(patientBirthDateInput, profile.birth_date_display || '');
+      setPatientFieldValue(patientSexInput, profile.sex_display || '');
+      if (patientPrimaryDiagnosisInput) {
+        patientPrimaryDiagnosisInput.value = profile.primary_diagnosis || '';
+      }
+    }
+
+    function clearPatientProfileFields() {
+      setPatientProfileFields({});
+    }
+
+    function cancelPatientLookup() {
+      patientLookupRequestToken += 1;
+      if (patientLookupTimer) {
+        window.clearTimeout(patientLookupTimer);
+        patientLookupTimer = null;
+      }
+    }
+
+    function isPatientMasterTemplate() {
+      return !templateSelect || templateSelect.value !== '委員会議事録';
+    }
+
+    function updatePatientPanelVisibility() {
+      if (!patientPanel) {
+        return;
+      }
+      const enabled = isPatientMasterTemplate();
+      patientPanel.hidden = !enabled;
+      if (patientIdInput) {
+        patientIdInput.disabled = !enabled;
+      }
+      if (!enabled) {
+        cancelPatientLookup();
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return;
+      }
+      if (patientIdInput && patientIdInput.value.trim()) {
+        queuePatientLookup(patientIdInput.value.trim(), { silent: true });
+      } else {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+      }
+    }
+
+    function queuePatientLookup(patientId, options = {}) {
+      if (!patientPanel || patientPanel.hidden) {
+        return;
+      }
+      const trimmed = (patientId || '').trim();
+      cancelPatientLookup();
+      if (!trimmed) {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return;
+      }
+      const immediate = Boolean(options.immediate);
+      const silent = Boolean(options.silent);
+      const execute = () => {
+        lookupPatientById(trimmed, { silent });
+      };
+      if (immediate) {
+        execute();
+        return;
+      }
+      patientLookupTimer = window.setTimeout(execute, 300);
+    }
+
+    async function lookupPatientById(patientId, options = {}) {
+      if (!patientPanel || patientPanel.hidden || !patientLookupUrlTemplate) {
+        return null;
+      }
+      const requestedId = (patientId || '').trim();
+      if (!requestedId) {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return null;
+      }
+
+      const requestToken = ++patientLookupRequestToken;
+      if (!options.silent) {
+        setPatientLookupMessage('患者情報を取得しています...');
+      }
+
+      const lookupUrl = patientLookupUrlTemplate.replace('__PATIENT_ID__', encodeURIComponent(requestedId));
+      try {
+        const response = await fetch(lookupUrl, {
+          headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (requestToken !== patientLookupRequestToken) {
+          return null;
+        }
+        if (patientIdInput && patientIdInput.value.trim() !== requestedId) {
+          return null;
+        }
+        if (!response.ok) {
+          throw new Error(data.error || `患者ID ${requestedId} が見つかりません。`);
+        }
+        const patient = data.patient || {};
+        setPatientProfileFields(patient);
+        setPatientLookupMessage(options.silent ? '' : `患者情報を取得しました: ${requestedId}`);
+        return patient;
+      } catch (error) {
+        if (requestToken !== patientLookupRequestToken) {
+          return null;
+        }
+        if (patientIdInput && patientIdInput.value.trim() !== requestedId) {
+          return null;
+        }
+        clearPatientProfileFields();
+        setPatientLookupMessage(error.message || `患者ID ${requestedId} が見つかりません。`, true);
+        return null;
       }
     }
 
@@ -1657,6 +1868,13 @@
         setStatus('入力文章をクリアしました');
       }
 
+      if (patientIdInput) {
+        patientIdInput.value = '';
+      }
+      clearPatientProfileFields();
+      setPatientLookupMessage('');
+      cancelPatientLookup();
+
       setAnonymizedOutputText('', { emitInputEvent: false });
       if (mode === 'structured' && structuredFieldsHost) {
         const firstField = structuredFieldsHost.querySelector('.structured-field');
@@ -2159,6 +2377,7 @@
           template_type: templateSelect ? templateSelect.value : '',
           input_mode: getSelectedInputMode(),
           source_text: getCurrentSourceText(),
+          patient_id: patientIdInput && !patientIdInput.disabled ? patientIdInput.value.trim() : '',
           structured_input: getSelectedInputMode() === 'structured' ? collectStructuredFieldValues() : {},
           structured_input_labels: getSelectedInputMode() === 'structured' ? collectStructuredInputLabels() : [],
           transcript_source: getSelectedInputMode() === 'voice' ? (transcriptSourceField ? transcriptSourceField.value : 'manual_input') : '',
@@ -2197,6 +2416,7 @@
       templateSelect.addEventListener('change', () => {
         const currentValues = collectStructuredFieldValues();
         renderStructuredFields(templateSelect.value, currentValues);
+        updatePatientPanelVisibility();
         if (getSelectedInputMode() === 'structured') {
           syncStructuredSourceText();
         }
@@ -2223,6 +2443,38 @@
     if (transcriptTextArea) {
       transcriptTextArea.addEventListener('input', () => {
         markEdited();
+      });
+    }
+
+    if (patientIdInput) {
+      patientIdInput.addEventListener('input', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        cancelPatientLookup();
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        markEdited();
+        const patientId = patientIdInput.value.trim();
+        if (!patientId) {
+          return;
+        }
+        setPatientLookupMessage('患者情報を取得しています...');
+        patientLookupTimer = window.setTimeout(() => {
+          lookupPatientById(patientId, { silent: false });
+        }, 300);
+      });
+      patientIdInput.addEventListener('change', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        queuePatientLookup(patientIdInput.value.trim(), { immediate: true });
+      });
+      patientIdInput.addEventListener('blur', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        queuePatientLookup(patientIdInput.value.trim(), { immediate: true, silent: false });
       });
     }
 
@@ -2334,6 +2586,7 @@
     }
 
     updateModeUI();
+    updatePatientPanelVisibility();
     syncAllStructuredCheckboxGroupState();
     setStructuredInputHiddenValue(collectStructuredFieldValues());
     updateVoiceRecordingControls(false);

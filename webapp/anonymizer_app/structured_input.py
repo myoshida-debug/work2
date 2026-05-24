@@ -325,6 +325,7 @@ def build_source_input_data(
     source_text: str,
     structured_input: dict[str, object] | None = None,
     transcript_source: str = '',
+    patient: dict[str, object] | None = None,
 ) -> dict[str, object]:
     normalized_input_mode = str(input_mode or 'free').strip() or 'free'
     normalized_text = str(source_text or '').strip()
@@ -341,6 +342,11 @@ def build_source_input_data(
     normalized_transcript_source = str(transcript_source or '').strip()
     if normalized_transcript_source:
         payload['transcript_source'] = normalized_transcript_source
+    if isinstance(patient, Mapping):
+        payload['patient'] = dict(patient)
+        patient_id = str(patient.get('patient_id') or '').strip()
+        if patient_id:
+            payload['patient_id'] = patient_id
     return payload
 
 
@@ -352,13 +358,28 @@ def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
             'text': '',
             'structured_input': {},
             'transcript_source': '',
+            'patient': {},
+            'patient_id': '',
         }
 
     template_type = str(source_input_data.get('template_type') or '').strip()
     structured_input_data = source_input_data.get('structured_input') or {}
+    patient_data = source_input_data.get('patient') or {}
     structured_input: dict[str, object] = {}
     if isinstance(structured_input_data, Mapping):
         structured_input = normalize_structured_input(template_type, structured_input_data)
+
+    normalized_patient: dict[str, object] = {}
+    if isinstance(patient_data, Mapping):
+        normalized_patient = dict(patient_data)
+        normalized_patient['patient_id'] = str(normalized_patient.get('patient_id') or '').strip()
+        normalized_patient['surname'] = str(normalized_patient.get('surname') or '').strip()
+        normalized_patient['given_name'] = str(normalized_patient.get('given_name') or '').strip()
+        normalized_patient['kana_surname'] = str(normalized_patient.get('kana_surname') or '').strip()
+        normalized_patient['kana_given_name'] = str(normalized_patient.get('kana_given_name') or '').strip()
+        normalized_patient['primary_diagnosis'] = str(normalized_patient.get('primary_diagnosis') or '').strip()
+        normalized_patient['birth_date'] = str(normalized_patient.get('birth_date') or '').strip()
+        normalized_patient['sex'] = str(normalized_patient.get('sex') or '').strip()
 
     return {
         'template_type': template_type,
@@ -366,6 +387,8 @@ def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
         'text': str(source_input_data.get('text') or '').strip(),
         'structured_input': structured_input,
         'transcript_source': str(source_input_data.get('transcript_source') or '').strip(),
+        'patient': normalized_patient,
+        'patient_id': str(source_input_data.get('patient_id') or normalized_patient.get('patient_id') or '').strip(),
     }
 
 

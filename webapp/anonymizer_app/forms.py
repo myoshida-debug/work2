@@ -1,5 +1,6 @@
 from django import forms
 
+from .models import Patient
 from .template_input_schemas import get_template_input_schema
 
 
@@ -48,6 +49,11 @@ class AnonymizeForm(forms.Form):
     transcript_source = forms.CharField(required=False, widget=forms.HiddenInput, initial='manual_input')
     structured_input = forms.JSONField(required=False, widget=forms.HiddenInput)
     reviewer = forms.CharField(label='レビュワー', required=False)
+    patient_id = forms.CharField(
+        label='患者ID',
+        required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': '患者ID'}),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,6 +67,68 @@ class AnonymizeForm(forms.Form):
         except Exception:
             choices = TEMPLATE_CHOICES
         self.fields['template'].choices = choices
+
+
+class PatientForm(forms.ModelForm):
+    birth_date = forms.DateField(
+        label='生年月日',
+        required=False,
+        input_formats=['%Y-%m-%d', '%Y/%m/%d', '%Y年%m月%d日'],
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+
+    class Meta:
+        model = Patient
+        fields = [
+            'patient_id',
+            'surname',
+            'given_name',
+            'kana_surname',
+            'kana_given_name',
+            'birth_date',
+            'sex',
+            'primary_diagnosis',
+        ]
+    widgets = {
+        'patient_id': forms.TextInput(attrs={'autocomplete': 'off'}),
+        'surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+        'given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+        'kana_surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+        'kana_given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+        'sex': forms.Select(),
+        'primary_diagnosis': forms.Textarea(attrs={'rows': 3}),
+    }
+
+
+class PatientSearchForm(forms.Form):
+    patient_id = forms.CharField(label='ID', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    kana = forms.CharField(label='ふりかな', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    sex = forms.ChoiceField(label='性別', required=False, choices=[('', 'すべて')] + Patient.SEX_CHOICES)
+    birth_date = forms.DateField(
+        label='生年月日',
+        required=False,
+        input_formats=['%Y-%m-%d', '%Y/%m/%d', '%Y年%m月%d日'],
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+    primary_diagnosis = forms.CharField(
+        label='主病名',
+        required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'off'}),
+    )
+    sort = forms.ChoiceField(
+        label='ソート',
+        required=False,
+        choices=[
+            ('patient_id', 'ID'),
+            ('kana', 'ふりかな'),
+            ('sex', '性別'),
+            ('birth_date', '生年月日'),
+        ],
+    )
+
+
+class PatientImportForm(forms.Form):
+    csv_file = forms.FileField(label='CSVファイル', widget=forms.FileInput(attrs={'accept': '.csv,text/csv'}))
 
 
 class DMZImportForm(forms.Form):

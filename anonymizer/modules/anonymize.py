@@ -14,6 +14,9 @@ class AnonymizationResult:
     metadata: dict = field(default_factory=dict)
 
 
+PREFERRED_PERSON_SENTINEL = '__PREFERRED_PATIENT_PERSON__'
+
+
 def replace_patterns(text: str, patterns, label_prefix, restore_map):
     result = text
     for pattern in patterns:
@@ -198,15 +201,50 @@ def anonymize_person_names(text: str, restore_map: dict) -> str:
     return text
 
 
-def anonymize_text(text: str, template_type: str = 'generic') -> AnonymizationResult:
+def _normalize_preferred_person_names(preferred_person_names) -> list[str]:
+    if not preferred_person_names:
+        return []
+
+    if isinstance(preferred_person_names, str):
+        candidates = [preferred_person_names]
+    else:
+        candidates = list(preferred_person_names)
+
+    normalized: list[str] = []
+    for candidate in candidates:
+        text = str(candidate or '').strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def anonymize_text(
+    text: str,
+    template_type: str = 'generic',
+    *,
+    preferred_person_names=None,
+    preferred_person_label: str = '患者本人A',
+    preferred_person_original: str = '',
+) -> AnonymizationResult:
     config = load_config(Path(__file__).resolve().parents[1] / 'config')
     restore_map = {}
-    anonymized = normalize_fullwidth_text(text, restore_map)
+    working_text = text
+    preferred_names = _normalize_preferred_person_names(preferred_person_names)
+    for preferred_name in sorted(preferred_names, key=len, reverse=True):
+        working_text = working_text.replace(preferred_name, PREFERRED_PERSON_SENTINEL)
+
+    anonymized = normalize_fullwidth_text(working_text, restore_map)
 
     anonymized = generalize_date_text(anonymized, restore_map)
     anonymized = generalize_time_text(anonymized, restore_map)
     anonymized = generalize_address_text(anonymized, restore_map)
     anonymized = anonymize_person_names(anonymized, restore_map)
+    if PREFERRED_PERSON_SENTINEL in anonymized:
+        anonymized = anonymized.replace(PREFERRED_PERSON_SENTINEL, preferred_person_label)
+        if preferred_person_original:
+            restore_map[preferred_person_label] = preferred_person_original
+        elif preferred_names:
+            restore_map[preferred_person_label] = preferred_names[0]
     anonymized = normalize_whitespace(anonymized)
 
     entity_replacements = config.get('entity_replacements', [])

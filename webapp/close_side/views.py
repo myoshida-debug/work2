@@ -1,14 +1,19 @@
+import csv
 import datetime
 import difflib
 import json
 import re
 import uuid
+from copy import deepcopy
+from io import StringIO
 from urllib.parse import urlencode
 from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Case, IntegerField, Q, Value, When
+from django.db.models.functions import Concat
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -17,7 +22,17 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_http_methods
 
-from anonymizer_app.forms import AnonymizeForm, DMZExportForm, DMZResultImportForm, PromptForm, TemplateForm, TemplateInputDefaultsForm
+from anonymizer_app.forms import (
+    AnonymizeForm,
+    DMZExportForm,
+    DMZResultImportForm,
+    PatientForm,
+    PatientImportForm,
+    PatientSearchForm,
+    PromptForm,
+    TemplateForm,
+    TemplateInputDefaultsForm,
+)
 from anonymizer_app.history_utils import (
     HISTORY_LIMIT,
     decorate_operation_logs,
@@ -28,6 +43,7 @@ from anonymizer_app.models import (
     AnonymizationRule,
     FIELD_INPUT_TYPE_CHOICES,
     OperationLog,
+    Patient,
     Prompt,
     RestoredResult,
     RestoreMetadata,
@@ -82,6 +98,260 @@ def _owned_queryset(queryset, user):
 
 
 FIELD_INPUT_TYPE_VALUES = {value for value, _label in FIELD_INPUT_TYPE_CHOICES}
+
+PATIENT_SEX_DISPLAY_TO_VALUE = {
+    '男': 'male',
+    '男性': 'male',
+    'm': 'male',
+    'male': 'male',
+    '女': 'female',
+    '女性': 'female',
+    'f': 'female',
+    'female': 'female',
+    'その他': 'other',
+    'other': 'other',
+    '不明': 'unknown',
+    'unknown': 'unknown',
+}
+PATIENT_SEX_VALUE_TO_DISPLAY = {value: label for value, label in Patient.SEX_CHOICES}
+PATIENT_CSV_HEADER_ALIASES = {
+    'id': 'patient_id',
+    'patient_id': 'patient_id',
+    '患者id': 'patient_id',
+    '患者_id': 'patient_id',
+    '患者id番号': 'patient_id',
+    '姓': 'surname',
+    '名': 'given_name',
+    'ふりかな姓': 'kana_surname',
+    'ふりかな名': 'kana_given_name',
+    'ふりがな姓': 'kana_surname',
+    'ふりがな名': 'kana_given_name',
+    'ふりかな': 'kana_full_name',
+    'ふりがな': 'kana_full_name',
+    '生年月日': 'birth_date',
+    '性別': 'sex',
+    '主病名': 'primary_diagnosis',
+}
+
+
+def _template_supports_patient_master(template_type: str) -> bool:
+    return str(template_type or '').strip() != '委員会議事録'
+
+
+def _patient_full_name(patient: Patient | None) -> str:
+    if patient is None:
+        return ''
+    return f'{patient.surname}{patient.given_name}'.strip()
+
+
+def _patient_kana_full_name(patient: Patient | None) -> str:
+    if patient is None:
+        return ''
+    return f'{patient.kana_surname}{patient.kana_given_name}'.strip()
+
+
+def _patient_name_variants(patient: Patient | None) -> list[str]:
+    if patient is None:
+        return []
+    return patient.name_variants()
+
+
+def _patient_payload(patient: Patient | None) -> dict[str, object]:
+    if patient is None:
+        return {}
+    return {
+        'patient_id': patient.patient_id or '',
+        'surname': patient.surname or '',
+        'given_name': patient.given_name or '',
+        'kana_surname': patient.kana_surname or '',
+        'kana_given_name': patient.kana_given_name or '',
+        'full_name': _patient_full_name(patient),
+        'kana_full_name': _patient_kana_full_name(patient),
+        'birth_date': patient.birth_date.isoformat() if patient.birth_date else '',
+        'birth_date_display': patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else '',
+        'sex': patient.sex or '',
+        'sex_display': patient.get_sex_display() if patient.sex else '',
+        'primary_diagnosis': patient.primary_diagnosis or '',
+    }
+
+
+def _patient_for_patient_id(patient_id: str) -> Patient | None:
+    patient_id = str(patient_id or '').strip()
+    if not patient_id:
+        return None
+    return Patient.objects.filter(patient_id=patient_id).first()
+
+
+def _normalize_patient_sex(value: object) -> str:
+    key = str(value or '').strip()
+    if not key:
+        return ''
+    normalized = PATIENT_SEX_DISPLAY_TO_VALUE.get(key) or PATIENT_SEX_DISPLAY_TO_VALUE.get(key.lower())
+    if normalized:
+        return normalized
+    return ''
+
+
+def _parse_patient_birth_date(value: object):
+    text = str(value or '').strip()
+    if not text:
+        return None
+    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y年%m月%d日'):
+        try:
+            return datetime.datetime.strptime(text, fmt).date()
+        except Exception:
+            continue
+    try:
+        return datetime.date.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _split_name_value(value: object) -> tuple[str, str]:
+    text = str(value or '').strip()
+    if not text:
+        return '', ''
+    parts = re.split(r'[\s　]+', text, maxsplit=1)
+    if len(parts) == 1:
+        return parts[0], ''
+    return parts[0], parts[1]
+
+
+def _normalize_patient_csv_row(raw_row: dict[str, str]) -> dict[str, object]:
+    normalized: dict[str, object] = {
+        'patient_id': '',
+        'surname': '',
+        'given_name': '',
+        'kana_surname': '',
+        'kana_given_name': '',
+        'birth_date': None,
+        'sex': '',
+        'primary_diagnosis': '',
+    }
+    for raw_key, raw_value in raw_row.items():
+        key = PATIENT_CSV_HEADER_ALIASES.get(str(raw_key or '').strip().lower())
+        if not key:
+            # 日本語ヘッダーのまま来ることが多いので原文でも再確認する
+            key = PATIENT_CSV_HEADER_ALIASES.get(str(raw_key or '').strip())
+        value = str(raw_value or '').strip()
+        if not key or not value:
+            continue
+        if key == 'kana_full_name':
+            kana_surname, kana_given_name = _split_name_value(value)
+            if kana_surname and not normalized['kana_surname']:
+                normalized['kana_surname'] = kana_surname
+            if kana_given_name and not normalized['kana_given_name']:
+                normalized['kana_given_name'] = kana_given_name
+            continue
+        if key == 'birth_date':
+            normalized['birth_date'] = _parse_patient_birth_date(value)
+            continue
+        if key == 'sex':
+            normalized['sex'] = _normalize_patient_sex(value)
+            continue
+        normalized[key] = value
+    return normalized
+
+
+def _decode_patient_csv_file(uploaded_file) -> str:
+    raw_bytes = uploaded_file.read()
+    if hasattr(uploaded_file, 'seek'):
+        uploaded_file.seek(0)
+    for encoding in ('utf-8-sig', 'cp932', 'utf-8'):
+        try:
+            return raw_bytes.decode(encoding)
+        except Exception:
+            continue
+    return raw_bytes.decode('utf-8', errors='ignore')
+
+
+def _patient_sort_queryset(queryset, sort_key: str):
+    sort_key = str(sort_key or 'patient_id').strip() or 'patient_id'
+    if sort_key == 'kana':
+        return queryset.order_by('kana_surname', 'kana_given_name', 'patient_id')
+    if sort_key == 'sex':
+        sex_order = Case(
+            When(sex='male', then=Value(0)),
+            When(sex='female', then=Value(1)),
+            When(sex='other', then=Value(2)),
+            When(sex='unknown', then=Value(3)),
+            default=Value(4),
+            output_field=IntegerField(),
+        )
+        return queryset.annotate(_sex_order=sex_order).order_by('_sex_order', 'patient_id')
+    if sort_key == 'birth_date':
+        birth_date_order = Case(
+            When(birth_date__isnull=True, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        return queryset.annotate(_birth_date_order=birth_date_order).order_by('_birth_date_order', 'birth_date', 'patient_id')
+    return queryset.order_by('patient_id')
+
+
+def _patient_upsert_from_csv_row(normalized_row: dict[str, object]) -> tuple[Patient | None, bool, bool]:
+    patient_id = str(normalized_row.get('patient_id') or '').strip()
+    if not patient_id:
+        return None, False, False
+
+    defaults: dict[str, object] = {}
+    for field_name in ('surname', 'given_name', 'kana_surname', 'kana_given_name', 'primary_diagnosis', 'sex'):
+        value = str(normalized_row.get(field_name) or '').strip()
+        if value:
+            defaults[field_name] = value
+    birth_date = normalized_row.get('birth_date')
+    if birth_date:
+        defaults['birth_date'] = birth_date
+
+    patient, created = Patient.objects.get_or_create(patient_id=patient_id, defaults=defaults)
+    if created:
+        return patient, True, bool(defaults)
+
+    changed_fields: list[str] = []
+    for field_name, value in defaults.items():
+        if getattr(patient, field_name) != value:
+            setattr(patient, field_name, value)
+            changed_fields.append(field_name)
+    if changed_fields:
+        patient.save(update_fields=changed_fields + ['updated_at'])
+    return patient, False, bool(changed_fields)
+
+
+def _import_patient_csv(uploaded_file) -> dict[str, int]:
+    csv_text = _decode_patient_csv_file(uploaded_file)
+    reader = csv.DictReader(StringIO(csv_text))
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    seen_ids: set[str] = set()
+
+    with transaction.atomic():
+        for raw_row in reader:
+            normalized_row = _normalize_patient_csv_row(raw_row)
+            patient_id = str(normalized_row.get('patient_id') or '').strip()
+            if not patient_id:
+                skipped_count += 1
+                continue
+
+            patient, created, changed = _patient_upsert_from_csv_row(normalized_row)
+            if patient is None:
+                skipped_count += 1
+                continue
+            if created:
+                created_count += 1
+            elif changed:
+                updated_count += 1
+            else:
+                skipped_count += 1
+            seen_ids.add(patient_id)
+
+    return {
+        'created': created_count,
+        'updated': updated_count,
+        'skipped': skipped_count,
+        'processed': created_count + updated_count,
+        'unique_ids': len(seen_ids),
+    }
 
 
 def _checkbox_group_fields_for_template(template_type: str) -> list[dict[str, object]]:
@@ -510,9 +780,13 @@ def _anonymize_page_context(
     prompt_json: str = '',
     restore_json: str = '',
     source_id: str = '',
+    patient_profile: dict[str, object] | None = None,
+    show_patient_panel: bool | None = None,
 ) -> dict[str, object]:
     structured_fields = structured_fields or _structured_field_context(template_type, structured_input, structured_field_errors)
     restore_map = restore_map or {}
+    patient_profile = patient_profile or {}
+    resolved_show_patient_panel = _template_supports_patient_master(template_type) if show_patient_panel is None else show_patient_panel
     return {
         'form': form,
         'template_type': template_type,
@@ -527,6 +801,10 @@ def _anonymize_page_context(
         'prompt_json': prompt_json,
         'restore_json': restore_json,
         'source_id': source_id,
+        'patient_profile': patient_profile,
+        'patient_id': str(patient_profile.get('patient_id') or form.initial.get('patient_id') or form.data.get('patient_id') or '').strip(),
+        'show_patient_panel': resolved_show_patient_panel,
+        'patient_lookup_url_template': reverse('close_side:patient_lookup', kwargs={'patient_id': '__PATIENT_ID__'}),
         'template_input_schemas': get_template_input_schema_map(),
     }
 
@@ -564,6 +842,116 @@ def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
         'restored_html': restored_html,
         'has_result_text': has_result_text,
         'has_restored_text': has_restored_text,
+    }
+
+
+def _normalize_restore_label_rows(raw_rows: object) -> list[dict[str, str]]:
+    if isinstance(raw_rows, str):
+        raw_rows = raw_rows.strip()
+        if not raw_rows:
+            return []
+        try:
+            raw_rows = json.loads(raw_rows)
+        except json.JSONDecodeError as exc:
+            raise ValueError('復元ラベルの JSON を解析できません。') from exc
+
+    if isinstance(raw_rows, dict):
+        raw_rows = raw_rows.get('rows') or raw_rows.get('items') or []
+
+    if not isinstance(raw_rows, list):
+        raise ValueError('復元ラベルは配列で指定してください。')
+
+    rows: list[dict[str, str]] = []
+    for item in raw_rows:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            'old_label': str(item.get('old_label') or '').strip(),
+            'label': str(item.get('label') or '').strip(),
+            'original': str(item.get('original') or '').strip(),
+        })
+    return rows
+
+
+def _restore_map_from_rows(rows: list[dict[str, str]]) -> dict[str, str]:
+    restore_map: dict[str, str] = {}
+    for row in rows:
+        label = str(row.get('label') or '').strip()
+        original = str(row.get('original') or '').strip()
+        if label and original:
+            restore_map[label] = original
+    return restore_map
+
+
+def _apply_restore_label_renames(result_text: str, rows: list[dict[str, str]]) -> str:
+    updated_text = result_text or ''
+    replacements = [
+        (str(row.get('old_label') or '').strip(), str(row.get('label') or '').strip())
+        for row in rows
+        if str(row.get('old_label') or '').strip() and str(row.get('label') or '').strip()
+    ]
+    for old_label, new_label in sorted(replacements, key=lambda item: len(item[0]), reverse=True):
+        if old_label != new_label:
+            updated_text = updated_text.replace(old_label, new_label)
+    return updated_text
+
+
+def _result_json_display_payload(result_record: RestoredResult, result_text: str) -> dict[str, object]:
+    payload = deepcopy(result_record.result_json) if isinstance(result_record.result_json, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    if not payload:
+        payload = {
+            'id': f'result_{result_record.source_id}' if result_record.source_id else '',
+            'source_id': result_record.source_id or '',
+            'result_text': result_text,
+            'metadata': {},
+        }
+    else:
+        payload['result_text'] = result_text
+        payload.setdefault('source_id', result_record.source_id or '')
+    return payload
+
+
+def _restored_result_page_context(
+    request,
+    result_record: RestoredResult,
+    *,
+    metadata: RestoreMetadata,
+    filename: str | None = None,
+    restore_map: dict[str, str] | None = None,
+    result_text: str | None = None,
+    restored_text: str | None = None,
+) -> dict[str, object]:
+    current_result_text = result_text if result_text is not None else (result_record.result_text or '')
+    current_restored_text = restored_text if restored_text is not None else (result_record.restored_text or '')
+    current_restore_map = restore_map if restore_map is not None else (metadata.restore_map or {})
+
+    if current_result_text.strip() and current_restored_text.strip():
+        result_html, restored_html = highlight_changed_text(current_result_text, current_restored_text)
+    else:
+        result_html = mark_safe(escape(current_result_text)) if current_result_text.strip() else ''
+        restored_html = mark_safe(escape(current_restored_text)) if current_restored_text.strip() else ''
+
+    result_json_payload = _result_json_display_payload(result_record, current_result_text)
+    input_mode = ''
+    if isinstance(result_record.result_json, dict):
+        result_metadata = result_record.result_json.get('metadata')
+        if isinstance(result_metadata, dict):
+            input_mode = str(result_metadata.get('input_mode') or '')
+
+    return {
+        'record': result_record,
+        'filename': filename or result_record.imported_filename or '',
+        'source_id': result_record.source_id or '',
+        'template_type': result_record.template_type or metadata.template_type,
+        'input_mode': input_mode,
+        'result_text': current_result_text,
+        'restored_text': current_restored_text,
+        'result_html': result_html,
+        'restored_html': restored_html,
+        'result_json': json.dumps(result_json_payload, ensure_ascii=False, indent=2),
+        'restore_map_items': list(current_restore_map.items()),
     }
 
 
@@ -704,6 +1092,9 @@ def home(request):
             structured_input = source_input_data.get('structured_input') or {}
             if not isinstance(structured_input, dict):
                 structured_input = {}
+            patient_profile = source_input_data.get('patient') or {}
+            if not isinstance(patient_profile, dict):
+                patient_profile = {}
             source_text = build_source_text_from_source_input_data(prompt.source_input_data)
             transcript_source = str(source_input_data.get('transcript_source') or 'manual_input').strip() or 'manual_input'
             form = AnonymizeForm(initial={
@@ -712,6 +1103,7 @@ def home(request):
                 'text': source_text if input_mode != 'voice' else '',
                 'transcript_text': source_text if input_mode == 'voice' else '',
                 'transcript_source': transcript_source if input_mode == 'voice' else 'manual_input',
+                'patient_id': str(source_input_data.get('patient_id') or patient_profile.get('patient_id') or '').strip(),
             })
             return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
                 form,
@@ -723,6 +1115,7 @@ def home(request):
                     template_name,
                     structured_input if input_mode == 'structured' else {},
                 ),
+                patient_profile=patient_profile,
             ))
 
     form = AnonymizeForm(request.POST or None)
@@ -731,11 +1124,29 @@ def home(request):
     structured_input: dict[str, object] = {}
     structured_field_errors: dict[str, str] = {}
     source_text = ''
+    patient_profile: dict[str, object] = {}
 
     if request.method == 'POST' and form.is_valid():
         template_name = form.cleaned_data['template']
         input_mode = form.cleaned_data.get('input_mode') or 'free'
         transcript_source = 'manual_input'
+        patient_id = str(form.cleaned_data.get('patient_id') or '').strip()
+        patient_record = _patient_for_patient_id(patient_id) if _template_supports_patient_master(template_name) and patient_id else None
+        if _template_supports_patient_master(template_name) and patient_id and patient_record is None:
+            form.add_error('patient_id', f'患者ID {patient_id} が見つかりません。')
+            invalid_structured_input: dict[str, object] = {}
+            if input_mode == 'structured':
+                invalid_structured_input = collect_structured_input(template_name, request.POST)
+            return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                form,
+                template_type=template_name,
+                input_mode=input_mode,
+                source_text=build_source_text_from_structured_input(template_name, invalid_structured_input) if input_mode == 'structured' else '',
+                structured_input=invalid_structured_input,
+                structured_fields=_structured_field_context(template_name, invalid_structured_input),
+                patient_profile={'patient_id': patient_id},
+            ))
+        patient_profile = _patient_payload(patient_record)
 
         if input_mode == 'structured':
             structured_input = collect_structured_input(template_name, request.POST)
@@ -749,6 +1160,7 @@ def home(request):
                     source_text=source_text,
                     structured_input=structured_input,
                     structured_field_errors=structured_field_errors,
+                    patient_profile=patient_profile,
                 ))
         elif input_mode == 'voice':
             source_text = (form.cleaned_data.get('transcript_text') or '').strip()
@@ -760,6 +1172,7 @@ def home(request):
                     template_type=template_name,
                     input_mode=input_mode,
                     source_text=source_text,
+                    patient_profile=patient_profile,
                 ))
         else:
             source_text = (form.cleaned_data.get('text') or '').strip()
@@ -770,9 +1183,15 @@ def home(request):
                     template_type=template_name,
                     input_mode=input_mode,
                     source_text=source_text,
+                    patient_profile=patient_profile,
                 ))
 
-        result = anonymize_text(source_text, template_name)
+        result = anonymize_text(
+            source_text,
+            template_name,
+            preferred_person_names=_patient_name_variants(patient_record),
+            preferred_person_original=_patient_full_name(patient_record),
+        )
         anonymized_text = result.text
         restore_map = result.restore_map
 
@@ -791,6 +1210,7 @@ def home(request):
             source_text,
             structured_input,
             transcript_source=transcript_source if input_mode == 'voice' else '',
+            patient=patient_profile or None,
         )
         payload = _sanitize_prompt_payload_for_dmz(payload)
         restore_data = {
@@ -838,6 +1258,7 @@ def home(request):
             prompt_json=json.dumps(payload, ensure_ascii=False, indent=2),
             restore_json=json.dumps(restore_data, ensure_ascii=False, indent=2),
             source_id=source_id,
+            patient_profile=patient_profile,
         ))
 
     structured_fields = _structured_field_context(template_name)
@@ -847,6 +1268,7 @@ def home(request):
         input_mode=input_mode,
         source_text=source_text,
         structured_fields=structured_fields,
+        patient_profile=patient_profile,
     ))
 
 
@@ -904,6 +1326,23 @@ def update_prompt_payload(request):
     template_type = str(data.get('template_type') or metadata.template_type)
     input_mode = str(data.get('input_mode') or previous_prompt_metadata.get('input_mode') or 'free')
     source_text = str(data.get('source_text') or '').strip()
+    patient_id = str(data.get('patient_id') or '').strip()
+    previous_prompt = _owned_queryset(Prompt.objects.all(), request.user).filter(source_id=previous_source_id).order_by('-updated_at').first()
+    previous_source_input_data = normalize_source_input_data(previous_prompt.source_input_data) if previous_prompt else {}
+    previous_patient_profile = previous_source_input_data.get('patient') or {}
+    if not isinstance(previous_patient_profile, dict):
+        previous_patient_profile = {}
+    patient_record = None
+    if _template_supports_patient_master(template_type):
+        if patient_id:
+            patient_record = _patient_for_patient_id(patient_id)
+            if patient_record is None:
+                return JsonResponse({'error': f'患者ID {patient_id} が見つかりません。'}, status=404)
+        elif previous_patient_profile.get('patient_id'):
+            patient_record = _patient_for_patient_id(str(previous_patient_profile.get('patient_id') or '').strip())
+    patient_profile = _patient_payload(patient_record)
+    if _template_supports_patient_master(template_type) and not patient_profile and previous_patient_profile.get('patient_id'):
+        patient_profile = previous_patient_profile
     if input_mode == 'voice' and not source_text:
         return JsonResponse({'error': '文字起こし結果が空です。録音または入力してください。'}, status=400)
     structured_input_data = data.get('structured_input')
@@ -931,6 +1370,7 @@ def update_prompt_payload(request):
         source_text,
         structured_input,
         transcript_source=transcript_source if input_mode == 'voice' else '',
+        patient=patient_profile or None,
     )
 
     prompt_payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id, title=template_type)
@@ -1084,6 +1524,65 @@ def result_import_list(request):
     })
 
 
+def result_detail(request, pk):
+    result_record = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
+    metadata = get_object_or_404(_owned_queryset(RestoreMetadata.objects.all(), request.user), source_id=result_record.source_id)
+    return render(
+        request,
+        'anonymizer_app/restored_result.html',
+        _restored_result_page_context(
+            request,
+            result_record,
+            metadata=metadata,
+            filename=result_record.imported_filename,
+        ),
+    )
+
+
+@require_http_methods(["POST"])
+def result_rerestore(request, pk):
+    result_record = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
+    metadata = get_object_or_404(_owned_queryset(RestoreMetadata.objects.all(), request.user), source_id=result_record.source_id)
+    previous_restore_map = dict(metadata.restore_map or {})
+
+    try:
+        rows = _normalize_restore_label_rows(request.POST.get('restore_rows_json') or '')
+    except ValueError as e:
+        messages.error(request, str(e))
+        return redirect('close_side:result_detail', pk=pk)
+
+    restore_map = _restore_map_from_rows(rows)
+    updated_result_text = _apply_restore_label_renames(result_record.result_text or '', rows)
+    restored_text = restore_text(updated_result_text, restore_map)
+
+    metadata.restore_map = restore_map
+    metadata.save(update_fields=['restore_map', 'updated_at'])
+
+    result_record.result_text = updated_result_text
+    result_record.restored_text = restored_text
+    result_record.save(update_fields=['result_text', 'restored_text', 'updated_at'])
+
+    renamed_labels = [
+        {'from': row['old_label'], 'to': row['label']}
+        for row in rows
+        if row.get('old_label') and row.get('label') and row['old_label'] != row['label']
+    ]
+    _log_operation(
+        request,
+        'restored_result_rerestored',
+        'RestoredResult',
+        str(result_record.pk),
+        {
+            'source_id': result_record.source_id,
+            'labels_added': sorted(label for label in restore_map if label not in previous_restore_map),
+            'labels_removed': sorted(label for label in previous_restore_map if label not in restore_map),
+            'labels_renamed': renamed_labels,
+        },
+    )
+    messages.success(request, '匿名ラベルを更新して再復元しました。')
+    return redirect('close_side:result_detail', pk=pk)
+
+
 @require_http_methods(["POST"])
 def result_import(request):
     form = DMZResultImportForm(request.POST)
@@ -1190,26 +1689,13 @@ def result_import(request):
         result_path.unlink()
     except OSError as e:
         messages.warning(request, f'DMZ返却ファイルの削除に失敗しました: {e}')
-    result_html, restored_html = highlight_changed_text(result_text_value, restored_text)
     _log_operation(request, 'result_imported_to_close', 'RestoredResult', str(result_record.pk), {
         'filename': filename,
         'source_id': source_id,
     })
 
     messages.success(request, f'返却JSONを取り込み、復元しました: {filename}')
-    return render(request, 'anonymizer_app/restored_result.html', {
-        'record': result_record,
-        'filename': filename,
-        'source_id': source_id,
-        'template_type': template_type,
-        'input_mode': input_mode,
-        'result_text': result_text_value,
-        'restored_text': restored_text,
-        'result_html': result_html,
-        'restored_html': restored_html,
-        'result_json': json.dumps(result_payload, ensure_ascii=False, indent=2),
-        'restore_map_items': list(metadata.restore_map.items()),
-    })
+    return redirect('close_side:result_detail', pk=result_record.pk)
 
 
 @require_http_methods(["POST"])
@@ -1249,6 +1735,165 @@ def result_delete(request, pk):
     if history_query:
         redirect_url = f'{redirect_url}?{urlencode({"q": history_query})}'
     return redirect(redirect_url)
+
+
+def patient_list(request):
+    query_params = request.GET.copy()
+    sort_choices = {'patient_id', 'kana', 'sex', 'birth_date'}
+    sort_value = str(query_params.get('sort') or 'patient_id').strip() or 'patient_id'
+    if sort_value not in sort_choices:
+        sort_value = 'patient_id'
+    query_params['sort'] = sort_value
+    form = PatientSearchForm(query_params)
+
+    patient_id_query = str(request.GET.get('patient_id') or '').strip()
+    kana_query = re.sub(r'[\s　]+', '', str(request.GET.get('kana') or '').strip())
+    sex_query = str(request.GET.get('sex') or '').strip()
+    birth_date_query = _parse_patient_birth_date(request.GET.get('birth_date'))
+    diagnosis_query = str(request.GET.get('primary_diagnosis') or '').strip()
+
+    queryset = Patient.objects.all()
+    if patient_id_query:
+        queryset = queryset.filter(patient_id__icontains=patient_id_query)
+    if kana_query:
+        queryset = queryset.annotate(kana_full_name_search=Concat('kana_surname', 'kana_given_name')).filter(
+            Q(kana_full_name_search__icontains=kana_query)
+            | Q(kana_surname__icontains=kana_query)
+            | Q(kana_given_name__icontains=kana_query)
+        )
+    if sex_query and sex_query in {choice[0] for choice in Patient.SEX_CHOICES}:
+        queryset = queryset.filter(sex=sex_query)
+    if birth_date_query:
+        queryset = queryset.filter(birth_date=birth_date_query)
+    if diagnosis_query:
+        queryset = queryset.filter(primary_diagnosis__icontains=diagnosis_query)
+
+    patients = list(_patient_sort_queryset(queryset, sort_value))
+
+    return render(request, 'anonymizer_app/patient_list.html', {
+        'form': form,
+        'patients': patients,
+        'sort_value': sort_value,
+        'query_count': len(patients),
+        'has_filters': any([
+            patient_id_query,
+            kana_query,
+            sex_query,
+            birth_date_query,
+            diagnosis_query,
+        ]),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def patient_create(request):
+    if request.method == 'POST':
+        form = PatientForm(request.POST)
+        if form.is_valid():
+            patient = form.save()
+            _log_operation(request, 'patient_created', 'Patient', patient.patient_id)
+            messages.success(request, f'患者マスタを追加しました: {patient.patient_id}')
+            return redirect('close_side:patient_list')
+    else:
+        form = PatientForm()
+
+    return render(request, 'anonymizer_app/patient_form.html', {
+        'form': form,
+        'create': True,
+        'back_url': reverse('close_side:patient_list'),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def patient_edit(request, pk):
+    patient = get_object_or_404(Patient, pk=pk)
+    if request.method == 'POST':
+        form = PatientForm(request.POST, instance=patient)
+        if form.is_valid():
+            patient = form.save()
+            _log_operation(request, 'patient_updated', 'Patient', patient.patient_id)
+            messages.success(request, f'患者マスタを更新しました: {patient.patient_id}')
+            return redirect('close_side:patient_list')
+    else:
+        form = PatientForm(instance=patient)
+
+    return render(request, 'anonymizer_app/patient_form.html', {
+        'form': form,
+        'create': False,
+        'patient': patient,
+        'back_url': reverse('close_side:patient_list'),
+    })
+
+
+@require_http_methods(["POST"])
+def patient_delete(request, pk):
+    patient = get_object_or_404(Patient, pk=pk)
+    target_id = patient.patient_id
+    patient.delete()
+    _log_operation(request, 'patient_deleted', 'Patient', target_id)
+    messages.success(request, f'患者マスタを削除しました: {target_id}')
+    return redirect('close_side:patient_list')
+
+
+@require_http_methods(["GET", "POST"])
+def patient_import(request):
+    if request.method == 'POST':
+        form = PatientImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = form.cleaned_data['csv_file']
+            try:
+                import_summary = _import_patient_csv(csv_file)
+                _log_operation(
+                    request,
+                    'patient_imported',
+                    'Patient',
+                    getattr(csv_file, 'name', ''),
+                    import_summary,
+                )
+                messages.success(
+                    request,
+                    (
+                        f"患者CSVを取り込みました。"
+                        f"新規 {import_summary['created']} 件、"
+                        f"更新 {import_summary['updated']} 件、"
+                        f"スキップ {import_summary['skipped']} 件。"
+                    ),
+                )
+                return redirect('close_side:patient_list')
+            except Exception as e:
+                form.add_error('csv_file', f'CSV取込に失敗しました: {e}')
+                _log_operation(
+                    request,
+                    'patient_imported',
+                    'Patient',
+                    getattr(csv_file, 'name', ''),
+                    import_summary if 'import_summary' in locals() else None,
+                    result='failure',
+                    error_message=str(e),
+                )
+    else:
+        form = PatientImportForm()
+
+    return render(request, 'anonymizer_app/patient_import.html', {
+        'form': form,
+        'back_url': reverse('close_side:patient_list'),
+    })
+
+
+@require_http_methods(["GET"])
+def patient_lookup(request, patient_id):
+    patient = _patient_for_patient_id(patient_id)
+    if patient is None:
+        return JsonResponse({
+            'found': False,
+            'patient_id': str(patient_id or '').strip(),
+            'error': f'患者ID {str(patient_id or "").strip()} が見つかりません。',
+        }, status=404)
+
+    return JsonResponse({
+        'found': True,
+        'patient': _patient_payload(patient),
+    })
 
 
 def prompts_list(request):
