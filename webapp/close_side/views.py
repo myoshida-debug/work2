@@ -56,6 +56,7 @@ from anonymizer_app.models import (
 from anonymizer_app.modules.anonymize import anonymize_text, build_prompt_payload, restore_text
 from anonymizer_app.network_policy import get_client_ip
 from anonymizer_app.structured_input import (
+    build_anonymized_patient_id,
     build_source_input_data,
     build_source_text_from_structured_input,
     build_source_text_from_source_input_data,
@@ -161,6 +162,7 @@ def _patient_payload(patient: Patient | None) -> dict[str, object]:
         return {}
     return {
         'patient_id': patient.patient_id or '',
+        'anonymized_patient_id': build_anonymized_patient_id(patient.patient_id),
         'surname': patient.surname or '',
         'given_name': patient.given_name or '',
         'kana_surname': patient.kana_surname or '',
@@ -173,6 +175,33 @@ def _patient_payload(patient: Patient | None) -> dict[str, object]:
         'sex_display': patient.get_sex_display() if patient.sex else '',
         'primary_diagnosis': patient.primary_diagnosis or '',
     }
+
+
+def _patient_profile_for_source_id(source_id: str, user) -> dict[str, object]:
+    source_id = str(source_id or '').strip()
+    if not source_id:
+        return {}
+
+    prompt = _owned_queryset(Prompt.objects.all(), user).filter(source_id=source_id).order_by('-updated_at').first()
+    if prompt is None:
+        return {}
+
+    source_input_data = normalize_source_input_data(prompt.source_input_data)
+    patient_profile = source_input_data.get('patient') or {}
+    if not isinstance(patient_profile, dict):
+        return {}
+    return patient_profile
+
+
+def _patient_display_label(patient_profile: dict[str, object] | None) -> str:
+    if not isinstance(patient_profile, dict):
+        return ''
+
+    patient_id = str(patient_profile.get('anonymized_patient_id') or patient_profile.get('patient_id') or '').strip()
+    full_name = str(patient_profile.get('full_name') or '').strip()
+    if patient_id and full_name:
+        return f'{patient_id} {full_name}'
+    return patient_id or full_name
 
 
 def _patient_for_patient_id(patient_id: str) -> Patient | None:
@@ -344,6 +373,13 @@ def _import_patient_csv(uploaded_file) -> dict[str, int]:
             else:
                 skipped_count += 1
             seen_ids.add(patient_id)
+
+    if not seen_ids:
+        raise ValueError(
+            '有効な患者IDが見つかりませんでした。'
+            'CSVの1行目が `ID,姓,名,ふりかな姓,ふりかな名,生年月日,性別,主病名` になっているか、'
+            'Excelファイルをそのまま選んでいないか確認してください。'
+        )
 
     return {
         'created': created_count,
@@ -952,6 +988,7 @@ def _restored_result_page_context(
         'restored_html': restored_html,
         'result_json': json.dumps(result_json_payload, ensure_ascii=False, indent=2),
         'restore_map_items': list(current_restore_map.items()),
+        'patient_display_label': _patient_display_label(_patient_profile_for_source_id(result_record.source_id, request.user)),
     }
 
 
@@ -980,6 +1017,9 @@ def _result_history_preview_context(request, pk: int) -> dict[str, object]:
     history_query = request.GET.get('q', '').strip()
     selected_result = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
     selected_preview = _build_result_preview(selected_result)
+    selected_preview['patient_display_label'] = _patient_display_label(
+        _patient_profile_for_source_id(selected_result.source_id, request.user)
+    )
     return {
         'history_query': history_query,
         'selected_result': selected_result,

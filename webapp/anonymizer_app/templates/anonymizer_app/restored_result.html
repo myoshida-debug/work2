@@ -63,6 +63,7 @@
       <dl class="meta-list">
         <dt>返却ファイル</dt><dd>{{ filename }}</dd>
         <dt>source_id</dt><dd>{{ source_id }}</dd>
+        <dt>患者ID / 氏名</dt><dd>{{ patient_display_label|default:"-" }}</dd>
         <dt>文書種別</dt><dd>{{ template_type|default:"-" }}</dd>
         <dt>入力方式</dt><dd>{{ input_mode|default:"-" }}</dd>
       </dl>

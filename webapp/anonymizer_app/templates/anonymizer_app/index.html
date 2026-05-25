@@ -847,12 +847,16 @@
                       <span class="badge">会議以外</span>
                     </div>
                     <div class="panel-body">
-                      <p class="schema-note">患者IDを入力すると、氏名、生年月日、性別、主病名を自動取得します。</p>
+                      <p class="schema-note">患者IDを入力すると、匿名化ID、氏名、生年月日、性別、主病名を自動取得します。</p>
                       <div class="patient-summary-grid">
                         <div class="patient-summary-field">
                           <label class="field-label" for="{{ form.patient_id.id_for_label }}">患者ID</label>
                           {{ form.patient_id }}
                           {% if form.patient_id.errors %}<div class="field-error">{{ form.patient_id.errors }}</div>{% endif %}
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-anonymized-id">匿名化ID</label>
+                          <input class="patient-summary-input" id="patient-anonymized-id" type="text" readonly value="{{ patient_profile.anonymized_patient_id|default_if_none:'' }}">
                         </div>
                         <div class="patient-summary-field">
                           <label class="field-label" for="patient-full-name">氏名</label>
@@ -1150,6 +1154,7 @@
     const patientLookupMessage = document.getElementById('patient-lookup-message');
     const patientLookupUrlTemplate = patientPanel ? (patientPanel.dataset.lookupUrlTemplate || '') : '';
     const patientIdInput = patientPanel ? patientPanel.querySelector('input[name="patient_id"]') : null;
+    const patientAnonymizedIdInput = document.getElementById('patient-anonymized-id');
     const patientFullNameInput = document.getElementById('patient-full-name');
     const patientKanaFullNameInput = document.getElementById('patient-kana-full-name');
     const patientBirthDateInput = document.getElementById('patient-birth-date');
@@ -1198,6 +1203,7 @@
     }
 
     function setPatientProfileFields(profile = {}) {
+      setPatientFieldValue(patientAnonymizedIdInput, profile.anonymized_patient_id || '');
       setPatientFieldValue(patientFullNameInput, profile.full_name || '');
       setPatientFieldValue(patientKanaFullNameInput, profile.kana_full_name || '');
       setPatientFieldValue(patientBirthDateInput, profile.birth_date_display || '');

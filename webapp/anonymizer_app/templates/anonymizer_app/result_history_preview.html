@@ -25,6 +25,7 @@
         <dt>入力方式</dt><dd>{{ selected_preview.input_mode|default:"-" }}</dd>
         <dt>状態</dt><dd>{{ selected_preview.status_label }}</dd>
         <dt>source_id</dt><dd>{{ selected_preview.source_id|default:"-" }}</dd>
+        <dt>患者ID / 氏名</dt><dd>{{ selected_preview.patient_display_label|default:"-" }}</dd>
         <dt>result_id</dt><dd>{{ selected_preview.result_id|default:"-" }}</dd>
         {% if selected_preview.reviewer %}
           <dt>レビュワー</dt><dd>{{ selected_preview.reviewer }}</dd>

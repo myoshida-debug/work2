@@ -694,6 +694,65 @@ class RestoredResultEditTests(TestCase):
         self.assertContains(response, '患者B')
         self.assertContains(response, '家族A')
 
+    def test_result_detail_and_preview_show_patient_label_next_to_id(self):
+        source_id = 'prompt_restore_label_1234'
+        Prompt.objects.create(
+            source_id=source_id,
+            name='看護計画 / prompt_restore_label_1234',
+            content='匿名化済み本文',
+            source_input_data={
+                'template_type': '看護計画',
+                'input_mode': 'free',
+                'text': '山田太郎は本日退院した。',
+                'patient_id': 'P001',
+                'patient': {
+                    'patient_id': 'P001',
+                    'anonymized_patient_id': '9900P001',
+                    'full_name': '山田太郎',
+                    'birth_date': '1980-01-02',
+                    'sex': 'male',
+                    'primary_diagnosis': '統合失調症',
+                },
+            },
+            owner=self.user,
+            status='draft',
+        )
+        RestoreMetadata.objects.create(
+            source_id=source_id,
+            template_type='看護計画',
+            restore_map={'患者A': '山田太郎'},
+            prompt_json={'metadata': {'input_mode': 'free'}},
+            owner=self.user,
+            status='imported_to_close',
+        )
+        result = RestoredResult.objects.create(
+            source_id=source_id,
+            result_id='result_1234',
+            template_type='看護計画',
+            result_text='患者Aは本日退院した。',
+            restored_text='山田太郎は本日退院した。',
+            result_json={
+                'id': 'result_1234',
+                'source_id': source_id,
+                'result_text': '患者Aは本日退院した。',
+                'metadata': {'reviewer': 'unknown'},
+            },
+            imported_filename='result.json',
+            reviewer='unknown',
+            owner=self.user,
+            status='imported',
+        )
+
+        detail_response = self.client.get(reverse('close_side:result_detail', args=[result.pk]))
+        preview_response = self.client.get(reverse('close_side:result_history_preview', args=[result.pk]))
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertContains(detail_response, '患者ID / 氏名')
+        self.assertContains(detail_response, '9900P001 山田太郎')
+        self.assertContains(preview_response, '患者ID / 氏名')
+        self.assertContains(preview_response, '9900P001 山田太郎')
+
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class PatientManagementTests(TestCase):
@@ -728,7 +787,10 @@ class PatientManagementTests(TestCase):
         lookup_payload = json.loads(lookup_response.content)
         self.assertTrue(lookup_payload['found'])
         self.assertEqual(lookup_payload['patient']['full_name'], '山田太郎')
+        self.assertEqual(lookup_payload['patient']['anonymized_patient_id'], '9900P001')
         self.assertEqual(lookup_payload['patient']['birth_date_display'], '1980-01-02')
+        self.assertEqual(lookup_payload['patient']['sex_display'], '男')
+        self.assertEqual(lookup_payload['patient']['primary_diagnosis'], '統合失調症')
 
         edit_response = self.client.post(
             reverse('close_side:patient_edit', args=[patient.pk]),
@@ -848,6 +910,22 @@ class PatientManagementTests(TestCase):
         self.assertEqual(imported.sex, 'female')
         self.assertEqual(imported.birth_date, date(1990, 2, 3))
 
+    def test_patient_csv_import_rejects_csv_without_patient_ids(self):
+        csv_text = (
+            '氏名,生年月日\n'
+            'テスト,1990/1/1\n'
+        )
+        upload = SimpleUploadedFile('patients.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:patient_import'),
+            {'csv_file': upload},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '有効な患者IDが見つかりませんでした。')
+        self.assertEqual(Patient.objects.count(), 0)
+
     def test_home_uses_patient_master_and_forces_patient_label_for_non_committee_templates(self):
         Patient.objects.create(
             patient_id='P001',
@@ -873,6 +951,10 @@ class PatientManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['show_patient_panel'])
         self.assertEqual(response.context['patient_profile']['full_name'], '山田太郎')
+        self.assertEqual(response.context['patient_profile']['anonymized_patient_id'], '9900P001')
+        self.assertEqual(response.context['patient_profile']['birth_date_display'], '1980-01-02')
+        self.assertEqual(response.context['patient_profile']['sex_display'], '男')
+        self.assertEqual(response.context['patient_profile']['primary_diagnosis'], '統合失調症')
         self.assertIn('患者本人A', response.context['text_items'][0]['anonymized'])
         self.assertNotIn('山田太郎', response.context['text_items'][0]['anonymized'])
         self.assertEqual(response.context['restore_map']['患者本人A'], '山田太郎')
@@ -881,6 +963,7 @@ class PatientManagementTests(TestCase):
         prompt = Prompt.objects.get(source_id=source_id)
         self.assertEqual(prompt.source_input_data['patient_id'], 'P001')
         self.assertEqual(prompt.source_input_data['patient']['patient_id'], 'P001')
+        self.assertEqual(prompt.source_input_data['patient']['anonymized_patient_id'], '9900P001')
 
     def test_home_hides_patient_panel_for_committee_template(self):
         response = self.client.post(

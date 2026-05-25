@@ -10,6 +10,15 @@ STRUCTURED_INPUT_PREFIX = 'structured__'
 CHECKBOX_GROUP_INPUT_TYPE = 'checkbox_group'
 
 
+def build_anonymized_patient_id(patient_id: object) -> str:
+    text = _stringify_value(patient_id)
+    if not text:
+        return ''
+    if text.startswith('9900'):
+        return text
+    return f'9900{text}'
+
+
 def _stringify_value(value: object) -> str:
     if value is None:
         return ''
@@ -380,6 +389,9 @@ def normalize_source_input_data(source_input_data: object) -> dict[str, object]:
         normalized_patient['primary_diagnosis'] = str(normalized_patient.get('primary_diagnosis') or '').strip()
         normalized_patient['birth_date'] = str(normalized_patient.get('birth_date') or '').strip()
         normalized_patient['sex'] = str(normalized_patient.get('sex') or '').strip()
+        normalized_patient['anonymized_patient_id'] = build_anonymized_patient_id(
+            normalized_patient.get('patient_id') or source_input_data.get('patient_id')
+        )
 
     return {
         'template_type': template_type,
