@@ -115,7 +115,7 @@ def generalize_time_text(text: str, restore_map: dict) -> str:
     def anonymized_time_label(period: str, original: str) -> str:
         nonlocal time_index
         time_index += 1
-        label = unique_restore_label(restore_map, f'{period}（時刻{time_index}）')
+        label = unique_restore_label(restore_map, f'{period}(時刻{time_index})')
         record_restore_segment(restore_map, label, original)
         return label
 
@@ -273,8 +273,20 @@ def restore_text(anonymized_text: str, restore_map: dict) -> str:
     return restored
 
 
-def build_prompt_payload(template_type: str, content: dict, source_id: str, title: str | None = None):
-    prompt_text = create_prompt_text(template_type, content, source_id=source_id, title=title)
+def build_prompt_payload(
+    template_type: str,
+    content: dict,
+    source_id: str,
+    title: str | None = None,
+    patient_profile: dict | None = None,
+):
+    prompt_text = create_prompt_text(
+        template_type,
+        content,
+        source_id=source_id,
+        title=title,
+        patient_profile=patient_profile,
+    )
     payload = {
         'id': source_id,
         'template_type': template_type,
@@ -292,16 +304,61 @@ def build_prompt_payload(template_type: str, content: dict, source_id: str, titl
     return payload
 
 
-def build_result_payload(source_id: str, result_text: str, reviewer: str = 'unknown'):
-    return {
-        'id': f'result_{source_id}',
-        'source_id': source_id,
-        'result_text': result_text,
-        'metadata': {
-            'processed_at': None,
-            'reviewer': reviewer,
-        },
+def _render_patient_context_block(patient_profile: dict | None) -> str:
+    if not isinstance(patient_profile, dict):
+        return ''
+
+    anonymized_patient_id = str(
+        patient_profile.get('anonymized_patient_id')
+        or patient_profile.get('patient_id')
+        or ''
+    ).strip()
+    birth_date = str(
+        patient_profile.get('birth_date_display')
+        or patient_profile.get('birth_date')
+        or ''
+    ).strip()
+    sex = str(
+        patient_profile.get('sex_display')
+        or patient_profile.get('sex')
+        or ''
+    ).strip()
+    primary_diagnosis = str(patient_profile.get('primary_diagnosis') or '').strip()
+
+    lines: list[str] = []
+    if anonymized_patient_id:
+        lines.append(f'・匿名ID: {anonymized_patient_id}')
+    if sex:
+        lines.append(f'・性別: {sex}')
+    if birth_date:
+        lines.append(f'・生年月日: {birth_date}')
+    if primary_diagnosis:
+        lines.append(f'・主病名: {primary_diagnosis}')
+
+    if not lines:
+        return ''
+
+    return '【患者情報】\n' + '\n'.join(lines)
+
+
+def build_result_payload(
+    source_id: str,
+    result_text: str,
+    reviewer: str = 'unknown',
+    anonymized_patient_id: str = '',
+):
+    payload = {}
+    anonymized_patient_id = str(anonymized_patient_id or '').strip()
+    if anonymized_patient_id:
+        payload['anonymized_patient_id'] = anonymized_patient_id
+    payload['id'] = f'result_{source_id}'
+    payload['source_id'] = source_id
+    payload['result_text'] = result_text
+    payload['metadata'] = {
+        'processed_at': None,
+        'reviewer': reviewer,
     }
+    return payload
 
 
 def _parse_template_front_matter(text: str) -> str:
@@ -358,8 +415,10 @@ def _render_prompt_template(
     content: dict,
     source_id: str | None,
     title: str | None,
+    patient_profile: dict | None = None,
 ) -> str:
     anonymized_text = content.get('anonymized_text') or content.get('text') or ''
+    patient_context = _render_patient_context_block(patient_profile)
     values = {
         'request_no': content.get('request_no') or source_id or '',
         'document_type': content.get('document_type') or template_type,
@@ -367,13 +426,17 @@ def _render_prompt_template(
         'source_id': source_id or '',
         'title': title or '',
         'text': anonymized_text,
+        'patient_context': patient_context,
     }
     values.update({key: value for key, value in content.items() if isinstance(key, str)})
 
     rendered = template_text
     for key, value in values.items():
         rendered = rendered.replace(f'{{{key}}}', '' if value is None else str(value))
-    return rendered.strip()
+    rendered = rendered.strip()
+    if patient_context:
+        return f'{patient_context}\n\n{rendered}'
+    return rendered
 
 
 def create_prompt_text(
@@ -381,12 +444,23 @@ def create_prompt_text(
     content: dict,
     source_id: str | None = None,
     title: str | None = None,
+    patient_profile: dict | None = None,
 ) -> str:
     template_text = _load_prompt_template_text(template_type)
     if template_text:
-        return _render_prompt_template(template_text, template_type, content, source_id, title)
+        return _render_prompt_template(
+            template_text,
+            template_type,
+            content,
+            source_id,
+            title,
+            patient_profile=patient_profile,
+        )
 
     lines = [f'あなたは精神科病棟の看護師です。以下の匿名化された情報をもとに、{template_type}を作成してください。', '']
+    patient_context = _render_patient_context_block(patient_profile)
+    if patient_context:
+        lines.extend([patient_context, ''])
     for key, value in content.items():
         label = '入力本文' if key == 'text' else key
         lines.append(f'【{label}】')

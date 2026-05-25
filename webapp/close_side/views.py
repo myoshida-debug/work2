@@ -177,6 +177,27 @@ def _patient_payload(patient: Patient | None) -> dict[str, object]:
     }
 
 
+def _patient_restore_map(patient_profile: dict[str, object] | None) -> dict[str, str]:
+    if not isinstance(patient_profile, dict):
+        return {}
+
+    anonymized_patient_id = str(patient_profile.get('anonymized_patient_id') or '').strip()
+    patient_id = str(patient_profile.get('patient_id') or '').strip()
+    if anonymized_patient_id and patient_id:
+        return {anonymized_patient_id: patient_id}
+    return {}
+
+
+def _augment_restore_map_with_patient_info(
+    restore_map: dict[str, str] | None,
+    patient_profile: dict[str, object] | None,
+) -> dict[str, str]:
+    merged = dict(restore_map or {})
+    for label, original in _patient_restore_map(patient_profile).items():
+        merged.setdefault(label, original)
+    return merged
+
+
 def _patient_profile_for_source_id(source_id: str, user) -> dict[str, object]:
     source_id = str(source_id or '').strip()
     if not source_id:
@@ -197,11 +218,74 @@ def _patient_display_label(patient_profile: dict[str, object] | None) -> str:
     if not isinstance(patient_profile, dict):
         return ''
 
-    patient_id = str(patient_profile.get('anonymized_patient_id') or patient_profile.get('patient_id') or '').strip()
+    patient_id = str(patient_profile.get('patient_id') or patient_profile.get('anonymized_patient_id') or '').strip()
     full_name = str(patient_profile.get('full_name') or '').strip()
     if patient_id and full_name:
         return f'{patient_id} {full_name}'
     return patient_id or full_name
+
+
+def _patient_basic_info_block(template_type: str, patient_profile: dict[str, object] | None) -> str:
+    if not _template_supports_patient_master(template_type):
+        return ''
+    if not isinstance(patient_profile, dict):
+        return ''
+
+    patient_id = str(patient_profile.get('patient_id') or '').strip()
+    full_name = str(patient_profile.get('full_name') or '').strip()
+    sex = str(
+        patient_profile.get('sex_display')
+        or PATIENT_SEX_VALUE_TO_DISPLAY.get(str(patient_profile.get('sex') or '').strip().lower())
+        or patient_profile.get('sex')
+        or ''
+    ).strip()
+    birth_date = str(patient_profile.get('birth_date_display') or patient_profile.get('birth_date') or '').strip()
+    primary_diagnosis = str(patient_profile.get('primary_diagnosis') or '').strip()
+
+    lines: list[str] = []
+    if patient_id:
+        lines.append(f'・ID: {patient_id}')
+    if full_name:
+        lines.append(f'・氏名: {full_name}')
+    if sex:
+        lines.append(f'・性別: {sex}')
+    if birth_date:
+        lines.append(f'・生年月日: {birth_date}')
+    if primary_diagnosis:
+        lines.append(f'・主病名: {primary_diagnosis}')
+
+    if not lines:
+        return ''
+    return '【患者基本情報】\n' + '\n'.join(lines)
+
+
+def _prepend_patient_basic_info_to_restored_text(
+    restored_text: str,
+    template_type: str,
+    patient_profile: dict[str, object] | None,
+) -> str:
+    body = str(restored_text or '').strip()
+    block = _patient_basic_info_block(template_type, patient_profile)
+    if not block:
+        return body
+    if body.startswith('【患者基本情報】'):
+        return body
+    if not body:
+        return block
+    return f'{block}\n\n{body}'
+
+
+def _prepend_blank_lines_for_patient_basic_info(
+    result_text: str,
+    template_type: str,
+    patient_profile: dict[str, object] | None,
+) -> str:
+    body = str(result_text or '').strip()
+    if not body:
+        return body
+    if not _patient_basic_info_block(template_type, patient_profile):
+        return body
+    return ('\n' * 7) + body
 
 
 def _patient_for_patient_id(patient_id: str) -> Patient | None:
@@ -849,19 +933,32 @@ def _metadata_for_user(source_id: str, user):
     return _owned_queryset(RestoreMetadata.objects.all(), user).filter(source_id=source_id).first()
 
 
-def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
-    result_text = result_record.result_text or ''
+def _build_result_preview(
+    result_record: RestoredResult,
+    *,
+    patient_profile: dict[str, object] | None = None,
+) -> dict[str, object]:
+    result_text = _prepend_blank_lines_for_patient_basic_info(
+        result_record.result_text or '',
+        result_record.template_type or '',
+        patient_profile,
+    )
     restored_text = result_record.restored_text or ''
     has_result_text = bool(result_text.strip())
-    has_restored_text = bool(restored_text.strip())
+    restored_display_text = _prepend_patient_basic_info_to_restored_text(
+        restored_text,
+        result_record.template_type or '',
+        patient_profile,
+    )
+    has_restored_text = bool(restored_display_text.strip())
     result_json = result_record.result_json if isinstance(result_record.result_json, dict) else {}
     input_mode = result_json.get('metadata', {}).get('input_mode') or ''
 
     if has_result_text and has_restored_text:
-        result_html, restored_html = highlight_changed_text(result_text, restored_text)
+        result_html, restored_html = highlight_changed_text(result_text, restored_display_text)
     else:
         result_html = mark_safe(escape(result_text)) if has_result_text else ''
-        restored_html = mark_safe(escape(restored_text)) if has_restored_text else ''
+        restored_html = mark_safe(escape(restored_display_text)) if has_restored_text else ''
 
     return {
         'imported_filename': result_record.imported_filename or '',
@@ -874,6 +971,8 @@ def _build_result_preview(result_record: RestoredResult) -> dict[str, object]:
         'input_mode': input_mode,
         'created_at': result_record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         'updated_at': result_record.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'result_text': result_text,
+        'restored_text': restored_display_text,
         'result_html': result_html,
         'restored_html': restored_html,
         'has_result_text': has_result_text,
@@ -962,6 +1061,20 @@ def _restored_result_page_context(
     current_result_text = result_text if result_text is not None else (result_record.result_text or '')
     current_restored_text = restored_text if restored_text is not None else (result_record.restored_text or '')
     current_restore_map = restore_map if restore_map is not None else (metadata.restore_map or {})
+    patient_profile = _patient_profile_for_source_id(result_record.source_id, request.user)
+    display_restore_map = _augment_restore_map_with_patient_info(current_restore_map, patient_profile)
+    if current_result_text.strip():
+        current_restored_text = restore_text(current_result_text, display_restore_map)
+    current_result_text = _prepend_blank_lines_for_patient_basic_info(
+        current_result_text,
+        result_record.template_type or metadata.template_type or '',
+        patient_profile,
+    )
+    current_restored_text = _prepend_patient_basic_info_to_restored_text(
+        current_restored_text,
+        result_record.template_type or metadata.template_type or '',
+        patient_profile,
+    )
 
     if current_result_text.strip() and current_restored_text.strip():
         result_html, restored_html = highlight_changed_text(current_result_text, current_restored_text)
@@ -987,8 +1100,8 @@ def _restored_result_page_context(
         'result_html': result_html,
         'restored_html': restored_html,
         'result_json': json.dumps(result_json_payload, ensure_ascii=False, indent=2),
-        'restore_map_items': list(current_restore_map.items()),
-        'patient_display_label': _patient_display_label(_patient_profile_for_source_id(result_record.source_id, request.user)),
+        'restore_map_items': list(display_restore_map.items()),
+        'patient_display_label': _patient_display_label(patient_profile),
     }
 
 
@@ -1016,7 +1129,10 @@ def _result_history_list_context(request) -> dict[str, object]:
 def _result_history_preview_context(request, pk: int) -> dict[str, object]:
     history_query = request.GET.get('q', '').strip()
     selected_result = get_object_or_404(_owned_queryset(RestoredResult.objects.all(), request.user), pk=pk)
-    selected_preview = _build_result_preview(selected_result)
+    selected_preview = _build_result_preview(
+        selected_result,
+        patient_profile=_patient_profile_for_source_id(selected_result.source_id, request.user),
+    )
     selected_preview['patient_display_label'] = _patient_display_label(
         _patient_profile_for_source_id(selected_result.source_id, request.user)
     )
@@ -1233,10 +1349,16 @@ def home(request):
             preferred_person_original=_patient_full_name(patient_record),
         )
         anonymized_text = result.text
-        restore_map = result.restore_map
+        restore_map = _augment_restore_map_with_patient_info(result.restore_map, patient_profile)
 
         source_id = _make_prompt_source_id(template_name)
-        payload = build_prompt_payload(template_name, {'text': anonymized_text}, source_id, title=template_name)
+        payload = build_prompt_payload(
+            template_name,
+            {'text': anonymized_text},
+            source_id,
+            title=template_name,
+            patient_profile=patient_profile or None,
+        )
         payload['metadata']['created_at'] = None
         payload['metadata']['owner_user_id'] = request.user.id
         payload['metadata']['owner_username'] = request.user.get_username()
@@ -1412,8 +1534,15 @@ def update_prompt_payload(request):
         transcript_source=transcript_source if input_mode == 'voice' else '',
         patient=patient_profile or None,
     )
+    restore_map = _augment_restore_map_with_patient_info(restore_map, patient_profile)
 
-    prompt_payload = build_prompt_payload(template_type, {'text': anonymized_text}, source_id, title=template_type)
+    prompt_payload = build_prompt_payload(
+        template_type,
+        {'text': anonymized_text},
+        source_id,
+        title=template_type,
+        patient_profile=patient_profile or None,
+    )
     prompt_payload['metadata']['created_at'] = None
     prompt_payload['metadata']['owner_user_id'] = request.user.id
     prompt_payload['metadata']['owner_username'] = request.user.get_username()
@@ -1591,9 +1720,14 @@ def result_rerestore(request, pk):
         messages.error(request, str(e))
         return redirect('close_side:result_detail', pk=pk)
 
-    restore_map = _restore_map_from_rows(rows)
+    restore_map = _augment_restore_map_with_patient_info(_restore_map_from_rows(rows), _patient_profile_for_source_id(result_record.source_id, request.user))
     updated_result_text = _apply_restore_label_renames(result_record.result_text or '', rows)
     restored_text = restore_text(updated_result_text, restore_map)
+    restored_text = _prepend_patient_basic_info_to_restored_text(
+        restored_text,
+        result_record.template_type or metadata.template_type or '',
+        _patient_profile_for_source_id(result_record.source_id, request.user),
+    )
 
     metadata.restore_map = restore_map
     metadata.save(update_fields=['restore_map', 'updated_at'])
@@ -1707,8 +1841,15 @@ def result_import(request):
         messages.error(request, f'source_id {source_id} に対応する復元メタデータが見つかりません。')
         return redirect('close_side:result_import_list')
 
-    restored_text = restore_text(result_text_value, metadata.restore_map)
+    patient_profile = _patient_profile_for_source_id(source_id, request.user)
+    restore_map = _augment_restore_map_with_patient_info(metadata.restore_map or {}, patient_profile)
     template_type = result_payload.get('template_type') or metadata.template_type
+    restored_text = restore_text(result_text_value, restore_map)
+    restored_text = _prepend_patient_basic_info_to_restored_text(
+        restored_text,
+        template_type,
+        patient_profile,
+    )
     reviewer = result_payload.get('metadata', {}).get('reviewer') or ''
     input_mode = result_payload.get('metadata', {}).get('input_mode') or ''
     result_record = RestoredResult.objects.create(
@@ -1723,8 +1864,9 @@ def result_import(request):
         owner=metadata.owner or request.user,
         status='imported',
     )
+    metadata.restore_map = restore_map
     metadata.status = 'imported_to_close'
-    metadata.save(update_fields=['status', 'updated_at'])
+    metadata.save(update_fields=['restore_map', 'status', 'updated_at'])
     try:
         result_path.unlink()
     except OSError as e:

@@ -749,9 +749,92 @@ class RestoredResultEditTests(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(preview_response.status_code, 200)
         self.assertContains(detail_response, '患者ID / 氏名')
-        self.assertContains(detail_response, '9900P001 山田太郎')
+        self.assertContains(detail_response, 'P001 山田太郎')
+        self.assertContains(detail_response, '・ID: P001')
+        self.assertContains(detail_response, '・氏名: 山田太郎')
+        self.assertContains(detail_response, '・性別: 男')
+        self.assertContains(detail_response, '・生年月日: 1980-01-02')
+        self.assertContains(detail_response, '・主病名: 統合失調症')
         self.assertContains(preview_response, '患者ID / 氏名')
-        self.assertContains(preview_response, '9900P001 山田太郎')
+        self.assertContains(preview_response, 'P001 山田太郎')
+        self.assertContains(preview_response, '・ID: P001')
+        self.assertContains(preview_response, '・氏名: 山田太郎')
+        self.assertContains(preview_response, '・性別: 男')
+        self.assertContains(preview_response, '・生年月日: 1980-01-02')
+        self.assertContains(preview_response, '・主病名: 統合失調症')
+        self.assertTrue(detail_response.context['result_text'].startswith('\n' * 7))
+        self.assertTrue(preview_response.context['selected_preview']['result_text'].startswith('\n' * 7))
+        self.assertEqual(result.result_text, '患者Aは本日退院した。')
+
+    def test_result_rerestore_prepends_patient_basic_info_for_non_committee_templates(self):
+        source_id = 'prompt_restore_patient_info_1234'
+        Prompt.objects.create(
+            source_id=source_id,
+            name='看護計画 / prompt_restore_patient_info_1234',
+            content='匿名化済み本文',
+            source_input_data={
+                'template_type': '看護計画',
+                'input_mode': 'free',
+                'text': '山田太郎は本日退院した。',
+                'patient_id': 'P001',
+                'patient': {
+                    'patient_id': 'P001',
+                    'anonymized_patient_id': '9900P001',
+                    'full_name': '山田太郎',
+                    'birth_date': '1980-01-02',
+                    'birth_date_display': '1980-01-02',
+                    'sex': 'male',
+                    'sex_display': '男',
+                    'primary_diagnosis': '統合失調症',
+                },
+            },
+            owner=self.user,
+            status='draft',
+        )
+        RestoreMetadata.objects.create(
+            source_id=source_id,
+            template_type='看護計画',
+            restore_map={'患者A': '山田太郎'},
+            prompt_json={'metadata': {'input_mode': 'free'}},
+            owner=self.user,
+            status='imported_to_close',
+        )
+        result = RestoredResult.objects.create(
+            source_id=source_id,
+            result_id='result_1234',
+            template_type='看護計画',
+            result_text='患者Aは本日退院した。',
+            restored_text='山田太郎は本日退院した。',
+            result_json={
+                'id': 'result_1234',
+                'source_id': source_id,
+                'result_text': '患者Aは本日退院した。',
+                'metadata': {'reviewer': 'unknown'},
+            },
+            imported_filename='result.json',
+            reviewer='unknown',
+            owner=self.user,
+            status='imported',
+        )
+
+        response = self.client.post(
+            reverse('close_side:result_rerestore', args=[result.pk]),
+            {
+                'restore_rows_json': json.dumps([
+                    {'old_label': '患者A', 'label': '患者A', 'original': '山田太郎'},
+                ], ensure_ascii=False),
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result.refresh_from_db()
+        self.assertTrue(result.restored_text.startswith('【患者基本情報】'))
+        self.assertIn('・ID: P001', result.restored_text)
+        self.assertIn('・氏名: 山田太郎', result.restored_text)
+        self.assertIn('・性別: 男', result.restored_text)
+        self.assertIn('・生年月日: 1980-01-02', result.restored_text)
+        self.assertIn('・主病名: 統合失調症', result.restored_text)
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
@@ -958,12 +1041,19 @@ class PatientManagementTests(TestCase):
         self.assertIn('患者本人A', response.context['text_items'][0]['anonymized'])
         self.assertNotIn('山田太郎', response.context['text_items'][0]['anonymized'])
         self.assertEqual(response.context['restore_map']['患者本人A'], '山田太郎')
+        self.assertEqual(response.context['restore_map']['9900P001'], 'P001')
 
         source_id = response.context['source_id']
         prompt = Prompt.objects.get(source_id=source_id)
         self.assertEqual(prompt.source_input_data['patient_id'], 'P001')
         self.assertEqual(prompt.source_input_data['patient']['patient_id'], 'P001')
         self.assertEqual(prompt.source_input_data['patient']['anonymized_patient_id'], '9900P001')
+        self.assertEqual(prompt.source_input_data['patient']['full_name'], '山田太郎')
+        self.assertIn('【患者情報】', prompt.content)
+        self.assertIn('・匿名ID: 9900P001', prompt.content)
+        self.assertIn('・生年月日: 1980-01-02', prompt.content)
+        self.assertIn('・性別: 男', prompt.content)
+        self.assertIn('・主病名: 統合失調症', prompt.content)
 
     def test_home_hides_patient_panel_for_committee_template(self):
         response = self.client.post(

@@ -27,6 +27,7 @@ from anonymizer_app.structured_input import (
     validate_structured_input,
 )
 from anonymizer_app.template_input_schemas import get_template_input_schema, get_template_input_schema_map
+from anonymizer.modules.anonymize import anonymize_text
 
 
 COMMITTEE_OVERVIEW_DEFAULT = '会議名：\n開催日時：\n開催場所：\n参加者：'
@@ -611,6 +612,14 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('### ADL\n・自立', source_text)
         self.assertIn('### 再発リスク\n・あり', source_text)
         self.assertIn('## 4. 退院後方針', source_text)
+
+    def test_anonymize_text_uses_halfwidth_parentheses_in_time_labels(self):
+        result = anonymize_text('2月中旬午後3時に来院した。')
+
+        self.assertIn('午後(時刻1)', result.text)
+        self.assertNotIn('午後（時刻1）', result.text)
+        self.assertIn('午後(時刻1)', result.restore_map)
+        self.assertEqual(result.restore_map['午後(時刻1)'], '午後3時')
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)

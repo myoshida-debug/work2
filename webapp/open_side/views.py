@@ -119,6 +119,34 @@ def _safe_token(value: str) -> str:
     return token.strip('._') or 'result'
 
 
+def _extract_anonymized_patient_id(prompt_payload: dict) -> str:
+    if not isinstance(prompt_payload, dict):
+        return ''
+
+    direct_values = [
+        prompt_payload.get('anonymized_patient_id'),
+        (prompt_payload.get('metadata') or {}).get('anonymized_patient_id'),
+    ]
+    patient_payload = (prompt_payload.get('metadata') or {}).get('patient') or {}
+    if isinstance(patient_payload, dict):
+        direct_values.append(patient_payload.get('anonymized_patient_id'))
+    for value in direct_values:
+        text = str(value or '').strip()
+        if text:
+            return text
+
+    prompt_text = (
+        prompt_payload.get('prompt_text')
+        or prompt_payload.get('prompt')
+        or (prompt_payload.get('content') or {}).get('text')
+        or ''
+    )
+    match = re.search(r'(?:^|\n)\s*・?\s*匿名ID[:：]\s*([^\n]+)', str(prompt_text))
+    if match:
+        return match.group(1).strip()
+    return ''
+
+
 def menu(request):
     dmz_files = _list_dmz_files(_close_to_open_dir(), request.user)[:5]
     return render(request, 'anonymizer_app/open_menu.html', {'dmz_files': dmz_files})
@@ -346,7 +374,8 @@ def create_result(request, filename):
     reviewer = form.cleaned_data.get('reviewer') or ''
     template_type = prompt_payload.get('template_type') or prompt_payload.get('metadata', {}).get('template_type') or ''
     input_mode = prompt_payload.get('metadata', {}).get('input_mode') or 'free'
-    result_payload = build_result_payload(source_id, result_text, reviewer)
+    anonymized_patient_id = _extract_anonymized_patient_id(prompt_payload)
+    result_payload = build_result_payload(source_id, result_text, reviewer, anonymized_patient_id)
     result_payload['template_type'] = template_type
     result_payload['metadata']['template_type'] = template_type
     result_payload['metadata']['source_prompt_file'] = filename
