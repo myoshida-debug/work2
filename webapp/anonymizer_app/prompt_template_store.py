@@ -228,6 +228,11 @@ def sync_templates_to_db(*, prune_stale: bool = False) -> dict[str, object]:
     from .models import Template
 
     sources = list_template_sources()
+    source_filenames = [source.source_filename for source in sources]
+    current_sort_orders = list(
+        Template.objects.filter(source_filename__in=source_filenames).values_list('sort_order', flat=True)
+    )
+    next_sort_order = (max(current_sort_orders) if current_sort_orders else 0) + 1
     created_count = 0
     updated_count = 0
     templates = []
@@ -247,7 +252,9 @@ def sync_templates_to_db(*, prune_stale: bool = False) -> dict[str, object]:
         }
 
         if template is None:
+            defaults['sort_order'] = next_sort_order
             template = Template.objects.create(**defaults)
+            next_sort_order += 1
             created_count += 1
         else:
             changed = False
@@ -255,6 +262,10 @@ def sync_templates_to_db(*, prune_stale: bool = False) -> dict[str, object]:
                 if getattr(template, field) != value:
                     setattr(template, field, value)
                     changed = True
+            if not template.sort_order:
+                template.sort_order = next_sort_order
+                next_sort_order += 1
+                changed = True
             if changed:
                 template.save()
                 updated_count += 1

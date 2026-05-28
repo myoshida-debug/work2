@@ -3,82 +3,472 @@
 {% block title %}CloseSide テンプレート管理{% endblock %}
 {% block brand %}CloseSide{% endblock %}
 {% block page_title %}テンプレート管理{% endblock %}
-{% block page_subtitle %}<p class="page-subtitle">テンプレート作成、編集、削除、一覧確認を行います。</p>{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">有効・無効の切り替え、番号入力、上下ボタン、ドラッグで表示順を調整できます。匿名化画面には有効なテンプレートのみ表示されます。</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
   <a class="button primary" href="{% url 'close_side:template_create' %}">作成</a>
 {% endblock %}
 
 {% block content %}
+  <style>
+    .template-note {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .template-save-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+      margin-bottom: 14px;
+    }
+
+    .template-table {
+      table-layout: fixed;
+    }
+
+    .template-table th,
+    .template-table td {
+      vertical-align: top;
+    }
+
+    .template-row.is-inactive td {
+      background: #fbfcfe;
+      color: var(--muted);
+    }
+
+    .template-row.is-dragging td {
+      opacity: 0.55;
+      background: #f6f8ff;
+      border-color: var(--blue);
+    }
+
+    .template-order-cell {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .template-order-input {
+      width: 5.5rem;
+      min-width: 5.5rem;
+      max-width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 14px;
+      font-weight: 800;
+      text-align: center;
+      outline: none;
+    }
+
+    .template-order-input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .template-order-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .template-order-controls .button,
+    .template-order-controls button {
+      min-height: 30px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .template-drag-handle {
+      cursor: grab;
+    }
+
+    .template-meta {
+      display: grid;
+      gap: 6px;
+    }
+
+    .template-name {
+      margin: 0;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 800;
+      word-break: break-word;
+    }
+
+    .template-subtext {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .template-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .template-status .button {
+      min-height: 32px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .template-status-badge.is-active {
+      border-color: #b6e2cf;
+      background: #edf9f2;
+      color: var(--green);
+    }
+
+    .template-status-badge.is-inactive {
+      border-color: #f0b8b2;
+      background: #fff7f6;
+      color: var(--danger);
+    }
+
+    .template-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .template-actions .button {
+      min-height: 32px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .template-description {
+      word-break: break-word;
+    }
+
+    @media (max-width: 980px) {
+      .template-table {
+        min-width: 980px;
+      }
+    }
+  </style>
+
   <section class="panel">
     <div class="panel-header">
-      <h3 class="panel-title">テンプレート一覧</h3>
-      <span class="badge">prompt_templates/*.txt</span>
+      <div>
+        <h3 class="panel-title">テンプレート一覧</h3>
+        <span class="badge">prompt_templates/*.txt</span>
+      </div>
+      <span class="badge">表示順設定</span>
     </div>
     <div class="panel-body">
-      {% if templates %}
-        <table>
-          <thead>
-            <tr>
-              <th>テンプレート</th>
-              <th>説明</th>
-              <th>作成者</th>
-              <th>更新日時</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for t in templates %}
-              <tr>
-                <td>
-                  <strong>{{ t.name }}</strong><br>
-                  <span class="muted">{{ t.template_type }} / {{ t.source_filename }}</span>
-                </td>
-                <td>{{ t.description|default:"-" }}</td>
-                <td>{{ t.created_by.username|default:"-" }}</td>
-                <td>{{ t.updated_at }}</td>
-                <td>
-                  <div class="actions">
-                    <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
-                    <a class="button primary" href="{% url 'close_side:template_edit' pk=t.pk %}">編集</a>
-                    <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=t.template_type %}">欄編集</a>
-                    <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=t.template_type %}">入力欄初期値</a>
-                    <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=t.template_type %}">チェックボックス項目</a>
-                    <form class="inline-form" method="post" action="{% url 'close_side:template_delete' pk=t.pk %}" onsubmit="return confirm('このテンプレートを削除しますか？');">
-                      {% csrf_token %}
-                      <button class="danger" type="submit">削除</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td colspan="5">
-                  <details>
-                    <summary>本文プレビュー</summary>
-                    {% if t.basic_content %}
-                      <div class="detail-body">
-                        <h4>基本テンプレート</h4>
-                        <pre>{{ t.basic_content }}</pre>
+      <p class="template-note">番号を変更するか、上へ・下へ・ドラッグで並び替えたあと、「並び順を保存」を押してください。無効にしたテンプレートは匿名化画面に表示されません。</p>
+
+      <form id="template-order-form" method="post" action="{% url 'close_side:template_reorder' %}" data-template-order-editor>
+        {% csrf_token %}
+
+        <div class="template-save-row">
+          <button class="button primary" type="submit">並び順を保存</button>
+        </div>
+
+        {% if templates %}
+          <div class="table-scroll">
+            <table class="history-table template-table">
+              <thead>
+                <tr>
+                  <th style="width: 160px;">表示順</th>
+                  <th style="width: 280px;">テンプレート</th>
+                  <th>説明</th>
+                  <th style="width: 170px;">状態</th>
+                  <th style="width: 140px;">作成者</th>
+                  <th style="width: 160px;">更新日時</th>
+                  <th style="width: 360px;">操作</th>
+                </tr>
+              </thead>
+              <tbody data-template-row-list>
+                {% for t in templates %}
+                  <tr class="template-row{% if not t.is_active %} is-inactive{% endif %}" data-template-row data-template-id="{{ t.pk }}">
+                    <td>
+                      <div class="template-order-cell">
+                        <input
+                          class="template-order-input"
+                          type="number"
+                          min="1"
+                          step="1"
+                          name="sort_order__{{ t.pk }}"
+                          value="{{ t.sort_order }}"
+                          data-role="template-order-input"
+                          aria-label="表示順"
+                        >
+                        <div class="template-order-controls">
+                          <button type="button" class="button template-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                          <button type="button" class="button" data-move-row="up">上へ</button>
+                          <button type="button" class="button" data-move-row="down">下へ</button>
+                        </div>
                       </div>
-                    {% endif %}
-                    {% if t.additional_content %}
-                      <div class="detail-body">
-                        <h4>追加部分</h4>
-                        <pre>{{ t.additional_content }}</pre>
+                    </td>
+                    <td>
+                      <div class="template-meta">
+                        <p class="template-name">{{ t.name }}</p>
+                        <p class="template-subtext">{{ t.template_type }} / {{ t.source_filename }}</p>
                       </div>
-                    {% endif %}
-                    {% if not t.basic_content and not t.additional_content and t.content %}
-                      <pre>{{ t.content }}</pre>
-                    {% endif %}
-                  </details>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="empty">テンプレートがありません。</p>
-      {% endif %}
+                    </td>
+                    <td class="template-description">{{ t.description|default:"-" }}</td>
+                    <td>
+                      <div class="template-status">
+                        <span class="badge template-status-badge {% if t.is_active %}is-active{% else %}is-inactive{% endif %}">
+                          {% if t.is_active %}有効{% else %}無効{% endif %}
+                        </span>
+                        <button
+                          class="button {% if t.is_active %}danger{% else %}green{% endif %}"
+                          type="submit"
+                          formaction="{% url 'close_side:template_toggle_active' pk=t.pk %}"
+                          formmethod="post"
+                          onclick="return confirm('{% if t.is_active %}このテンプレートを無効にしますか？{% else %}このテンプレートを有効にしますか？{% endif %}');"
+                        >
+                          {% if t.is_active %}無効にする{% else %}有効にする{% endif %}
+                        </button>
+                      </div>
+                    </td>
+                    <td>{{ t.created_by.username|default:"-" }}</td>
+                    <td>{{ t.updated_at }}</td>
+                    <td>
+                      <div class="template-actions">
+                        <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
+                        <a class="button primary" href="{% url 'close_side:template_edit' pk=t.pk %}">編集</a>
+                        <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=t.template_type %}">欄編集</a>
+                        <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=t.template_type %}">入力欄初期値</a>
+                        <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=t.template_type %}">チェックボックス項目</a>
+                        <button
+                          class="button danger"
+                          type="submit"
+                          formaction="{% url 'close_side:template_delete' pk=t.pk %}"
+                          formmethod="post"
+                          onclick="return confirm('このテンプレートを削除しますか？');"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">テンプレートがありません。</p>
+        {% endif %}
+      </form>
     </div>
   </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const editor = document.querySelector('[data-template-order-editor]');
+      if (!editor) {
+        return;
+      }
+
+      let draggingRow = null;
+
+      function getList() {
+        return editor.querySelector('[data-template-row-list]');
+      }
+
+      function getRows() {
+        const list = getList();
+        if (!list) {
+          return [];
+        }
+        return Array.from(list.querySelectorAll('[data-template-row]'));
+      }
+
+      function updateMoveButtonState() {
+        const rows = getRows();
+        rows.forEach(function (row, index) {
+          row.querySelectorAll('[data-move-row]').forEach(function (button) {
+            const moveType = button.dataset.moveRow || '';
+            button.disabled = (
+              (moveType === 'up' && index === 0)
+              || (moveType === 'down' && index === rows.length - 1)
+            );
+          });
+        });
+      }
+
+      function syncOrderInputs() {
+        const rows = getRows();
+        rows.forEach(function (row, index) {
+          const orderInput = row.querySelector('[data-role="template-order-input"]');
+          if (orderInput) {
+            orderInput.value = String(index + 1);
+          }
+        });
+        updateMoveButtonState();
+      }
+
+      function insertRowAt(row, index) {
+        const list = getList();
+        if (!list || !row) {
+          return;
+        }
+
+        const rows = getRows().filter(function (item) {
+          return item !== row;
+        });
+        const targetRow = rows[index] || null;
+        if (targetRow) {
+          list.insertBefore(row, targetRow);
+        } else {
+          list.appendChild(row);
+        }
+        syncOrderInputs();
+      }
+
+      function moveRow(row, direction) {
+        const rows = getRows();
+        const currentIndex = rows.indexOf(row);
+        if (currentIndex < 0) {
+          return;
+        }
+
+        if (direction === 'up') {
+          insertRowAt(row, Math.max(0, currentIndex - 1));
+          return;
+        }
+        if (direction === 'down') {
+          insertRowAt(row, Math.min(rows.length - 1, currentIndex + 1));
+        }
+      }
+
+      function sortRowsByInputValue(targetInput) {
+        const rows = getRows();
+        const currentIndex = new Map(rows.map(function (row, index) {
+          return [row, index];
+        }));
+
+        rows.sort(function (left, right) {
+          const leftInput = left.querySelector('[data-role="template-order-input"]');
+          const rightInput = right.querySelector('[data-role="template-order-input"]');
+          const leftValue = Number.parseInt(leftInput ? leftInput.value : '', 10);
+          const rightValue = Number.parseInt(rightInput ? rightInput.value : '', 10);
+          const leftOrder = Number.isFinite(leftValue) && leftValue > 0 ? leftValue : currentIndex.get(left) + 1;
+          const rightOrder = Number.isFinite(rightValue) && rightValue > 0 ? rightValue : currentIndex.get(right) + 1;
+
+          if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+          }
+          return currentIndex.get(left) - currentIndex.get(right);
+        });
+
+        const list = getList();
+        if (!list) {
+          return;
+        }
+
+        rows.forEach(function (row) {
+          list.appendChild(row);
+        });
+        syncOrderInputs();
+        if (targetInput && typeof targetInput.focus === 'function') {
+          targetInput.focus();
+        }
+      }
+
+      editor.addEventListener('click', function (event) {
+        const moveButton = event.target.closest('[data-move-row]');
+        if (moveButton) {
+          const row = moveButton.closest('[data-template-row]');
+          if (row) {
+            moveRow(row, moveButton.dataset.moveRow || '');
+          }
+          return;
+        }
+      });
+
+      editor.addEventListener('change', function (event) {
+        const orderInput = event.target.closest('[data-role="template-order-input"]');
+        if (orderInput) {
+          sortRowsByInputValue(orderInput);
+        }
+      });
+
+      editor.addEventListener('dragstart', function (event) {
+        const handle = event.target.closest('[data-drag-handle]');
+        if (!handle || !editor.contains(handle)) {
+          return;
+        }
+        const row = handle.closest('[data-template-row]');
+        if (!row) {
+          return;
+        }
+        draggingRow = row;
+        row.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          try {
+            event.dataTransfer.setData('text/plain', row.dataset.templateId || '');
+          } catch (error) {
+            // ignore
+          }
+        }
+      });
+
+      editor.addEventListener('dragover', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        const targetRow = event.target.closest('[data-template-row]');
+        const list = event.target.closest('[data-template-row-list]');
+        if ((!targetRow && !list) || targetRow === draggingRow) {
+          return;
+        }
+        if (!list) {
+          return;
+        }
+
+        event.preventDefault();
+        if (!targetRow) {
+          list.appendChild(draggingRow);
+          return;
+        }
+
+        const rect = targetRow.getBoundingClientRect();
+        const shouldInsertBefore = event.clientY < rect.top + (rect.height / 2);
+        if (shouldInsertBefore) {
+          list.insertBefore(draggingRow, targetRow);
+        } else {
+          list.insertBefore(draggingRow, targetRow.nextElementSibling);
+        }
+      });
+
+      editor.addEventListener('drop', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        event.preventDefault();
+        syncOrderInputs();
+      });
+
+      editor.addEventListener('dragend', function () {
+        if (draggingRow) {
+          draggingRow.classList.remove('is-dragging');
+        }
+        draggingRow = null;
+        editor.querySelectorAll('[data-template-row]').forEach(function (row) {
+          row.classList.remove('is-dragging');
+        });
+        syncOrderInputs();
+      });
+
+      syncOrderInputs();
+    });
+  </script>
 {% endblock %}

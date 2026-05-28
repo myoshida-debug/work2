@@ -13,12 +13,13 @@ from anonymizer_app.forms import AnonymizeForm
 from anonymizer_app.models import (
     Prompt,
     RestoreMetadata,
+    Template,
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
     TemplateInputDefault,
     TemplateInputField,
 )
-from anonymizer_app.prompt_template_store import get_template_source_by_name
+from anonymizer_app.prompt_template_store import get_template_source_by_name, sync_templates_to_db
 from anonymizer_app.structured_input import (
     build_source_input_data,
     build_source_text_from_structured_input,
@@ -620,6 +621,27 @@ class StructuredInputHelperTests(TestCase):
         self.assertNotIn('午後（時刻1）', result.text)
         self.assertIn('午後(時刻1)', result.restore_map)
         self.assertEqual(result.restore_map['午後(時刻1)'], '午後3時')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateSelectionTests(TestCase):
+    def setUp(self):
+        sync_templates_to_db()
+
+    def test_anonymize_form_hides_inactive_templates(self):
+        Template.objects.filter(name='委員会議事録').update(is_active=False)
+
+        choices = [value for value, _label in AnonymizeForm().fields['template'].choices]
+
+        self.assertNotIn('委員会議事録', choices)
+
+    def test_anonymize_form_orders_templates_by_sort_order(self):
+        Template.objects.filter(name='看護計画').update(sort_order=1)
+        Template.objects.filter(name='委員会議事録').update(sort_order=2)
+
+        choices = [value for value, _label in AnonymizeForm().fields['template'].choices]
+
+        self.assertLess(choices.index('看護計画'), choices.index('委員会議事録'))
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)

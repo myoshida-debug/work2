@@ -77,6 +77,7 @@ from anonymizer_app.prompt_template_store import (
     get_template_source_by_filename,
     get_template_source_by_name,
     load_basic_template,
+    list_template_sources,
     sync_templates_to_db,
     write_template_source,
 )
@@ -750,6 +751,36 @@ def _log_operation(
         error_message=error_message,
         details=details or {},
     )
+
+
+def _current_template_source_filenames() -> set[str]:
+    return {source.source_filename for source in list_template_sources()}
+
+
+def _managed_template_queryset():
+    source_filenames = _current_template_source_filenames()
+    return Template.objects.filter(source_filename__in=source_filenames)
+
+
+def _normalize_template_sort_order(templates: list[Template] | None = None) -> list[Template]:
+    if templates is None:
+        templates = list(_managed_template_queryset().order_by('sort_order', 'template_type', 'name', 'id'))
+
+    if not templates:
+        return []
+
+    now = timezone.now()
+    changed_templates: list[Template] = []
+    for index, template in enumerate(templates, start=1):
+        if template.sort_order != index:
+            template.sort_order = index
+            template.updated_at = now
+            changed_templates.append(template)
+
+    if changed_templates:
+        Template.objects.bulk_update(changed_templates, ['sort_order', 'updated_at'])
+
+    return templates
 
 
 def _prompt_text_from_payload(payload: dict) -> str:
@@ -2191,8 +2222,10 @@ def prompt_send_to_dmz(request, pk):
 
 
 def templates_list(request):
-    result = sync_templates_to_db()
-    templates = sorted(result['templates'], key=lambda template: (template.template_type, template.name))
+    sync_templates_to_db()
+    templates = list(
+        _managed_template_queryset().order_by('sort_order', 'template_type', 'name', 'id')
+    )
     return render(request, 'anonymizer_app/templates_list.html', {'templates': templates})
 
 
@@ -2259,6 +2292,47 @@ def template_edit(request, pk):
             'additional_content': source.additional_content if source else tpl.additional_content,
         })
     return render(request, 'anonymizer_app/template_form.html', {'form': form, 'create': False, 'template': tpl})
+
+
+@require_http_methods(["POST"])
+def template_reorder(request):
+    sync_templates_to_db()
+    templates = list(
+        _managed_template_queryset().order_by('sort_order', 'template_type', 'name', 'id')
+    )
+
+    submitted_orders: dict[int, int] = {}
+    for template in templates:
+        raw_value = str(request.POST.get(f'sort_order__{template.pk}') or '').strip()
+        try:
+            submitted_order = int(raw_value)
+        except Exception:
+            submitted_order = template.sort_order or 0
+        if submitted_order < 1:
+            submitted_order = template.sort_order or 0
+        submitted_orders[template.pk] = submitted_order
+
+    ordered_templates = sorted(
+        templates,
+        key=lambda template: (
+            submitted_orders.get(template.pk, template.sort_order or 0),
+            template.sort_order,
+            template.pk,
+        ),
+    )
+    _normalize_template_sort_order(ordered_templates)
+    messages.success(request, 'テンプレートの表示順を更新しました。')
+    return redirect('close_side:templates_list')
+
+
+@require_http_methods(["POST"])
+def template_toggle_active(request, pk):
+    sync_templates_to_db()
+    tpl = get_object_or_404(Template, pk=pk)
+    tpl.is_active = not tpl.is_active
+    tpl.save(update_fields=['is_active', 'updated_at'])
+    messages.success(request, f'テンプレートを{"有効" if tpl.is_active else "無効"}にしました。')
+    return redirect('close_side:templates_list')
 
 
 def template_input_defaults_edit(request, template_type):
@@ -2647,6 +2721,7 @@ def template_delete(request, pk):
     try:
         delete_template_source(source_filename)
         tpl.delete()
+        _normalize_template_sort_order()
         _log_operation(request, 'template_deleted', 'Template', source_filename)
         messages.success(request, 'テンプレートを削除しました。')
     except Exception as e:

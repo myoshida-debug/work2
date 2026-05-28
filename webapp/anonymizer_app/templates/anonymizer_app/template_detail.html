@@ -10,6 +10,12 @@
   <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=template.template_type %}">欄編集</a>
   <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template.template_type %}">入力欄初期値</a>
   <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template.template_type %}">チェックボックス項目</a>
+  <form method="post" action="{% url 'close_side:template_toggle_active' pk=template.pk %}" class="inline-form">
+    {% csrf_token %}
+    <button class="button {% if template.is_active %}danger{% else %}green{% endif %}" type="submit">
+      {% if template.is_active %}無効にする{% else %}有効にする{% endif %}
+    </button>
+  </form>
 {% endblock %}
 
 {% block content %}
@@ -20,6 +26,8 @@
         <dt>テンプレート名</dt><dd>{{ template.name }}</dd>
         <dt>種別</dt><dd>{{ template.template_type }}</dd>
         <dt>説明</dt><dd>{{ template.description|default:"-" }}</dd>
+        <dt>状態</dt><dd>{% if template.is_active %}有効{% else %}無効{% endif %}</dd>
+        <dt>表示順</dt><dd>{{ template.sort_order }}</dd>
         <dt>作成者</dt><dd>{{ template.created_by.username|default:"-" }}</dd>
         <dt>正本txt</dt><dd>{{ template.source_filename }}</dd>
         <dt>最終更新</dt><dd>{{ template.updated_at }}</dd>

@@ -144,9 +144,14 @@ class Template(models.Model):
     content = models.TextField()
     basic_content = models.TextField(blank=True, default='')
     additional_content = models.TextField(blank=True, default='')
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
+    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sort_order', 'template_type', 'name', 'id']
 
     def __str__(self):
         return f"{self.template_type} - {self.name}"

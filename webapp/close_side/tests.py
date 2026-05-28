@@ -17,11 +17,13 @@ from anonymizer_app.models import (
     Prompt,
     RestoreMetadata,
     RestoredResult,
+    Template,
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
     TemplateInputDefault,
     TemplateInputField,
 )
+from anonymizer_app.prompt_template_store import list_template_sources, sync_templates_to_db
 from anonymizer_app.template_input_schemas import get_template_input_schema
 
 
@@ -273,6 +275,58 @@ class TranscriptionApiTests(TestCase):
             self.assertNotIn('source_input_data', payload['metadata'])
             self.assertNotIn('audio_file_name', payload['metadata'])
             self.assertEqual(payload['content']['text'], '匿名化済み本文')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateManagementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+
+    def test_template_list_renders_order_controls_and_status_actions(self):
+        response = self.client.get(reverse('close_side:templates_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-template-order-editor')
+        self.assertContains(response, 'data-template-row-list')
+        self.assertContains(response, 'data-drag-handle')
+        self.assertContains(response, '並び順を保存')
+        self.assertContains(response, '無効にする')
+        self.assertContains(response, '有効')
+
+    def test_template_toggle_active_updates_visibility_state(self):
+        sync_templates_to_db()
+        template = Template.objects.get(name='委員会議事録')
+
+        response = self.client.post(reverse('close_side:template_toggle_active', args=[template.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        template.refresh_from_db()
+        self.assertFalse(template.is_active)
+
+    def test_template_reorder_updates_sort_order(self):
+        sync_templates_to_db()
+        source_filenames = [source.source_filename for source in list_template_sources()]
+        templates = list(
+            Template.objects.filter(source_filename__in=source_filenames).order_by('sort_order', 'template_type', 'name', 'id')
+        )
+        first = templates[0]
+        second = templates[1]
+
+        post_data = {f'sort_order__{template.pk}': str(template.sort_order) for template in templates}
+        post_data[f'sort_order__{first.pk}'] = '2'
+        post_data[f'sort_order__{second.pk}'] = '1'
+
+        response = self.client.post(reverse('close_side:template_reorder'), post_data)
+
+        self.assertEqual(response.status_code, 302)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.sort_order, 2)
+        self.assertEqual(second.sort_order, 1)
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)

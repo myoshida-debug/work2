@@ -1,7 +1,8 @@
 from django import forms
 
-from .models import Patient
+from .models import Patient, Template
 from .template_input_schemas import get_template_input_schema
+from .prompt_template_store import list_template_sources, sync_templates_to_db
 
 
 TEMPLATE_CHOICES = [
@@ -59,11 +60,15 @@ class AnonymizeForm(forms.Form):
         super().__init__(*args, **kwargs)
         # txt files are the canonical template source; DB is refreshed as a cache.
         try:
-            from .prompt_template_store import list_template_sources, sync_templates_to_db
-
             sync_templates_to_db()
-            sources = list_template_sources()
-            choices = [(source.name, source.name) for source in sources] or TEMPLATE_CHOICES
+            source_filenames = {source.source_filename for source in list_template_sources()}
+            templates = Template.objects.filter(
+                is_active=True,
+                source_filename__in=source_filenames,
+            ).order_by('sort_order', 'template_type', 'name', 'id')
+            choices = [(template.name, template.name) for template in templates]
+            if not choices:
+                choices = [('', '有効なテンプレートがありません')]
         except Exception:
             choices = TEMPLATE_CHOICES
         self.fields['template'].choices = choices

@@ -32,7 +32,9 @@ class PatientAdmin(admin.ModelAdmin):
 
 @admin.register(Template)
 class TemplateAdmin(admin.ModelAdmin):
-    list_display = ('name', 'template_type', 'source_filename', 'created_by', 'updated_at')
+    list_display = ('sort_order', 'is_active', 'name', 'template_type', 'source_filename', 'created_by', 'updated_at')
+    list_filter = ('is_active', 'template_type')
+    ordering = ('sort_order', 'template_type', 'name', 'id')
     readonly_fields = ('source_filename',)
 
 
