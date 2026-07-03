@@ -82,15 +82,14 @@ class Patient(models.Model):
         return f'{self.kana_surname}{self.kana_given_name}'.strip()
 
     def name_variants(self) -> list[str]:
-        full_name = self.full_name
-        if not full_name:
-            return []
-
         variants: list[str] = []
         for candidate in (
-            full_name,
+            self.full_name,
             f'{self.surname} {self.given_name}'.strip(),
             f'{self.surname}　{self.given_name}'.strip(),
+            self.kana_full_name,
+            f'{self.kana_surname} {self.kana_given_name}'.strip(),
+            f'{self.kana_surname}　{self.kana_given_name}'.strip(),
         ):
             if candidate and candidate not in variants:
                 variants.append(candidate)

@@ -952,6 +952,27 @@ class PatientManagementTests(TestCase):
         self.assertEqual(delete_response.status_code, 302)
         self.assertFalse(Patient.objects.filter(patient_id='P001').exists())
 
+    def test_patient_name_variants_include_kana_spacing(self):
+        patient = Patient(
+            patient_id='P999',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+        )
+
+        self.assertEqual(
+            patient.name_variants(),
+            [
+                '山田太郎',
+                '山田 太郎',
+                '山田　太郎',
+                'やまだたろう',
+                'やまだ たろう',
+                'やまだ　たろう',
+            ],
+        )
+
     def test_patient_list_search_and_sort(self):
         Patient.objects.create(
             patient_id='P100',

@@ -17,16 +17,90 @@ class AnonymizationResult:
 PREFERRED_PERSON_SENTINEL = '__PREFERRED_PATIENT_PERSON__'
 
 
+DEFAULT_NAME_PATTERNS = [
+    r'患者[一-龥]{2,3}(?:[ 　][一-龥]{1,4})?(?:氏|さん)?',
+    r'[一-龥]{1,4}[ 　][一-龥]{1,4}(?:氏|さん)',
+    r'[一-龥]{2,4}氏',
+    r'[一-龥]{2,4}さん',
+]
+
+DEFAULT_ADDRESS_PATTERNS = [
+    r'(?:住所[:：]?\s*)?(?:北海道|[一-龥]{1,3}[都道府県])[一-龥ァ-ヶー0-9\-]+?(?:市|区|町|村)[一-龥ァ-ヶー0-9\-]*?(?=に住む|に居住|に在住|、|。|$)',
+    r'(?:住所[:：]?\s*)?[一-龥ァ-ヶー0-9\-]+?(?:市|区|町|村)[一-龥ァ-ヶー0-9\-]*?(?=に住む|に居住|に在住|、|。|$)',
+]
+
+DEFAULT_DATE_PATTERNS = [
+    r'(?P<year>(?:平成|昭和|令和)\d{1,4}|令和元|\d{4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日',
+    r'(?P<year>\d{4})[/-](?P<month>\d{1,2})[/-](?P<day>\d{1,2})',
+    r'(?<!\d)(?P<month>\d{1,2})月(?P<day>\d{1,2})日',
+]
+
+DEFAULT_TIME_PATTERNS = [
+    r'(?P<period>午前|午後)?(?P<hour>\d{1,2})[:：](?P<minute>\d{1,2})(?:分)?(?:頃)?',
+    r'(?P<period>午前|午後)?(?P<hour>\d{1,2})時(?:(?P<minute>\d{1,2})分)?(?:頃)?',
+]
+
+DEFAULT_AGE_PATTERNS = [
+    r'(?<!\d)\d{1,3}(?:歳|才)(?!\d)',
+]
+
+DEFAULT_PHONE_PATTERNS = [
+    r'(?:電話(?:番号)?[:：]?\s*)?(?:\+?81[-\s]?)?0\d{1,4}[-‐‑‒–—―ー－\s]?\d{1,4}[-‐‑‒–—―ー－\s]?\d{4}',
+]
+
+DEFAULT_EMAIL_PATTERNS = [
+    r'(?:メール(?:アドレス)?[:：]?\s*)?[A-Za-z0-9._%+-]+[＠@][A-Za-z0-9.-]+\.[A-Za-z]{2,}',
+]
+
+DEFAULT_ID_PATTERNS = [
+    r'(?:患者ID|患者番号|カルテ番号|診察券番号|受付番号)[:：]?\s*[A-Za-z0-9\-]{3,}',
+]
+
+DEFAULT_ROOM_PATTERNS = [
+    r'(?<!\d)\d{1,4}号室(?!\d)',
+]
+
+
+def _compile_patterns(patterns, flags: int = 0):
+    compiled = []
+    for pattern in patterns or []:
+        if not pattern:
+            continue
+        if hasattr(pattern, 'sub') and hasattr(pattern, 'finditer'):
+            compiled.append(pattern)
+        else:
+            compiled.append(re.compile(pattern, flags))
+    return compiled
+
+
+def _configured_patterns(config: dict, key: str, fallback_patterns, *, flags: int = 0):
+    patterns = config.get(key)
+    if not patterns:
+        patterns = fallback_patterns
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    return _compile_patterns(patterns, flags=flags)
+
+
 def replace_patterns(text: str, patterns, label_prefix, restore_map):
     result = text
-    for pattern in patterns:
-        for match in re.finditer(pattern, result):
-            token = match.group(0)
-            if token in restore_map:
-                continue
-            label = f"{label_prefix}_{len(restore_map) + 1}"
-            restore_map[label] = token
-            result = result.replace(token, label, 1)
+    original_to_label: dict[str, str] = {}
+    counter = 0
+    for pattern in _compile_patterns(patterns):
+        def repl(match):
+            nonlocal counter
+            original = match.group(0)
+            if original in original_to_label:
+                return original_to_label[original]
+
+            counter += 1
+            base_label = f'{label_prefix}{counter}'
+            label = unique_restore_label(restore_map, base_label)
+            restore_map[label] = original
+            original_to_label[original] = label
+            return label
+
+        result = pattern.sub(repl, result)
     return result
 
 
@@ -90,9 +164,18 @@ def unique_restore_label(restore_map: dict, base_label: str) -> str:
     return f'{base_label}_{index}'
 
 
-def generalize_date_text(text: str, restore_map: dict) -> str:
+def _format_year_text(year_text: str) -> str:
+    year_text = str(year_text or '').strip()
+    if not year_text:
+        return ''
+    if year_text.endswith('年'):
+        return year_text
+    return f'{year_text}年'
+
+
+def generalize_date_text(text: str, restore_map: dict, patterns=None) -> str:
     def replace_date(match):
-        year = match.group('year') or ''
+        year = _format_year_text(match.groupdict().get('year') or '')
         month = int(match.group('month'))
         day = int(match.group('day'))
         anonymized = f'{year}{month}月'
@@ -105,11 +188,13 @@ def generalize_date_text(text: str, restore_map: dict) -> str:
         record_restore_segment(restore_map, anonymized, match.group(0))
         return anonymized
 
-    date_pattern = re.compile(r'(?P<year>(?:平成|昭和|令和)?\d{1,4}年)?(?P<month>\d{1,2})月(?P<day>\d{1,2})日')
-    return date_pattern.sub(replace_date, text)
+    date_patterns = _compile_patterns(patterns or DEFAULT_DATE_PATTERNS)
+    for pattern in date_patterns:
+        text = pattern.sub(replace_date, text)
+    return text
 
 
-def generalize_time_text(text: str, restore_map: dict) -> str:
+def generalize_time_text(text: str, restore_map: dict, patterns=None) -> str:
     time_index = 0
 
     def anonymized_time_label(period: str, original: str) -> str:
@@ -120,18 +205,17 @@ def generalize_time_text(text: str, restore_map: dict) -> str:
         return label
 
     def replace_time(match):
-        hour_text = match.group('colon_hour') or match.group('jp_hour')
+        hour_text = match.groupdict().get('hour')
         hour = int(hour_text)
-        period = match.group('period')
+        period = match.groupdict().get('period')
         if not period:
             period = '午前' if hour < 12 else '午後'
         return anonymized_time_label(period, match.group(0))
 
-    time_pattern = re.compile(
-        r'(?P<colon_hour>\d{1,2})[:：]\d{1,2}'
-        r'|(?<!\d)(?P<period>午前|午後)?(?P<jp_hour>\d{1,2})時(?:\d{1,2}分)?'
-    )
-    return time_pattern.sub(replace_time, text)
+    time_patterns = _compile_patterns(patterns or DEFAULT_TIME_PATTERNS)
+    for pattern in time_patterns:
+        text = pattern.sub(replace_time, text)
+    return text
 
 
 def record_time_restore(match, restore_map: dict, label_factory=None) -> str:
@@ -144,27 +228,59 @@ def record_time_restore(match, restore_map: dict, label_factory=None) -> str:
 
 
 def simplify_address(address: str) -> str:
-    pref_city_match = re.search(r'([一-龥]+[都道府県])([一-龥]+市)', address)
+    pref_city_match = re.search(r'((?:北海道|[一-龥]{1,3}[都道府県]))([一-龥ァ-ヶー0-9\-]+?(?:市|区|町|村))', address)
     if pref_city_match:
         return f'{pref_city_match.group(1)}{pref_city_match.group(2)}内'
-    city_match = re.search(r'([一-龥]+市)', address)
-    if city_match:
-        return f'{city_match.group(1)}内'
-    ward_match = re.search(r'([一-龥]+区)', address)
-    if ward_match:
-        return f'{ward_match.group(1)}内'
+    municipality_match = re.search(r'([一-龥ァ-ヶー0-9\-]+?(?:市|区|町|村))', address)
+    if municipality_match:
+        return f'{municipality_match.group(1)}内'
     return '住所'
 
 
-def generalize_address_text(text: str, restore_map: dict) -> str:
+def generalize_address_text(text: str, restore_map: dict, patterns=None) -> str:
     def replace_address(match):
         address = match.group(0)
         anonymized = simplify_address(address)
         record_restore_segment(restore_map, anonymized, address)
         return anonymized
 
-    address_pattern = re.compile(r'([一-龥]+[都道府県][一-龥]+市.*?)(?=に住む|に居住|に在住|、|。|$)')
-    return address_pattern.sub(replace_address, text)
+    address_patterns = _compile_patterns(patterns or DEFAULT_ADDRESS_PATTERNS)
+    for pattern in address_patterns:
+        text = pattern.sub(replace_address, text)
+    return text
+
+
+def generalize_age_text(text: str, restore_map: dict, patterns=None) -> str:
+    age_patterns = _compile_patterns(patterns or DEFAULT_AGE_PATTERNS)
+    return replace_patterns(text, age_patterns, '年齢', restore_map)
+
+
+def anonymize_contact_text(text: str, restore_map: dict, config: dict) -> str:
+    text = replace_patterns(
+        text,
+        _configured_patterns(config, 'phone_patterns', DEFAULT_PHONE_PATTERNS, flags=re.IGNORECASE),
+        '電話番号',
+        restore_map,
+    )
+    text = replace_patterns(
+        text,
+        _configured_patterns(config, 'email_patterns', DEFAULT_EMAIL_PATTERNS, flags=re.IGNORECASE),
+        'メール',
+        restore_map,
+    )
+    text = replace_patterns(
+        text,
+        _configured_patterns(config, 'id_patterns', DEFAULT_ID_PATTERNS, flags=re.IGNORECASE),
+        '患者ID',
+        restore_map,
+    )
+    text = replace_patterns(
+        text,
+        _configured_patterns(config, 'room_patterns', DEFAULT_ROOM_PATTERNS, flags=re.IGNORECASE),
+        '病室',
+        restore_map,
+    )
+    return text
 
 
 def normalize_whitespace(text: str) -> str:
@@ -175,7 +291,16 @@ def normalize_whitespace(text: str) -> str:
     return text.strip()
 
 
-def anonymize_person_names(text: str, restore_map: dict) -> str:
+def _alphabet_label(index: int) -> str:
+    index += 1
+    letters = []
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters.append(chr(ord('A') + remainder))
+    return ''.join(reversed(letters))
+
+
+def anonymize_person_names(text: str, restore_map: dict, patterns=None) -> str:
     name_map = {}
     patient_index = 0
 
@@ -185,7 +310,7 @@ def anonymize_person_names(text: str, restore_map: dict) -> str:
         if original in name_map:
             return name_map[original]
 
-        label = f'患者{chr(ord("A") + patient_index)}'
+        label = f'患者{_alphabet_label(patient_index)}'
         if original.endswith('氏'):
             label += '氏'
         elif original.endswith('さん'):
@@ -195,9 +320,8 @@ def anonymize_person_names(text: str, restore_map: dict) -> str:
         restore_map[label] = original
         return label
 
-    patterns = [r'患者[一-龥]{2,3}(?:氏|さん)?', r'[一-龥]{2,4}氏', r'[一-龥]{2,4}さん']
-    for pattern in patterns:
-        text = re.sub(pattern, replace_name, text)
+    for pattern in _compile_patterns(patterns or DEFAULT_NAME_PATTERNS):
+        text = pattern.sub(replace_name, text)
     return text
 
 
@@ -235,10 +359,18 @@ def anonymize_text(
 
     anonymized = normalize_fullwidth_text(working_text, restore_map)
 
-    anonymized = generalize_date_text(anonymized, restore_map)
-    anonymized = generalize_time_text(anonymized, restore_map)
-    anonymized = generalize_address_text(anonymized, restore_map)
-    anonymized = anonymize_person_names(anonymized, restore_map)
+    date_patterns = _configured_patterns(config, 'date_patterns', DEFAULT_DATE_PATTERNS)
+    time_patterns = _configured_patterns(config, 'time_patterns', DEFAULT_TIME_PATTERNS)
+    address_patterns = _configured_patterns(config, 'address_patterns', DEFAULT_ADDRESS_PATTERNS)
+    name_patterns = _configured_patterns(config, 'name_patterns', DEFAULT_NAME_PATTERNS)
+    age_patterns = _configured_patterns(config, 'age_patterns', DEFAULT_AGE_PATTERNS)
+
+    anonymized = generalize_date_text(anonymized, restore_map, date_patterns)
+    anonymized = generalize_time_text(anonymized, restore_map, time_patterns)
+    anonymized = generalize_address_text(anonymized, restore_map, address_patterns)
+    anonymized = anonymize_person_names(anonymized, restore_map, name_patterns)
+    anonymized = generalize_age_text(anonymized, restore_map, age_patterns)
+    anonymized = anonymize_contact_text(anonymized, restore_map, config)
     if PREFERRED_PERSON_SENTINEL in anonymized:
         anonymized = anonymized.replace(PREFERRED_PERSON_SENTINEL, preferred_person_label)
         if preferred_person_original:

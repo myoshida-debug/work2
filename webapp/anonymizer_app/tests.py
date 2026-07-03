@@ -622,6 +622,24 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('午後(時刻1)', result.restore_map)
         self.assertEqual(result.restore_map['午後(時刻1)'], '午後3時')
 
+    def test_anonymize_text_masks_common_pii_patterns(self):
+        result = anonymize_text(
+            '山田 太郎氏は2026/05/03 13時45分に来院した。電話090-1234-5678、メールtaro@example.com、患者ID: P12345、101号室、住所: 東京都新宿区西新宿1-2-3に住む。'
+        )
+
+        self.assertIn('患者A氏', result.text)
+        self.assertIn('2026年5月上旬', result.text)
+        self.assertIn('午後(時刻1)', result.text)
+        self.assertIn('電話番号1', result.text)
+        self.assertIn('メール1', result.text)
+        self.assertIn('患者ID1', result.text)
+        self.assertIn('病室1', result.text)
+        self.assertIn('東京都新宿区内', result.text)
+        self.assertNotIn('090-1234-5678', result.text)
+        self.assertNotIn('taro@example.com', result.text)
+        self.assertNotIn('P12345', result.text)
+        self.assertNotIn('101号室', result.text)
+
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class TemplateSelectionTests(TestCase):

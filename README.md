@@ -18,6 +18,23 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### PostgreSQL を使う場合
+
+`webapp/anonflow/settings.py` は、`DATABASE_URL` もしくは `USE_POSTGRESQL=1` と `POSTGRES_*` 環境変数で PostgreSQL 接続に切り替わります。
+
+例:
+
+```bash
+export USE_POSTGRESQL=1
+export POSTGRES_DB=anonflow
+export POSTGRES_USER=anonflow
+export POSTGRES_PASSWORD=secret
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+cd webapp
+python manage.py migrate
+```
+
 ### 2. Django サーバー起動
 
 ```bash

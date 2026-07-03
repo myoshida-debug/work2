@@ -1,2 +1,3 @@
 markdown
 faster-whisper
+psycopg2-binary>=2.9
