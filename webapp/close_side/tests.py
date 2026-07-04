@@ -1134,6 +1134,34 @@ class PatientManagementTests(TestCase):
         self.assertIn('・性別: 男', prompt.content)
         self.assertIn('・主病名: 統合失調症', prompt.content)
 
+    def test_home_anonymizes_patient_surname_only(self):
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': '看護計画',
+                'input_mode': 'free',
+                'text': '山田が来院した。',
+                'patient_id': 'P001',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        anonymized_text = response.context['text_items'][0]['anonymized']
+        self.assertIn('患者本人A', anonymized_text)
+        self.assertNotIn('山田が来院した', anonymized_text)
+        self.assertEqual(response.context['restore_map']['患者本人A'], '山田太郎')
+
     def test_home_hides_patient_panel_for_committee_template(self):
         response = self.client.post(
             reverse('close_side:home'),
@@ -1471,6 +1499,44 @@ class FamilyManagementTests(TestCase):
         self.assertTrue(imported.is_active)
         self.assertFalse(PatientFamily.objects.filter(patient_id='P999', branch_no=9).exists())
 
+    def test_family_csv_import_auto_assigns_branch_no_when_blank(self):
+        PatientFamily.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='family',
+            surname='山田',
+            given_name='花子',
+            kana_surname='やまだ',
+            kana_given_name='はなこ',
+            relationship_label='母',
+            is_active=True,
+        )
+
+        csv_text = (
+            '患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効\n'
+            'P001,,家族,姉,佐藤,次郎,さとう,じろう,有効\n'
+            'P001,,家族,妹,佐藤,三子,さとう,みこ,無効\n'
+        )
+        upload = SimpleUploadedFile('families_auto_branch.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:family_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first = PatientFamily.objects.get(patient_id='P001', branch_no=2)
+        second = PatientFamily.objects.get(patient_id='P001', branch_no=3)
+        self.assertEqual(first.full_name, '佐藤次郎')
+        self.assertEqual(first.relationship_label, '姉')
+        self.assertEqual(first.anonymization_label_prefix, '家族（姉）')
+        self.assertTrue(first.is_active)
+        self.assertEqual(second.full_name, '佐藤三子')
+        self.assertEqual(second.relationship_label, '妹')
+        self.assertEqual(second.anonymization_label_prefix, '家族（妹）')
+        self.assertFalse(second.is_active)
+
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class GuardianManagementTests(TestCase):
@@ -1589,3 +1655,41 @@ class GuardianManagementTests(TestCase):
         self.assertEqual(imported.relation_kind, 'guardian')
         self.assertTrue(imported.is_active)
         self.assertFalse(Guardian.objects.filter(patient_id='P999', branch_no=9).exists())
+
+    def test_guardian_csv_import_auto_assigns_branch_no_when_blank(self):
+        Guardian.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='guardian',
+            surname='山田',
+            given_name='次郎',
+            kana_surname='やまだ',
+            kana_given_name='じろう',
+            relationship_label='後見人',
+            is_active=True,
+        )
+
+        csv_text = (
+            '患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効\n'
+            'P001,,後見人,保佐人,佐藤,花子,さとう,はなこ,有効\n'
+            'P001,,後見人,補助人,鈴木,太郎,すずき,たろう,無効\n'
+        )
+        upload = SimpleUploadedFile('guardians_auto_branch.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:guardian_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first = Guardian.objects.get(patient_id='P001', branch_no=2)
+        second = Guardian.objects.get(patient_id='P001', branch_no=3)
+        self.assertEqual(first.full_name, '佐藤花子')
+        self.assertEqual(first.relationship_label, '保佐人')
+        self.assertEqual(first.anonymization_label_prefix, '保佐人')
+        self.assertTrue(first.is_active)
+        self.assertEqual(second.full_name, '鈴木太郎')
+        self.assertEqual(second.relationship_label, '補助人')
+        self.assertEqual(second.anonymization_label_prefix, '補助人')
+        self.assertFalse(second.is_active)

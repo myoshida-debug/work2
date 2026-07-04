@@ -402,19 +402,16 @@ def anonymize_text(
         preferred_person_original=preferred_person_original,
     )
     if preferred_groups:
-        ordered_groups = sorted(
-            enumerate(preferred_groups),
-            key=lambda item: (
-                -max(len(name) for name in item[1]['names']),
-                item[0],
-            ),
-        )
         group_sentinels: list[tuple[str, dict[str, object]]] = []
-        for index, group in ordered_groups:
+        preferred_replacements: list[tuple[str, str, dict[str, object]]] = []
+        for index, group in enumerate(preferred_groups):
             sentinel = f'{PREFERRED_ENTITY_SENTINEL_PREFIX}{index}__'
             group_sentinels.append((sentinel, group))
-            for preferred_name in sorted(group['names'], key=len, reverse=True):
-                working_text = working_text.replace(preferred_name, sentinel)
+            for preferred_name in sorted(set(group['names']), key=len, reverse=True):
+                preferred_replacements.append((preferred_name, sentinel, group))
+
+        for preferred_name, sentinel, _group in sorted(preferred_replacements, key=lambda item: len(item[0]), reverse=True):
+            working_text = working_text.replace(preferred_name, sentinel)
     else:
         group_sentinels = []
 

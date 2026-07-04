@@ -100,6 +100,13 @@ class Patient(PersonNameMixin):
     def __str__(self):
         return f'{self.patient_id} {self.full_name}'.strip()
 
+    def name_variants(self) -> list[str]:
+        variants = super().name_variants()
+        for candidate in (self.surname, self.kana_surname):
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+        return variants
+
 
 class Staff(PersonNameMixin):
     staff_id = models.CharField(max_length=255, unique=True, db_index=True)

@@ -964,6 +964,7 @@ def _normalize_relation_kind_value(value: object) -> str | None:
 def _normalize_linked_person_csv_row(raw_row: dict[str, str], header_aliases: dict[str, str]) -> dict[str, object]:
     normalized: dict[str, object] = {
         'branch_no': None,
+        'branch_no_raw': '',
         'patient_id': '',
         'relation_kind': '',
         'surname': '',
@@ -993,6 +994,7 @@ def _normalize_linked_person_csv_row(raw_row: dict[str, str], header_aliases: di
             normalized['is_active'] = _normalize_patient_linked_is_active(value)
             continue
         if key == 'branch_no':
+            normalized['branch_no_raw'] = value
             normalized['branch_no'] = _normalize_branch_no_value(value)
             continue
         if key == 'relation_kind':
@@ -1073,6 +1075,19 @@ def _patient_linked_person_upsert_from_csv_row(
     return record, False, bool(changed_fields)
 
 
+def _next_patient_linked_branch_no(model_cls, patient_id: str, used_branch_nos: set[int]) -> int:
+    latest_branch_no = (
+        model_cls.objects.filter(patient_id=patient_id)
+        .order_by('-branch_no')
+        .values_list('branch_no', flat=True)
+        .first()
+    )
+    branch_no = int(latest_branch_no or 0) + 1
+    while branch_no in used_branch_nos:
+        branch_no += 1
+    return branch_no
+
+
 def _import_patient_linked_csv(
     uploaded_file,
     *,
@@ -1088,14 +1103,26 @@ def _import_patient_linked_csv(
     updated_count = 0
     skipped_count = 0
     seen_ids: set[str] = set()
+    used_branch_nos_by_patient: dict[str, set[int]] = {}
 
     with transaction.atomic():
         for raw_row in reader:
             normalized_row = _normalize_linked_person_csv_row(raw_row, header_aliases)
-            branch_no = _normalize_branch_no_value(normalized_row.get('branch_no'))
-            if branch_no is None:
+            patient_id = str(normalized_row.get('patient_id') or '').strip()
+            if not patient_id or not Patient.objects.filter(patient_id=patient_id).exists():
                 skipped_count += 1
                 continue
+
+            patient_used_branch_nos = used_branch_nos_by_patient.setdefault(patient_id, set())
+            branch_no = _normalize_branch_no_value(normalized_row.get('branch_no'))
+            if branch_no is None:
+                raw_branch_no = str(normalized_row.get('branch_no_raw') or '').strip()
+                if raw_branch_no:
+                    skipped_count += 1
+                    continue
+                branch_no = _next_patient_linked_branch_no(model_cls, patient_id, patient_used_branch_nos)
+                normalized_row['branch_no'] = branch_no
+            patient_used_branch_nos.add(branch_no)
 
             record, created, changed = _patient_linked_person_upsert_from_csv_row(
                 model_cls,
