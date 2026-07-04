@@ -363,6 +363,16 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('## 6. リスク評価', home_nursing_source.content)
         self.assertIn('## 9. 総合評価・申し送り', home_nursing_source.content)
 
+    def test_medical_safety_analysis_template_appends_anonymized_text(self):
+        sync_templates_to_db()
+        source = get_template_source_by_name('医療安全分析')
+
+        self.assertIsNotNone(source)
+        self.assertIn('【入力本文】', source.content)
+        self.assertIn('{anonymized_text}', source.content)
+        prompt = source.content.replace('{anonymized_text}', '患者Aが転倒した。')
+        self.assertTrue(prompt.rstrip().endswith('患者Aが転倒した。'))
+
     def test_ot_psw_and_home_nursing_schemas_use_master_codes(self):
         ot_schema = get_template_input_schema('OT評価サマリー')
         psw_schema = get_template_input_schema('PSW退院支援サマリー')
