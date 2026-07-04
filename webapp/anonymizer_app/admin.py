@@ -35,9 +35,9 @@ class RestoredResultAdmin(admin.ModelAdmin):
 
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):
-    list_display = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'sex', 'birth_date', 'primary_diagnosis', 'updated_at')
+    list_display = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'sex', 'birth_date', 'primary_diagnosis', 'is_admin_only', 'updated_at')
     search_fields = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'primary_diagnosis')
-    list_filter = ('sex',)
+    list_filter = ('sex', 'is_admin_only')
     readonly_fields = ('created_at', 'updated_at')
 
 

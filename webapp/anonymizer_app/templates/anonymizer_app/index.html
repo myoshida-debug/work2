@@ -334,6 +334,46 @@
       font-size: 13px;
     }
 
+    .free-upload-panel {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .free-upload-panel[hidden] {
+      display: none;
+    }
+
+    .text-file-upload {
+      display: grid;
+      gap: 10px;
+    }
+
+    .text-file-upload input[type="file"] {
+      width: 100%;
+      max-width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .text-file-upload input[type="file"]:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .file-status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .voice-controls {
       display: grid;
       gap: 14px;
@@ -761,9 +801,11 @@
           <a href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴</a>
           <a href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
           <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
-          <a href="{% url 'close_side:patient_list' %}">患者管理</a>
-          <a href="{% url 'close_side:staff_list' %}">職員管理</a>
-          <a href="{% url 'close_side:linked_person_list' %}">患者関連者管理</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'close_side:patient_list' %}">患者管理</a>
+            <a href="{% url 'close_side:staff_list' %}">職員管理</a>
+            <a href="{% url 'close_side:linked_person_list' %}">患者関連者管理</a>
+          {% endif %}
           <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
           {% if request.user.is_staff or request.user.is_superuser %}
             <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>
@@ -783,6 +825,7 @@
           入力内容を確認してください。
           {{ form.non_field_errors }}
           {{ form.text.errors }}
+          {{ form.text_file.errors }}
           {{ form.transcript_text.errors }}
           {{ form.template.errors }}
           {{ form.input_mode.errors }}
@@ -796,10 +839,11 @@
         </div>
       {% endif %}
 
-      <form method="post" id="anonymize-form" class="workspace-form">
+      <form method="post" id="anonymize-form" class="workspace-form" enctype="multipart/form-data">
         {% csrf_token %}
         {{ form.structured_input }}
         {{ form.transcript_source }}
+        {{ form.text_file_snapshot }}
 
         <section class="panel input-mode-panel" aria-labelledby="input-mode-panel-title">
           <div class="panel-header">
@@ -995,6 +1039,15 @@
                   </div>
                 </div>
 
+                <div class="free-upload-panel" id="free-upload-panel" {% if input_mode != 'free' %}hidden{% endif %}>
+                  <label class="field-label" for="{{ form.text_file.id_for_label }}">ファイルを読み込む</label>
+                  <div class="text-file-upload">
+                    {{ form.text_file }}
+                    <div class="file-status" id="text-file-status" aria-live="polite"></div>
+                    <p class="schema-note">`.txt` / `.md` / `.csv` / `.log` / `.json` / `.xlsx` / `.docx` / `.pdf` に対応します。Excel と Word は `.xlsx` / `.docx` 形式を想定しています。</p>
+                  </div>
+                </div>
+
                 <div class="editor-grid {% if input_mode == 'structured' %}structured-mode{% elif input_mode == 'voice' %}voice-mode{% endif %}" id="anonymize-grid">
                   <div class="editor-column input-text free-input-panel" id="free-input-panel" {% if input_mode != 'free' %}hidden{% endif %}>
                     <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
@@ -1101,11 +1154,16 @@
     const structuredPanel = document.getElementById('structured-input-panel');
     const voicePanel = document.getElementById('voice-input-panel');
     const structuredFieldsHost = document.getElementById('structured-input-fields');
+    const freeUploadPanel = document.getElementById('free-upload-panel');
     const freeInputPanel = document.getElementById('free-input-panel');
     const inputGrid = document.getElementById('anonymize-grid');
     const structuredInputHidden = document.querySelector('input[name="structured_input"]');
     const transcriptTextArea = document.querySelector('textarea[name="transcript_text"]');
     const transcriptSourceField = document.querySelector('input[name="transcript_source"]');
+    const textFileInput = document.querySelector('input[name="text_file"]');
+    const textFileSnapshotField = document.querySelector('input[name="text_file_snapshot"]');
+    const textFileStatusArea = document.getElementById('text-file-status');
+    const textFilePreviewUrl = '{% url "close_side:text_file_preview" %}';
     const templateInputSchemasScript = document.getElementById('template-input-schemas');
     const templateInputSchemas = templateInputSchemasScript ? JSON.parse(templateInputSchemasScript.textContent || '{}') : {};
     const clearButton = document.getElementById('clear-input');
@@ -1137,6 +1195,7 @@
     let voiceResetPending = false;
     let patientLookupTimer = null;
     let patientLookupRequestToken = 0;
+    let textFilePreviewRequestToken = 0;
 
     if (textArea) {
       textArea.classList.add('field-area');
@@ -1749,8 +1808,14 @@
       if (structuredPanel) {
         structuredPanel.hidden = !isStructured;
       }
+      if (freeUploadPanel) {
+        freeUploadPanel.hidden = isStructured || isVoice;
+      }
       if (freeInputPanel) {
         freeInputPanel.hidden = isStructured || isVoice;
+      }
+      if (isStructured || isVoice) {
+        textFilePreviewRequestToken += 1;
       }
       if (voicePanel) {
         voicePanel.hidden = !isVoice;
@@ -1835,9 +1900,17 @@
         setStatus('録音・文字起こし入力をクリアしました');
       } else {
         freeTextSnapshot = '';
+        textFilePreviewRequestToken += 1;
         if (textArea) {
           textArea.value = '';
         }
+        if (textFileInput) {
+          textFileInput.value = '';
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        setTextFileStatus('');
         setStructuredInputHiddenValue({});
         setStatus('入力文章をクリアしました');
       }
@@ -1992,6 +2065,71 @@
     function setTranscriptSource(source) {
       if (transcriptSourceField) {
         transcriptSourceField.value = source || 'manual_input';
+      }
+    }
+
+    function setTextFileStatus(message, isError = false) {
+      if (!textFileStatusArea) {
+        return;
+      }
+      textFileStatusArea.textContent = message || '';
+      textFileStatusArea.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+
+    async function loadTextFileIntoEditor(file) {
+      if (!file) {
+        textFilePreviewRequestToken += 1;
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        setTextFileStatus('');
+        return;
+      }
+
+      const requestToken = ++textFilePreviewRequestToken;
+      setTextFileStatus(`読み込み中です: ${file.name}`);
+      try {
+        const formData = new FormData();
+        formData.append('text_file', file, file.name || 'uploaded-file');
+        const response = await fetch(textFilePreviewUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: formData,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (requestToken !== textFilePreviewRequestToken) {
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(data.error || 'ファイルの読み込みに失敗しました');
+        }
+        const content = (data.text || '').toString();
+        if (textArea) {
+          textArea.value = content;
+          textArea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = content;
+        }
+        freeTextSnapshot = content;
+        setTextFileStatus(`読み込みました: ${file.name}`);
+      } catch (error) {
+        if (requestToken !== textFilePreviewRequestToken) {
+          return;
+        }
+        if (textArea) {
+          textArea.value = '';
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        freeTextSnapshot = '';
+        if (textArea) {
+          textArea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        setTextFileStatus(error.message || 'ファイルの読み込みに失敗しました', true);
       }
     }
 
@@ -2396,6 +2534,14 @@
         if (getSelectedInputMode() === 'free') {
           freeTextSnapshot = textArea.value;
         }
+        markEdited();
+      });
+    }
+
+    if (textFileInput) {
+      textFileInput.addEventListener('change', async () => {
+        const file = textFileInput.files && textFileInput.files[0] ? textFileInput.files[0] : null;
+        await loadTextFileIntoEditor(file);
         markEdited();
       });
     }

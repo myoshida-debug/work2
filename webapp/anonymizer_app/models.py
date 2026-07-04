@@ -91,6 +91,7 @@ class Patient(PersonNameMixin):
     birth_date = models.DateField(null=True, blank=True)
     sex = models.CharField(max_length=16, blank=True, default='', choices=SEX_CHOICES)
     primary_diagnosis = models.TextField(blank=True, default='')
+    is_admin_only = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -106,6 +107,9 @@ class Patient(PersonNameMixin):
             if candidate and candidate not in variants:
                 variants.append(candidate)
         return variants
+
+    def is_visible_to(self, user) -> bool:
+        return not self.is_admin_only or bool(user and (user.is_staff or user.is_superuser))
 
 
 class Staff(PersonNameMixin):

@@ -282,6 +282,69 @@ class TranscriptionApiTests(TestCase):
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class StaffManagementPermissionTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.admin_user = user_model.objects.create_user(
+            username='close_admin',
+            password='pass12345',
+            is_staff=True,
+        )
+        self.staff = Staff.objects.create(
+            staff_id='S001',
+            surname='佐藤',
+            given_name='花子',
+            kana_surname='サトウ',
+            kana_given_name='ハナコ',
+            occupation_label='看護師',
+            position_label='主任',
+        )
+
+    def test_staff_routes_are_forbidden_for_non_admin_users(self):
+        self.client.force_login(self.user)
+
+        self.assertEqual(self.client.get(reverse('close_side:staff_list')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:staff_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:staff_import')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:staff_edit', args=[self.staff.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:staff_delete', args=[self.staff.pk])).status_code, 403)
+
+        menu_response = self.client.get(reverse('close_side:menu'))
+        home_response = self.client.get(reverse('close_side:home'))
+        self.assertNotContains(menu_response, reverse('close_side:staff_list'))
+        self.assertNotContains(home_response, reverse('close_side:staff_list'))
+
+    def test_staff_routes_allow_admin_users(self):
+        self.client.force_login(self.admin_user)
+
+        list_response = self.client.get(reverse('close_side:staff_list'))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, '職員管理')
+        self.assertContains(list_response, reverse('close_side:staff_create'))
+
+        edit_response = self.client.post(
+            reverse('close_side:staff_edit', args=[self.staff.pk]),
+            {
+                'staff_id': self.staff.staff_id,
+                'surname': self.staff.surname,
+                'given_name': self.staff.given_name,
+                'kana_surname': self.staff.kana_surname,
+                'kana_given_name': self.staff.kana_given_name,
+                'occupation_label': self.staff.occupation_label,
+                'position_label': self.staff.position_label,
+                'is_active': 'on',
+            },
+        )
+        self.assertEqual(edit_response.status_code, 302)
+        self.staff.refresh_from_db()
+        self.assertEqual(self.staff.staff_id, 'S001')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class TemplateManagementTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -290,16 +353,96 @@ class TemplateManagementTests(TestCase):
         )
         self.client.force_login(self.user)
 
+    def test_template_list_is_read_only_for_non_admin_users(self):
+        sync_templates_to_db()
+        response = self.client.get(reverse('close_side:templates_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'テンプレート一覧')
+        self.assertContains(response, '閲覧のみ可能')
+        self.assertContains(response, '詳細')
+        self.assertNotContains(response, 'data-template-order-editor')
+        self.assertNotContains(response, 'data-template-row-list')
+        self.assertNotContains(response, 'data-drag-handle')
+        self.assertNotContains(response, '並び順を保存')
+        self.assertNotContains(response, reverse('close_side:template_create'))
+        self.assertNotContains(response, '欄編集')
+        self.assertNotContains(response, '入力欄初期値')
+        self.assertNotContains(response, 'チェックボックス項目')
+        self.assertNotContains(response, '無効にする')
+        self.assertNotContains(response, '有効にする')
+
+    def test_template_detail_is_read_only_for_non_admin_users(self):
+        sync_templates_to_db()
+        template = Template.objects.get(name='委員会議事録')
+
+        response = self.client.get(reverse('close_side:template_detail', args=[template.name]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, template.name)
+        self.assertContains(response, '一覧へ戻る')
+        self.assertNotContains(response, reverse('close_side:template_edit', args=[template.pk]))
+        self.assertNotContains(response, reverse('close_side:template_toggle_active', args=[template.pk]))
+        self.assertNotContains(response, '欄編集')
+        self.assertNotContains(response, '入力欄初期値')
+        self.assertNotContains(response, 'チェックボックス項目')
+        self.assertNotContains(response, '無効にする')
+        self.assertNotContains(response, '有効にする')
+
+    def test_template_edit_routes_are_forbidden_for_non_admin_users(self):
+        sync_templates_to_db()
+        template = Template.objects.get(name='委員会議事録')
+
+        self.assertEqual(self.client.get(reverse('close_side:template_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:template_edit', args=[template.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:template_toggle_active', args=[template.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:template_delete', args=[template.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:template_reorder'), {
+            f'sort_order__{template.pk}': str(template.sort_order),
+        }).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:template_input_defaults_edit', args=['委員会議事録'])).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:template_input_fields_edit', args=['委員会議事録'])).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:template_checkbox_options_edit', args=['入院時サマリー'])).status_code, 403)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class TemplateManagementAdminTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_user(
+            username='close_admin',
+            password='pass12345',
+            is_staff=True,
+        )
+        self.client.force_login(self.admin_user)
+
     def test_template_list_renders_order_controls_and_status_actions(self):
+        sync_templates_to_db()
         response = self.client.get(reverse('close_side:templates_list'))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-template-order-editor')
         self.assertContains(response, 'data-template-row-list')
         self.assertContains(response, 'data-drag-handle')
+        self.assertContains(response, reverse('close_side:template_create'))
         self.assertContains(response, '並び順を保存')
+        self.assertContains(response, '欄編集')
+        self.assertContains(response, '入力欄初期値')
+        self.assertContains(response, 'チェックボックス項目')
         self.assertContains(response, '無効にする')
-        self.assertContains(response, '有効')
+
+    def test_template_detail_renders_management_actions_for_admin_users(self):
+        sync_templates_to_db()
+        template = Template.objects.get(name='委員会議事録')
+
+        response = self.client.get(reverse('close_side:template_detail', args=[template.name]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('close_side:template_edit', args=[template.pk]))
+        self.assertContains(response, reverse('close_side:template_input_fields_edit', args=[template.template_type]))
+        self.assertContains(response, reverse('close_side:template_input_defaults_edit', args=[template.template_type]))
+        self.assertContains(response, reverse('close_side:template_checkbox_options_edit', args=[template.template_type]))
+        self.assertContains(response, reverse('close_side:template_toggle_active', args=[template.pk]))
+        self.assertContains(response, '無効にする')
 
     def test_template_toggle_active_updates_visibility_state(self):
         sync_templates_to_db()
@@ -339,6 +482,7 @@ class TemplateInputDefaultEditTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
 
@@ -397,6 +541,7 @@ class TemplateInputFieldEditTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
 
@@ -570,6 +715,7 @@ class TemplateCheckboxOptionsEditTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
 
@@ -901,6 +1047,7 @@ class PatientManagementTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
 
@@ -974,6 +1121,8 @@ class PatientManagementTests(TestCase):
                 'やまだたろう',
                 'やまだ たろう',
                 'やまだ　たろう',
+                '山田',
+                'やまだ',
             ],
         )
 
@@ -1179,13 +1328,156 @@ class PatientManagementTests(TestCase):
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
-class StaffManagementTests(TestCase):
+class PatientVisibilityRestrictionTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(
-            username='close_user',
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username='close_user_visibility',
             password='pass12345',
         )
+        self.admin_user = user_model.objects.create_user(
+            username='close_admin_visibility',
+            password='pass12345',
+            is_staff=True,
+        )
+        self.public_patient = Patient.objects.create(
+            patient_id='P100',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+        self.admin_only_patient = Patient.objects.create(
+            patient_id='P900',
+            surname='佐藤',
+            given_name='花子',
+            kana_surname='さとう',
+            kana_given_name='はなこ',
+            birth_date=date(1985, 5, 6),
+            sex='female',
+            primary_diagnosis='うつ病',
+            is_admin_only=True,
+        )
+
+    def test_non_admin_users_cannot_access_patient_management_pages(self):
         self.client.force_login(self.user)
+
+        create_response = self.client.post(
+            reverse('close_side:patient_create'),
+            {
+                'patient_id': 'P101',
+                'surname': '高橋',
+                'given_name': '次郎',
+                'kana_surname': 'たかはし',
+                'kana_given_name': 'じろう',
+                'birth_date': '1990-01-02',
+                'sex': 'male',
+                'primary_diagnosis': 'てんかん',
+                'is_admin_only': 'on',
+            },
+        )
+        self.assertEqual(create_response.status_code, 403)
+
+        list_response = self.client.get(reverse('close_side:patient_list'))
+        self.assertEqual(list_response.status_code, 403)
+
+        import_response = self.client.get(reverse('close_side:patient_import'))
+        self.assertEqual(import_response.status_code, 403)
+
+        lookup_response = self.client.get(reverse('close_side:patient_lookup', args=[self.admin_only_patient.patient_id]))
+        self.assertEqual(lookup_response.status_code, 404)
+
+        edit_response = self.client.get(reverse('close_side:patient_edit', args=[self.admin_only_patient.pk]))
+        self.assertEqual(edit_response.status_code, 403)
+
+        delete_response = self.client.post(reverse('close_side:patient_delete', args=[self.admin_only_patient.pk]))
+        self.assertEqual(delete_response.status_code, 403)
+
+        menu_response = self.client.get(reverse('close_side:menu'))
+        self.assertEqual(menu_response.status_code, 200)
+        self.assertNotContains(menu_response, reverse('close_side:patient_list'))
+        self.assertNotContains(menu_response, reverse('close_side:linked_person_list'))
+        self.assertNotContains(menu_response, '患者管理へ')
+        self.assertNotContains(menu_response, '患者関連者管理へ')
+
+        home_response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': '看護計画',
+                'input_mode': 'free',
+                'text': '佐藤花子は本日退院した。',
+                'patient_id': self.admin_only_patient.patient_id,
+            },
+        )
+        self.assertEqual(home_response.status_code, 200)
+        self.assertContains(home_response, f'患者ID {self.admin_only_patient.patient_id} が見つかりません。')
+        self.assertNotContains(home_response, reverse('close_side:patient_list'))
+        self.assertNotContains(home_response, reverse('close_side:linked_person_list'))
+
+    def test_admin_users_can_view_and_mark_admin_only_patients(self):
+        self.client.force_login(self.admin_user)
+
+        list_response = self.client.get(reverse('close_side:patient_list'))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, self.admin_only_patient.patient_id)
+        self.assertContains(list_response, '管理者限定')
+
+        lookup_response = self.client.get(reverse('close_side:patient_lookup', args=[self.admin_only_patient.patient_id]))
+        self.assertEqual(lookup_response.status_code, 200)
+        lookup_payload = json.loads(lookup_response.content)
+        self.assertTrue(lookup_payload['found'])
+        self.assertEqual(lookup_payload['patient']['full_name'], '佐藤花子')
+
+        create_response = self.client.post(
+            reverse('close_side:patient_create'),
+            {
+                'patient_id': 'P102',
+                'surname': '中村',
+                'given_name': '一郎',
+                'kana_surname': 'なかむら',
+                'kana_given_name': 'いちろう',
+                'birth_date': '1975-03-04',
+                'sex': 'male',
+                'primary_diagnosis': '双極性障害',
+                'is_admin_only': 'on',
+            },
+        )
+        self.assertEqual(create_response.status_code, 302)
+        created_patient = Patient.objects.get(patient_id='P102')
+        self.assertTrue(created_patient.is_admin_only)
+
+    def test_admin_only_column_is_supported_in_patient_csv_import(self):
+        self.client.force_login(self.admin_user)
+
+        csv_text = (
+            'ID,姓,名,ふりかな姓,ふりかな名,生年月日,性別,主病名,管理者のみ\n'
+            'P103,鈴木,一郎,すずき,いちろう,1988-07-08,男,統合失調症,はい\n'
+        )
+        upload = SimpleUploadedFile('patients.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:patient_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        imported_patient = Patient.objects.get(patient_id='P103')
+        self.assertTrue(imported_patient.is_admin_only)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class StaffManagementTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_user(
+            username='close_admin',
+            password='pass12345',
+            is_staff=True,
+        )
+        self.client.force_login(self.admin_user)
 
     def test_staff_crud_and_delete(self):
         create_response = self.client.post(
@@ -1383,6 +1675,7 @@ class FamilyManagementTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user_family',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
         Patient.objects.create(
@@ -1544,6 +1837,7 @@ class GuardianManagementTests(TestCase):
         self.user = get_user_model().objects.create_user(
             username='close_user_guardian',
             password='pass12345',
+            is_staff=True,
         )
         self.client.force_login(self.user)
         Patient.objects.create(
@@ -1693,3 +1987,71 @@ class GuardianManagementTests(TestCase):
         self.assertEqual(second.relationship_label, '補助人')
         self.assertEqual(second.anonymization_label_prefix, '補助人')
         self.assertFalse(second.is_active)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class RelatedPersonManagementPermissionTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user_related_person',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+        self.family = PatientFamily.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='family',
+            surname='山田',
+            given_name='花子',
+            kana_surname='やまだ',
+            kana_given_name='はなこ',
+            relationship_label='母',
+            is_active=True,
+        )
+        self.guardian = Guardian.objects.create(
+            patient_id='P001',
+            branch_no=2,
+            relation_kind='guardian',
+            surname='山田',
+            given_name='次郎',
+            kana_surname='やまだ',
+            kana_given_name='じろう',
+            relationship_label='後見人',
+            is_active=True,
+        )
+
+    def test_non_admin_users_cannot_access_related_person_management_pages(self):
+        self.assertEqual(self.client.get(reverse('close_side:linked_person_list')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:linked_person_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:linked_person_import')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:linked_person_edit', args=[self.family.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:linked_person_delete', args=[self.family.pk])).status_code, 403)
+
+        self.assertEqual(self.client.get(reverse('close_side:family_list')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:family_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:family_import')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:family_edit', args=[self.family.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:family_delete', args=[self.family.pk])).status_code, 403)
+
+        self.assertEqual(self.client.get(reverse('close_side:guardian_list')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:guardian_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:guardian_import')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('close_side:guardian_edit', args=[self.guardian.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse('close_side:guardian_delete', args=[self.guardian.pk])).status_code, 403)
+
+        menu_response = self.client.get(reverse('close_side:menu'))
+        self.assertEqual(menu_response.status_code, 200)
+        self.assertNotContains(menu_response, reverse('close_side:patient_list'))
+        self.assertNotContains(menu_response, reverse('close_side:linked_person_list'))
+        self.assertNotContains(menu_response, '患者管理へ')
+        self.assertNotContains(menu_response, '患者関連者管理へ')

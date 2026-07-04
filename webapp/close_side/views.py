@@ -39,6 +39,7 @@ from anonymizer_app.forms import (
     TemplateForm,
     TemplateInputDefaultsForm,
 )
+from anonymizer_app.file_imports import extract_uploaded_text
 from anonymizer_app.history_utils import (
     HISTORY_LIMIT,
     decorate_operation_logs,
@@ -101,6 +102,20 @@ def _is_admin(user) -> bool:
     return bool(user.is_staff or user.is_superuser)
 
 
+def _patient_queryset_for_user(user):
+    queryset = Patient.objects.all()
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(is_admin_only=False)
+
+
+def _patient_linked_person_queryset_for_user(user):
+    queryset = PatientLinkedPerson.objects.all()
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(patient_id__in=_patient_queryset_for_user(user).values_list('patient_id', flat=True))
+
+
 def _owned_queryset(queryset, user):
     if _is_admin(user):
         return queryset
@@ -141,6 +156,14 @@ PATIENT_CSV_HEADER_ALIASES = {
     '生年月日': 'birth_date',
     '性別': 'sex',
     '主病名': 'primary_diagnosis',
+    '管理者のみ': 'is_admin_only',
+    '管理者のみ閲覧可': 'is_admin_only',
+    '管理者のみ閲覧': 'is_admin_only',
+    '職員データ': 'is_admin_only',
+    '閲覧制限': 'is_admin_only',
+    '公開範囲': 'is_admin_only',
+    'admin_only': 'is_admin_only',
+    'is_admin_only': 'is_admin_only',
 }
 STAFF_CSV_HEADER_ALIASES = {
     'id': 'staff_id',
@@ -420,10 +443,7 @@ def _patient_profile_for_source_id(source_id: str, user) -> dict[str, object]:
         return {}
 
     source_input_data = normalize_source_input_data(prompt.source_input_data)
-    patient_profile = source_input_data.get('patient') or {}
-    if not isinstance(patient_profile, dict):
-        return {}
-    return patient_profile
+    return _patient_profile_from_source_input_data(source_input_data, user)
 
 
 def _patient_id_value(patient_record: Patient | None) -> str:
@@ -596,11 +616,37 @@ def _prepend_blank_lines_for_patient_basic_info(
     return ('\n' * 7) + body
 
 
-def _patient_for_patient_id(patient_id: str) -> Patient | None:
+def _patient_profile_from_source_input_data(source_input_data: dict[str, object] | None, user) -> dict[str, object]:
+    if not isinstance(source_input_data, dict):
+        return {}
+
+    patient_profile = source_input_data.get('patient') or {}
+    if not isinstance(patient_profile, dict):
+        return {}
+
+    patient_id = str(patient_profile.get('patient_id') or '').strip()
+    if not patient_id:
+        return patient_profile if _is_admin(user) else {}
+
+    patient_record = _patient_for_patient_id(patient_id, user)
+    if patient_record is not None:
+        return _patient_payload(patient_record)
+
+    patient_exists = Patient.objects.filter(patient_id=patient_id).exists()
+    if patient_exists:
+        return patient_profile if _is_admin(user) else {}
+
+    if patient_profile:
+        return patient_profile
+    return {}
+
+
+def _patient_for_patient_id(patient_id: str, user=None) -> Patient | None:
     patient_id = str(patient_id or '').strip()
     if not patient_id:
         return None
-    return Patient.objects.filter(patient_id=patient_id).first()
+    queryset = _patient_queryset_for_user(user) if user is not None else Patient.objects.all()
+    return queryset.filter(patient_id=patient_id).first()
 
 
 def _normalize_patient_sex(value: object) -> str:
@@ -611,6 +657,19 @@ def _normalize_patient_sex(value: object) -> str:
     if normalized:
         return normalized
     return ''
+
+
+def _normalize_patient_is_admin_only(value: object) -> bool | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    normalized = text.casefold()
+    if normalized in {'1', 'true', 'yes', 'on', 't', 'y', 'はい', '管理者のみ', '職員', 'staff', 'admin_only'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off', 'f', 'n', 'いいえ', '全員', '公開', '患者'}:
+        return False
+    return bool(_is_truthy(value))
 
 
 def _parse_patient_birth_date(value: object):
@@ -648,6 +707,7 @@ def _normalize_patient_csv_row(raw_row: dict[str, str]) -> dict[str, object]:
         'birth_date': None,
         'sex': '',
         'primary_diagnosis': '',
+        'is_admin_only': None,
     }
     for raw_key, raw_value in raw_row.items():
         key = PATIENT_CSV_HEADER_ALIASES.get(str(raw_key or '').strip().lower())
@@ -670,6 +730,9 @@ def _normalize_patient_csv_row(raw_row: dict[str, str]) -> dict[str, object]:
         if key == 'sex':
             normalized['sex'] = _normalize_patient_sex(value)
             continue
+        if key == 'is_admin_only':
+            normalized['is_admin_only'] = _normalize_patient_is_admin_only(value)
+            continue
         normalized[key] = value
     return normalized
 
@@ -684,6 +747,10 @@ def _decode_patient_csv_file(uploaded_file) -> str:
         except Exception:
             continue
     return raw_bytes.decode('utf-8', errors='ignore')
+
+
+def _decode_text_file(uploaded_file) -> str:
+    return extract_uploaded_text(uploaded_file)
 
 
 def _patient_sort_queryset(queryset, sort_key: str):
@@ -710,10 +777,20 @@ def _patient_sort_queryset(queryset, sort_key: str):
     return queryset.order_by('patient_id')
 
 
-def _patient_upsert_from_csv_row(normalized_row: dict[str, object]) -> tuple[Patient | None, bool, bool]:
+def _patient_upsert_from_csv_row(
+    normalized_row: dict[str, object],
+    *,
+    user=None,
+    allow_admin_only: bool = True,
+) -> tuple[Patient | None, bool, bool]:
     patient_id = str(normalized_row.get('patient_id') or '').strip()
     if not patient_id:
         return None, False, False
+
+    if user is not None and not _is_admin(user):
+        visible_patient = _patient_for_patient_id(patient_id, user)
+        if visible_patient is None and Patient.objects.filter(patient_id=patient_id).exists():
+            return None, False, False
 
     defaults: dict[str, object] = {}
     for field_name in ('surname', 'given_name', 'kana_surname', 'kana_given_name', 'primary_diagnosis', 'sex'):
@@ -723,6 +800,10 @@ def _patient_upsert_from_csv_row(normalized_row: dict[str, object]) -> tuple[Pat
     birth_date = normalized_row.get('birth_date')
     if birth_date:
         defaults['birth_date'] = birth_date
+    if allow_admin_only:
+        is_admin_only = normalized_row.get('is_admin_only')
+        if is_admin_only is not None:
+            defaults['is_admin_only'] = bool(is_admin_only)
 
     patient, created = Patient.objects.get_or_create(patient_id=patient_id, defaults=defaults)
     if created:
@@ -738,7 +819,7 @@ def _patient_upsert_from_csv_row(normalized_row: dict[str, object]) -> tuple[Pat
     return patient, False, bool(changed_fields)
 
 
-def _import_patient_csv(uploaded_file) -> dict[str, int]:
+def _import_patient_csv(uploaded_file, *, user=None) -> dict[str, int]:
     csv_text = _decode_patient_csv_file(uploaded_file)
     reader = csv.DictReader(StringIO(csv_text))
     created_count = 0
@@ -754,7 +835,11 @@ def _import_patient_csv(uploaded_file) -> dict[str, int]:
                 skipped_count += 1
                 continue
 
-            patient, created, changed = _patient_upsert_from_csv_row(normalized_row)
+            patient, created, changed = _patient_upsert_from_csv_row(
+                normalized_row,
+                user=user,
+                allow_admin_only=_is_admin(user),
+            )
             if patient is None:
                 skipped_count += 1
                 continue
@@ -1041,13 +1126,16 @@ def _patient_linked_person_upsert_from_csv_row(
     normalized_row: dict[str, object],
     *,
     default_relation_kind: str = 'family',
+    user=None,
 ) -> tuple[object | None, bool, bool]:
     branch_no = _normalize_branch_no_value(normalized_row.get('branch_no'))
     if branch_no is None:
         return None, False, False
 
     patient_id = str(normalized_row.get('patient_id') or '').strip()
-    if not patient_id or not Patient.objects.filter(patient_id=patient_id).exists():
+    if not patient_id:
+        return None, False, False
+    if _patient_for_patient_id(patient_id, user) is None:
         return None, False, False
 
     defaults: dict[str, object] = {}
@@ -1096,6 +1184,7 @@ def _import_patient_linked_csv(
     record_label: str,
     header_example: str,
     default_relation_kind: str = 'family',
+    user=None,
 ) -> dict[str, int]:
     csv_text = _decode_patient_csv_file(uploaded_file)
     reader = csv.DictReader(StringIO(csv_text))
@@ -1109,7 +1198,7 @@ def _import_patient_linked_csv(
         for raw_row in reader:
             normalized_row = _normalize_linked_person_csv_row(raw_row, header_aliases)
             patient_id = str(normalized_row.get('patient_id') or '').strip()
-            if not patient_id or not Patient.objects.filter(patient_id=patient_id).exists():
+            if not patient_id or _patient_for_patient_id(patient_id, user) is None:
                 skipped_count += 1
                 continue
 
@@ -1128,6 +1217,7 @@ def _import_patient_linked_csv(
                 model_cls,
                 normalized_row,
                 default_relation_kind=default_relation_kind,
+                user=user,
             )
             if record is None:
                 skipped_count += 1
@@ -1494,7 +1584,6 @@ _LOCAL_ONLY_PROMPT_JSON_PREFIXES = (
     'audio_',
     'voice_',
 )
-
 
 def _sanitize_prompt_payload_for_dmz(value):
     if isinstance(value, dict):
@@ -1960,9 +2049,7 @@ def home(request):
             structured_input = source_input_data.get('structured_input') or {}
             if not isinstance(structured_input, dict):
                 structured_input = {}
-            patient_profile = source_input_data.get('patient') or {}
-            if not isinstance(patient_profile, dict):
-                patient_profile = {}
+            patient_profile = _patient_profile_from_source_input_data(source_input_data, request.user)
             source_text = build_source_text_from_source_input_data(prompt.source_input_data)
             transcript_source = str(source_input_data.get('transcript_source') or 'manual_input').strip() or 'manual_input'
             form = AnonymizeForm(initial={
@@ -1971,7 +2058,11 @@ def home(request):
                 'text': source_text if input_mode != 'voice' else '',
                 'transcript_text': source_text if input_mode == 'voice' else '',
                 'transcript_source': transcript_source if input_mode == 'voice' else 'manual_input',
-                'patient_id': str(source_input_data.get('patient_id') or patient_profile.get('patient_id') or '').strip(),
+                'patient_id': str(
+                    patient_profile.get('patient_id')
+                    or (_is_admin(request.user) and source_input_data.get('patient_id'))
+                    or ''
+                ).strip(),
             })
             return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
                 form,
@@ -1986,7 +2077,7 @@ def home(request):
                 patient_profile=patient_profile,
             ))
 
-    form = AnonymizeForm(request.POST or None)
+    form = AnonymizeForm(request.POST or None, request.FILES or None)
     template_name = _selected_template_name(form)
     input_mode = _selected_input_mode(form)
     structured_input: dict[str, object] = {}
@@ -1999,7 +2090,7 @@ def home(request):
         input_mode = form.cleaned_data.get('input_mode') or 'free'
         transcript_source = 'manual_input'
         patient_id = str(form.cleaned_data.get('patient_id') or '').strip()
-        patient_record = _patient_for_patient_id(patient_id) if _template_supports_patient_master(template_name) and patient_id else None
+        patient_record = _patient_for_patient_id(patient_id, request.user) if _template_supports_patient_master(template_name) and patient_id else None
         if _template_supports_patient_master(template_name) and patient_id and patient_record is None:
             form.add_error('patient_id', f'患者ID {patient_id} が見つかりません。')
             invalid_structured_input: dict[str, object] = {}
@@ -2044,6 +2135,20 @@ def home(request):
                 ))
         else:
             source_text = (form.cleaned_data.get('text') or '').strip()
+            text_file = form.cleaned_data.get('text_file')
+            text_file_snapshot = str(form.cleaned_data.get('text_file_snapshot') or '').strip()
+            if text_file and (not source_text or source_text == text_file_snapshot):
+                try:
+                    source_text = _decode_text_file(text_file)
+                except ValueError as exc:
+                    form.add_error('text_file', str(exc))
+                    return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
+                        form,
+                        template_type=template_name,
+                        input_mode=input_mode,
+                        source_text=source_text,
+                        patient_profile=patient_profile,
+                    ))
             if not source_text:
                 form.add_error('text', '入力文章を入力してください。')
                 return render(request, 'anonymizer_app/index.html', _anonymize_page_context(
@@ -2171,6 +2276,23 @@ def download_restore(request, source_id):
 
 
 @require_http_methods(["POST"])
+def text_file_preview(request):
+    uploaded_file = request.FILES.get('text_file') or request.FILES.get('file')
+    if uploaded_file is None:
+        return JsonResponse({'error': '読み込むファイルが必要です。'}, status=400)
+
+    try:
+        text = _decode_text_file(uploaded_file)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
+    return JsonResponse({
+        'text': text,
+        'filename': getattr(uploaded_file, 'name', '') or '',
+    })
+
+
+@require_http_methods(["POST"])
 def update_prompt_payload(request):
     try:
         data = json.loads(request.body.decode('utf-8'))
@@ -2209,16 +2331,23 @@ def update_prompt_payload(request):
     if not isinstance(previous_patient_profile, dict):
         previous_patient_profile = {}
     patient_record = None
+    patient_profile: dict[str, object] = {}
     if _template_supports_patient_master(template_type):
-        if patient_id:
-            patient_record = _patient_for_patient_id(patient_id)
-            if patient_record is None:
-                return JsonResponse({'error': f'患者ID {patient_id} が見つかりません。'}, status=404)
-        elif previous_patient_profile.get('patient_id'):
-            patient_record = _patient_for_patient_id(str(previous_patient_profile.get('patient_id') or '').strip())
-    patient_profile = _patient_payload(patient_record)
-    if _template_supports_patient_master(template_type) and not patient_profile and previous_patient_profile.get('patient_id'):
-        patient_profile = previous_patient_profile
+        lookup_patient_id = patient_id or str(previous_patient_profile.get('patient_id') or '').strip()
+        if lookup_patient_id:
+            patient_record = _patient_for_patient_id(lookup_patient_id, request.user)
+            if patient_record is not None:
+                patient_profile = _patient_payload(patient_record)
+            else:
+                patient_exists = Patient.objects.filter(patient_id=lookup_patient_id).exists()
+                if patient_exists and patient_id:
+                    return JsonResponse({'error': f'患者ID {patient_id} が見つかりません。'}, status=404)
+                if patient_exists and not _is_admin(request.user):
+                    patient_profile = {}
+                elif previous_patient_profile.get('patient_id'):
+                    patient_profile = previous_patient_profile
+                elif patient_id:
+                    return JsonResponse({'error': f'患者ID {patient_id} が見つかりません。'}, status=404)
     if input_mode == 'voice' and not source_text:
         return JsonResponse({'error': '文字起こし結果が空です。録音または入力してください。'}, status=400)
     structured_input_data = data.get('structured_input')
@@ -2648,7 +2777,7 @@ def patient_list(request):
     birth_date_query = _parse_patient_birth_date(request.GET.get('birth_date'))
     diagnosis_query = str(request.GET.get('primary_diagnosis') or '').strip()
 
-    queryset = Patient.objects.all()
+    queryset = _patient_queryset_for_user(request.user)
     if patient_id_query:
         queryset = queryset.filter(patient_id__icontains=patient_id_query)
     if kana_query:
@@ -2684,14 +2813,14 @@ def patient_list(request):
 @require_http_methods(["GET", "POST"])
 def patient_create(request):
     if request.method == 'POST':
-        form = PatientForm(request.POST)
+        form = PatientForm(request.POST, user=request.user)
         if form.is_valid():
             patient = form.save()
             _log_operation(request, 'patient_created', 'Patient', patient.patient_id)
             messages.success(request, f'患者マスタを追加しました: {patient.patient_id}')
             return redirect('close_side:patient_list')
     else:
-        form = PatientForm()
+        form = PatientForm(user=request.user)
 
     return render(request, 'anonymizer_app/patient_form.html', {
         'form': form,
@@ -2702,16 +2831,16 @@ def patient_create(request):
 
 @require_http_methods(["GET", "POST"])
 def patient_edit(request, pk):
-    patient = get_object_or_404(Patient, pk=pk)
+    patient = get_object_or_404(_patient_queryset_for_user(request.user), pk=pk)
     if request.method == 'POST':
-        form = PatientForm(request.POST, instance=patient)
+        form = PatientForm(request.POST, instance=patient, user=request.user)
         if form.is_valid():
             patient = form.save()
             _log_operation(request, 'patient_updated', 'Patient', patient.patient_id)
             messages.success(request, f'患者マスタを更新しました: {patient.patient_id}')
             return redirect('close_side:patient_list')
     else:
-        form = PatientForm(instance=patient)
+        form = PatientForm(instance=patient, user=request.user)
 
     return render(request, 'anonymizer_app/patient_form.html', {
         'form': form,
@@ -2723,7 +2852,7 @@ def patient_edit(request, pk):
 
 @require_http_methods(["POST"])
 def patient_delete(request, pk):
-    patient = get_object_or_404(Patient, pk=pk)
+    patient = get_object_or_404(_patient_queryset_for_user(request.user), pk=pk)
     target_id = patient.patient_id
     patient.delete()
     _log_operation(request, 'patient_deleted', 'Patient', target_id)
@@ -2738,7 +2867,7 @@ def patient_import(request):
         if form.is_valid():
             csv_file = form.cleaned_data['csv_file']
             try:
-                import_summary = _import_patient_csv(csv_file)
+                import_summary = _import_patient_csv(csv_file, user=request.user)
                 _log_operation(
                     request,
                     'patient_imported',
@@ -2778,7 +2907,7 @@ def patient_import(request):
 
 @require_http_methods(["GET"])
 def patient_lookup(request, patient_id):
-    patient = _patient_for_patient_id(patient_id)
+    patient = _patient_for_patient_id(patient_id, request.user)
     if patient is None:
         return JsonResponse({
             'found': False,
@@ -2977,7 +3106,7 @@ def _linked_person_list_view(
     relationship_label_query = str(request.GET.get('relationship_label') or '').strip()
     is_active_query = str(request.GET.get('is_active') or '').strip()
 
-    queryset = PatientLinkedPerson.objects.all()
+    queryset = _patient_linked_person_queryset_for_user(request.user)
     if relation_kind_filter:
         queryset = queryset.filter(relation_kind=relation_kind_filter)
     elif relation_kind_query:
@@ -3049,7 +3178,7 @@ def _linked_person_form_view(
     relation_kind_filter_label = '家族' if relation_kind_filter == 'family' else '後見人' if relation_kind_filter == 'guardian' else ''
     if request.method == 'POST':
         form_data = _linked_person_form_post_data(request.POST, relation_kind_filter)
-        form = PatientLinkedPersonForm(form_data, instance=instance)
+        form = PatientLinkedPersonForm(form_data, instance=instance, user=request.user)
         if relation_kind_filter:
             form.fields['relation_kind'].disabled = True
             form.initial['relation_kind'] = relation_kind_filter
@@ -3066,7 +3195,7 @@ def _linked_person_form_view(
         initial = {}
         if relation_kind_filter:
             initial['relation_kind'] = relation_kind_filter
-        form = PatientLinkedPersonForm(instance=instance, initial=initial)
+        form = PatientLinkedPersonForm(instance=instance, initial=initial, user=request.user)
         if relation_kind_filter:
             form.fields['relation_kind'].disabled = True
 
@@ -3089,7 +3218,7 @@ def _linked_person_delete_view(
     success_action: str,
     relation_kind_filter: str | None = None,
 ):
-    queryset = PatientLinkedPerson.objects.all()
+    queryset = _patient_linked_person_queryset_for_user(request.user)
     if relation_kind_filter:
         queryset = queryset.filter(relation_kind=relation_kind_filter)
     linked_person = get_object_or_404(queryset, pk=pk)
@@ -3122,6 +3251,7 @@ def _linked_person_import_view(
                     record_label=record_label,
                     header_example='患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効',
                     default_relation_kind=default_relation_kind,
+                    user=request.user,
                 )
                 _log_operation(
                     request,
@@ -3188,7 +3318,7 @@ def linked_person_create(request):
 
 @require_http_methods(["GET", "POST"])
 def linked_person_edit(request, pk):
-    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk)
+    linked_person = get_object_or_404(_patient_linked_person_queryset_for_user(request.user), pk=pk)
     return _linked_person_form_view(
         request,
         create=False,
@@ -3254,7 +3384,7 @@ def family_create(request):
 
 @require_http_methods(["GET", "POST"])
 def family_edit(request, pk):
-    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk, relation_kind='family')
+    linked_person = get_object_or_404(_patient_linked_person_queryset_for_user(request.user), pk=pk, relation_kind='family')
     return _linked_person_form_view(
         request,
         create=False,
@@ -3321,7 +3451,7 @@ def guardian_create(request):
 
 @require_http_methods(["GET", "POST"])
 def guardian_edit(request, pk):
-    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk, relation_kind='guardian')
+    linked_person = get_object_or_404(_patient_linked_person_queryset_for_user(request.user), pk=pk, relation_kind='guardian')
     return _linked_person_form_view(
         request,
         create=False,
@@ -3475,7 +3605,10 @@ def templates_list(request):
     templates = list(
         _managed_template_queryset().order_by('sort_order', 'template_type', 'name', 'id')
     )
-    return render(request, 'anonymizer_app/templates_list.html', {'templates': templates})
+    return render(request, 'anonymizer_app/templates_list.html', {
+        'templates': templates,
+        'can_manage_templates': _is_admin(request.user),
+    })
 
 
 def template_create(request):
@@ -4054,6 +4187,7 @@ def template_detail(request, template_name):
             return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)
         return render(request, 'anonymizer_app/template_detail.html', {
             'template': template,
+            'can_manage_templates': _is_admin(request.user),
         })
     except Template.DoesNotExist:
         return render(request, 'anonymizer_app/error.html', {'message': 'テンプレートが見つかりません'}, status=404)

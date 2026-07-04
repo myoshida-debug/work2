@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import zlib
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch
+from io import BytesIO
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
 from django.http import QueryDict
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from anonymizer_app.forms import AnonymizeForm
+from anonymizer_app.file_imports import extract_uploaded_text
 from anonymizer_app.models import (
     Prompt,
     RestoreMetadata,
@@ -32,6 +37,142 @@ from anonymizer.modules.anonymize import anonymize_text
 
 
 COMMITTEE_OVERVIEW_DEFAULT = '会議名：\n開催日時：\n開催場所：\n参加者：'
+
+
+def _build_minimal_xlsx_bytes() -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            '[Content_Types].xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>
+''',
+        )
+        archive.writestr(
+            '_rels/.rels',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+''',
+        )
+        archive.writestr(
+            'xl/workbook.xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>
+''',
+        )
+        archive.writestr(
+            'xl/_rels/workbook.xml.rels',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+''',
+        )
+        archive.writestr(
+            'xl/sharedStrings.xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+  <si><t>患者A</t></si>
+  <si><t>発熱</t></si>
+</sst>
+''',
+        )
+        archive.writestr(
+            'xl/worksheets/sheet1.xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>
+''',
+        )
+    return buffer.getvalue()
+
+
+def _build_minimal_docx_bytes() -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            '[Content_Types].xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>
+''',
+        )
+        archive.writestr(
+            '_rels/.rels',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>
+''',
+        )
+        archive.writestr(
+            'word/document.xml',
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>患者Aの経過</w:t></w:r></w:p>
+    <w:p><w:r><w:t>発熱が続いている。</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>観察</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>安静</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:sectPr/>
+  </w:body>
+</w:document>
+''',
+        )
+    return buffer.getvalue()
+
+
+def _build_minimal_pdf_bytes() -> bytes:
+    text = '患者Aが転倒した'
+    utf16_hex = 'feff' + text.encode('utf-16-be').hex()
+    content_stream = f'BT /F1 12 Tf 72 720 Td <{utf16_hex}> Tj ET'.encode('ascii')
+    compressed_stream = zlib.compress(content_stream)
+    return (
+        b'%PDF-1.4\n'
+        b'1 0 obj\n<< /Length '
+        + str(len(compressed_stream)).encode('ascii')
+        + b' /Filter /FlateDecode >>\nstream\n'
+        + compressed_stream
+        + b'\nendstream\nendobj\n%%EOF'
+    )
+
+
+def _build_minimal_pdf_bytes_with_literal_text(text: str) -> bytes:
+    content_stream = f'BT /F1 12 Tf 72 720 Td ({text}) Tj ET'.encode('utf-8')
+    compressed_stream = zlib.compress(content_stream)
+    return (
+        b'%PDF-1.4\n'
+        b'1 0 obj\n<< /Length '
+        + str(len(compressed_stream)).encode('ascii')
+        + b' /Filter /FlateDecode >>\nstream\n'
+        + compressed_stream
+        + b'\nendstream\nendobj\n%%EOF'
+    )
 
 
 class StructuredInputHelperTests(TestCase):
@@ -632,6 +773,23 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('午後(時刻1)', result.restore_map)
         self.assertEqual(result.restore_map['午後(時刻1)'], '午後3時')
 
+    def test_anonymize_text_masks_surname_with_honorifics(self):
+        result = anonymize_text('山田氏と山田さんが同席した。')
+
+        self.assertIn('患者A氏', result.text)
+        self.assertIn('患者Bさん', result.text)
+        self.assertEqual(result.restore_map['患者A氏'], '山田氏')
+        self.assertEqual(result.restore_map['患者Bさん'], '山田さん')
+
+    def test_anonymize_text_keeps_parenthetical_comma_unchanged(self):
+        fullwidth_result = anonymize_text('（、）を含む文。')
+        halfwidth_result = anonymize_text('(、)を含む文。')
+
+        self.assertEqual(fullwidth_result.text, '（、）を含む文。')
+        self.assertEqual(halfwidth_result.text, '(、)を含む文。')
+        self.assertNotIn('(', fullwidth_result.restore_map)
+        self.assertNotIn(')', fullwidth_result.restore_map)
+
     def test_anonymize_text_masks_common_pii_patterns(self):
         result = anonymize_text(
             '山田 太郎氏は2026/05/03 13時45分に来院した。電話090-1234-5678、メールtaro@example.com、患者ID: P12345、101号室、住所: 東京都新宿区西新宿1-2-3に住む。'
@@ -803,6 +961,174 @@ class StructuredInputViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '文字起こし結果が空です。録音または入力してください。')
         self.assertFalse(RestoreMetadata.objects.exists())
+
+    def test_home_post_free_mode_creates_prompt_from_text_file_upload(self):
+        template_name = '看護計画'
+        file_text = '患者は安静を保っている。\n水分摂取を促す。'
+        uploaded_file = SimpleUploadedFile('note.txt', file_text.encode('utf-8'), content_type='text/plain')
+        post_data = {
+            'template': template_name,
+            'input_mode': 'free',
+            'text': '',
+            'text_file_snapshot': '',
+            'text_file': uploaded_file,
+        }
+
+        with patch(
+            'close_side.views.anonymize_text',
+            return_value=SimpleNamespace(
+                text='匿名化済み本文',
+                restore_map={'患者A': '山田太郎'},
+            ),
+        ):
+            response = self.client.post(reverse('close_side:home'), post_data)
+
+        self.assertEqual(response.status_code, 200)
+
+        metadata = RestoreMetadata.objects.get(owner=self.user)
+        prompt = Prompt.objects.get(source_id=metadata.source_id)
+
+        self.assertEqual(prompt.source_input_data['input_mode'], 'free')
+        self.assertEqual(prompt.source_input_data['text'], file_text)
+        self.assertEqual(metadata.prompt_json['metadata']['input_mode'], 'free')
+
+    def test_home_post_free_mode_prefers_edited_text_over_uploaded_file(self):
+        template_name = '看護計画'
+        file_text = 'ファイル本文'
+        edited_text = '手入力本文'
+        uploaded_file = SimpleUploadedFile('note.txt', file_text.encode('utf-8'), content_type='text/plain')
+        post_data = {
+            'template': template_name,
+            'input_mode': 'free',
+            'text': edited_text,
+            'text_file_snapshot': file_text,
+            'text_file': uploaded_file,
+        }
+
+        with patch(
+            'close_side.views.anonymize_text',
+            return_value=SimpleNamespace(
+                text='匿名化済み本文',
+                restore_map={'患者A': '山田太郎'},
+            ),
+        ):
+            response = self.client.post(reverse('close_side:home'), post_data)
+
+        self.assertEqual(response.status_code, 200)
+
+        metadata = RestoreMetadata.objects.get(owner=self.user)
+        prompt = Prompt.objects.get(source_id=metadata.source_id)
+
+        self.assertEqual(prompt.source_input_data['input_mode'], 'free')
+        self.assertEqual(prompt.source_input_data['text'], edited_text)
+
+    def test_home_post_free_mode_creates_prompt_from_xlsx_upload(self):
+        uploaded_file = SimpleUploadedFile(
+            'note.xlsx',
+            _build_minimal_xlsx_bytes(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        post_data = {
+            'template': '看護計画',
+            'input_mode': 'free',
+            'text': '',
+            'text_file_snapshot': '',
+            'text_file': uploaded_file,
+        }
+
+        with patch(
+            'close_side.views.anonymize_text',
+            return_value=SimpleNamespace(
+                text='匿名化済み本文',
+                restore_map={'患者A': '山田太郎'},
+            ),
+        ):
+            response = self.client.post(reverse('close_side:home'), post_data)
+
+        self.assertEqual(response.status_code, 200)
+
+        metadata = RestoreMetadata.objects.get(owner=self.user)
+        prompt = Prompt.objects.get(source_id=metadata.source_id)
+
+        self.assertEqual(prompt.source_input_data['text'], '患者A\t発熱')
+        self.assertEqual(metadata.prompt_json['metadata']['input_mode'], 'free')
+
+    def test_home_post_free_mode_creates_prompt_from_docx_upload(self):
+        uploaded_file = SimpleUploadedFile(
+            'note.docx',
+            _build_minimal_docx_bytes(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+        post_data = {
+            'template': '看護計画',
+            'input_mode': 'free',
+            'text': '',
+            'text_file_snapshot': '',
+            'text_file': uploaded_file,
+        }
+
+        with patch(
+            'close_side.views.anonymize_text',
+            return_value=SimpleNamespace(
+                text='匿名化済み本文',
+                restore_map={'患者A': '山田太郎'},
+            ),
+        ):
+            response = self.client.post(reverse('close_side:home'), post_data)
+
+        self.assertEqual(response.status_code, 200)
+
+        metadata = RestoreMetadata.objects.get(owner=self.user)
+        prompt = Prompt.objects.get(source_id=metadata.source_id)
+
+        self.assertIn('患者Aの経過', prompt.source_input_data['text'])
+        self.assertIn('発熱が続いている。', prompt.source_input_data['text'])
+        self.assertIn('観察\t安静', prompt.source_input_data['text'])
+        self.assertEqual(metadata.prompt_json['metadata']['input_mode'], 'free')
+
+    def test_home_post_free_mode_creates_prompt_from_pdf_upload(self):
+        uploaded_file = SimpleUploadedFile(
+            'note.pdf',
+            _build_minimal_pdf_bytes(),
+            content_type='application/pdf',
+        )
+        post_data = {
+            'template': '看護計画',
+            'input_mode': 'free',
+            'text': '',
+            'text_file_snapshot': '',
+            'text_file': uploaded_file,
+        }
+
+        with patch(
+            'close_side.views.anonymize_text',
+            return_value=SimpleNamespace(
+                text='匿名化済み本文',
+                restore_map={'患者A': '山田太郎'},
+            ),
+        ):
+            response = self.client.post(reverse('close_side:home'), post_data)
+
+        self.assertEqual(response.status_code, 200)
+
+        metadata = RestoreMetadata.objects.get(owner=self.user)
+        prompt = Prompt.objects.get(source_id=metadata.source_id)
+
+        self.assertIn('患者Aが転倒した', prompt.source_input_data['text'])
+        self.assertEqual(metadata.prompt_json['metadata']['input_mode'], 'free')
+
+    def test_extract_uploaded_text_rejects_pdf_mojibake(self):
+        uploaded_file = SimpleUploadedFile(
+            'note.pdf',
+            _build_minimal_pdf_bytes_with_literal_text('YEE\nUtr\nt'),
+            content_type='application/pdf',
+        )
+
+        with self.assertRaisesMessage(
+            ValueError,
+            'PDFからテキストを抽出できませんでした。',
+        ):
+            extract_uploaded_text(uploaded_file)
 
     def test_prompts_list_shows_reload_button_for_saved_source_data(self):
         prompt = Prompt.objects.create(

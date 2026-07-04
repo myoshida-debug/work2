@@ -137,6 +137,9 @@
                 <th>生年月日</th>
                 <th>性別</th>
                 <th>主病名</th>
+                {% if request.user.is_staff or request.user.is_superuser %}
+                  <th>公開範囲</th>
+                {% endif %}
                 <th>更新日時</th>
                 <th>操作</th>
               </tr>
@@ -150,6 +153,9 @@
                   <td>{{ patient.birth_date|date:"Y-m-d"|default:"-" }}</td>
                   <td>{{ patient.get_sex_display|default:"-" }}</td>
                   <td>{{ patient.primary_diagnosis|default:"-"|truncatechars:60 }}</td>
+                  {% if request.user.is_staff or request.user.is_superuser %}
+                    <td>{% if patient.is_admin_only %}<span class="badge">管理者限定</span>{% else %}-{% endif %}</td>
+                  {% endif %}
                   <td>{{ patient.updated_at|date:"Y-m-d H:i:s" }}</td>
                   <td class="patient-actions">
                     <div class="actions">

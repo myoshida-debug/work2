@@ -32,21 +32,25 @@
       <p class="muted">テンプレートの作成、編集、削除、入力欄初期値の編集を行います。</p>
       <a class="button primary" href="{% url 'close_side:templates_list' %}">テンプレート管理へ</a>
     </article>
-    <article class="card">
-      <h3>患者管理</h3>
-      <p class="muted">患者マスタの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
-      <a class="button primary" href="{% url 'close_side:patient_list' %}">患者管理へ</a>
-    </article>
-    <article class="card">
-      <h3>職員管理</h3>
-      <p class="muted">職員マスタの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
-      <a class="button primary" href="{% url 'close_side:staff_list' %}">職員管理へ</a>
-    </article>
-    <article class="card">
-      <h3>患者関連者管理</h3>
-      <p class="muted">患者に紐づく家族・後見人マスターの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
-      <a class="button primary" href="{% url 'close_side:linked_person_list' %}">患者関連者管理へ</a>
-    </article>
+    {% if request.user.is_staff or request.user.is_superuser %}
+      <article class="card">
+        <h3>職員管理</h3>
+        <p class="muted">職員マスタの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
+        <a class="button primary" href="{% url 'close_side:staff_list' %}">職員管理へ</a>
+      </article>
+    {% endif %}
+    {% if request.user.is_staff or request.user.is_superuser %}
+      <article class="card">
+        <h3>患者管理</h3>
+        <p class="muted">患者マスタの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
+        <a class="button primary" href="{% url 'close_side:patient_list' %}">患者管理へ</a>
+      </article>
+      <article class="card">
+        <h3>患者関連者管理</h3>
+        <p class="muted">患者に紐づく家族・後見人マスターの追加、編集、削除、CSV取込、検索、ソートを行います。</p>
+        <a class="button primary" href="{% url 'close_side:linked_person_list' %}">患者関連者管理へ</a>
+      </article>
+    {% endif %}
     {% if request.user.is_staff or request.user.is_superuser %}
       <article class="card">
         <h3>操作ログ</h3>

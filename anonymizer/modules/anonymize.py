@@ -21,8 +21,8 @@ PREFERRED_ENTITY_SENTINEL_PREFIX = '__PREFERRED_ENTITY_'
 DEFAULT_NAME_PATTERNS = [
     r'患者[一-龥]{2,3}(?:[ 　][一-龥]{1,4})?(?:氏|さん)?',
     r'[一-龥]{1,4}[ 　][一-龥]{1,4}(?:氏|さん)',
-    r'[一-龥]{2,4}氏',
-    r'[一-龥]{2,4}さん',
+    r'[一-龥]{1,4}氏',
+    r'[一-龥]{1,4}さん',
 ]
 
 DEFAULT_ADDRESS_PATTERNS = [
@@ -107,6 +107,16 @@ def replace_patterns(text: str, patterns, label_prefix, restore_map):
 
 def normalize_fullwidth_text(text: str, restore_map: dict) -> str:
     # 全角英数字およびよく使われる全角記号を半角に変換
+    original_text = text
+    protected_tokens: dict[str, str] = {}
+
+    def protect_parenthetical_comma(match):
+        token = f'__PAREN_COMMA_{len(protected_tokens)}__'
+        protected_tokens[token] = match.group(0)
+        return token
+
+    # `（、）` は記号列としてそのまま残し、不要な正規化対象にしない。
+    text = re.sub(r'（、）', protect_parenthetical_comma, text)
     fullwidth = (
         '０１２３４５６７８９'
         'ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ'
@@ -122,9 +132,11 @@ def normalize_fullwidth_text(text: str, restore_map: dict) -> str:
     )
     translation = {ord(fw): ord(ascii_) for fw, ascii_ in zip(fullwidth, ascii_replacements)}
     normalized = text.translate(translation)
+    for token, original in protected_tokens.items():
+        normalized = normalized.replace(token, original)
 
     # 変換前後の差分を記録し、復元時に元文字列を再構築できるようにする
-    matcher = difflib.SequenceMatcher(None, text, normalized)
+    matcher = difflib.SequenceMatcher(None, original_text, normalized)
     # 全角英数字から半角英数字への変換は、復元時に元の全角に戻さず
     # 半角のまま使いたいという要件があるため、その差分は復元マップへ記録しない。
     # それ以外の差分は記録して復元できるようにする。
@@ -137,7 +149,7 @@ def normalize_fullwidth_text(text: str, restore_map: dict) -> str:
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == 'replace':
-            original_segment = text[i1:i2]
+            original_segment = original_text[i1:i2]
             anonymized_segment = normalized[j1:j2]
             # 元のセグメントに全角英数字が含まれる場合は、復元マップに登録しない
             if any(ch in fullwidth_alnum_set for ch in original_segment):

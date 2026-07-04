@@ -6,16 +6,18 @@
 {% block page_subtitle %}<p class="page-subtitle">{{ template.name }}</p>{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
-  <a class="button primary" href="{% url 'close_side:template_edit' pk=template.pk %}">編集</a>
-  <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=template.template_type %}">欄編集</a>
-  <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template.template_type %}">入力欄初期値</a>
-  <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template.template_type %}">チェックボックス項目</a>
-  <form method="post" action="{% url 'close_side:template_toggle_active' pk=template.pk %}" class="inline-form">
-    {% csrf_token %}
-    <button class="button {% if template.is_active %}danger{% else %}green{% endif %}" type="submit">
-      {% if template.is_active %}無効にする{% else %}有効にする{% endif %}
-    </button>
-  </form>
+  {% if can_manage_templates %}
+    <a class="button primary" href="{% url 'close_side:template_edit' pk=template.pk %}">編集</a>
+    <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=template.template_type %}">欄編集</a>
+    <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template.template_type %}">入力欄初期値</a>
+    <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template.template_type %}">チェックボックス項目</a>
+    <form method="post" action="{% url 'close_side:template_toggle_active' pk=template.pk %}" class="inline-form">
+      {% csrf_token %}
+      <button class="button {% if template.is_active %}danger{% else %}green{% endif %}" type="submit">
+        {% if template.is_active %}無効にする{% else %}有効にする{% endif %}
+      </button>
+    </form>
+  {% endif %}
 {% endblock %}
 
 {% block content %}

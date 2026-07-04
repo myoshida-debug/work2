@@ -3,10 +3,18 @@
 {% block title %}CloseSide テンプレート管理{% endblock %}
 {% block brand %}CloseSide{% endblock %}
 {% block page_title %}テンプレート管理{% endblock %}
-{% block page_subtitle %}<p class="page-subtitle">有効・無効の切り替え、番号入力、上下ボタン、ドラッグで表示順を調整できます。匿名化画面には有効なテンプレートのみ表示されます。</p>{% endblock %}
+{% block page_subtitle %}
+  {% if can_manage_templates %}
+    <p class="page-subtitle">有効・無効の切り替え、番号入力、上下ボタン、ドラッグで表示順を調整できます。匿名化画面には有効なテンプレートのみ表示されます。</p>
+  {% else %}
+    <p class="page-subtitle">テンプレートの一覧と詳細を確認できます。編集は管理者のみ可能です。</p>
+  {% endif %}
+{% endblock %}
 {% block page_actions %}
   <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
-  <a class="button primary" href="{% url 'close_side:template_create' %}">作成</a>
+  {% if can_manage_templates %}
+    <a class="button primary" href="{% url 'close_side:template_create' %}">作成</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -169,51 +177,123 @@
       <span class="badge">表示順設定</span>
     </div>
     <div class="panel-body">
-      <p class="template-note">番号を変更するか、上へ・下へ・ドラッグで並び替えたあと、「並び順を保存」を押してください。無効にしたテンプレートは匿名化画面に表示されません。</p>
+      {% if can_manage_templates %}
+        <p class="template-note">番号を変更するか、上へ・下へ・ドラッグで並び替えたあと、「並び順を保存」を押してください。無効にしたテンプレートは匿名化画面に表示されません。</p>
 
-      <form id="template-order-form" method="post" action="{% url 'close_side:template_reorder' %}" data-template-order-editor>
-        {% csrf_token %}
+        <form id="template-order-form" method="post" action="{% url 'close_side:template_reorder' %}" data-template-order-editor>
+          {% csrf_token %}
 
-        <div class="template-save-row">
-          <button class="button primary" type="submit">並び順を保存</button>
-        </div>
+          <div class="template-save-row">
+            <button class="button primary" type="submit">並び順を保存</button>
+          </div>
+
+          {% if templates %}
+            <div class="table-scroll">
+              <table class="history-table template-table">
+                <thead>
+                  <tr>
+                    <th style="width: 160px;">表示順</th>
+                    <th style="width: 280px;">テンプレート</th>
+                    <th>説明</th>
+                    <th style="width: 170px;">状態</th>
+                    <th style="width: 140px;">作成者</th>
+                    <th style="width: 160px;">更新日時</th>
+                    <th style="width: 360px;">操作</th>
+                  </tr>
+                </thead>
+                <tbody data-template-row-list>
+                  {% for t in templates %}
+                    <tr class="template-row{% if not t.is_active %} is-inactive{% endif %}" data-template-row data-template-id="{{ t.pk }}">
+                      <td>
+                        <div class="template-order-cell">
+                          <input
+                            class="template-order-input"
+                            type="number"
+                            min="1"
+                            step="1"
+                            name="sort_order__{{ t.pk }}"
+                            value="{{ t.sort_order }}"
+                            data-role="template-order-input"
+                            aria-label="表示順"
+                          >
+                          <div class="template-order-controls">
+                            <button type="button" class="button template-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                            <button type="button" class="button" data-move-row="up">上へ</button>
+                            <button type="button" class="button" data-move-row="down">下へ</button>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="template-meta">
+                          <p class="template-name">{{ t.name }}</p>
+                          <p class="template-subtext">{{ t.template_type }} / {{ t.source_filename }}</p>
+                        </div>
+                      </td>
+                      <td class="template-description">{{ t.description|default:"-" }}</td>
+                      <td>
+                        <div class="template-status">
+                          <span class="badge template-status-badge {% if t.is_active %}is-active{% else %}is-inactive{% endif %}">
+                            {% if t.is_active %}有効{% else %}無効{% endif %}
+                          </span>
+                          <button
+                            class="button {% if t.is_active %}danger{% else %}green{% endif %}"
+                            type="submit"
+                            formaction="{% url 'close_side:template_toggle_active' pk=t.pk %}"
+                            formmethod="post"
+                            onclick="return confirm('{% if t.is_active %}このテンプレートを無効にしますか？{% else %}このテンプレートを有効にしますか？{% endif %}');"
+                          >
+                            {% if t.is_active %}無効にする{% else %}有効にする{% endif %}
+                          </button>
+                        </div>
+                      </td>
+                      <td>{{ t.created_by.username|default:"-" }}</td>
+                      <td>{{ t.updated_at }}</td>
+                      <td>
+                        <div class="template-actions">
+                          <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
+                          <a class="button primary" href="{% url 'close_side:template_edit' pk=t.pk %}">編集</a>
+                          <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=t.template_type %}">欄編集</a>
+                          <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=t.template_type %}">入力欄初期値</a>
+                          <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=t.template_type %}">チェックボックス項目</a>
+                          <button
+                            class="button danger"
+                            type="submit"
+                            formaction="{% url 'close_side:template_delete' pk=t.pk %}"
+                            formmethod="post"
+                            onclick="return confirm('このテンプレートを削除しますか？');"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="empty">テンプレートがありません。</p>
+          {% endif %}
+        </form>
+      {% else %}
+        <p class="template-note">一般ユーザはテンプレートの閲覧のみ可能です。編集が必要な場合は管理者に依頼してください。</p>
 
         {% if templates %}
           <div class="table-scroll">
             <table class="history-table template-table">
               <thead>
                 <tr>
-                  <th style="width: 160px;">表示順</th>
                   <th style="width: 280px;">テンプレート</th>
                   <th>説明</th>
                   <th style="width: 170px;">状態</th>
                   <th style="width: 140px;">作成者</th>
                   <th style="width: 160px;">更新日時</th>
-                  <th style="width: 360px;">操作</th>
+                  <th style="width: 120px;">詳細</th>
                 </tr>
               </thead>
-              <tbody data-template-row-list>
+              <tbody>
                 {% for t in templates %}
-                  <tr class="template-row{% if not t.is_active %} is-inactive{% endif %}" data-template-row data-template-id="{{ t.pk }}">
-                    <td>
-                      <div class="template-order-cell">
-                        <input
-                          class="template-order-input"
-                          type="number"
-                          min="1"
-                          step="1"
-                          name="sort_order__{{ t.pk }}"
-                          value="{{ t.sort_order }}"
-                          data-role="template-order-input"
-                          aria-label="表示順"
-                        >
-                        <div class="template-order-controls">
-                          <button type="button" class="button template-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
-                          <button type="button" class="button" data-move-row="up">上へ</button>
-                          <button type="button" class="button" data-move-row="down">下へ</button>
-                        </div>
-                      </div>
-                    </td>
+                  <tr class="template-row{% if not t.is_active %} is-inactive{% endif %}">
                     <td>
                       <div class="template-meta">
                         <p class="template-name">{{ t.name }}</p>
@@ -222,40 +302,14 @@
                     </td>
                     <td class="template-description">{{ t.description|default:"-" }}</td>
                     <td>
-                      <div class="template-status">
-                        <span class="badge template-status-badge {% if t.is_active %}is-active{% else %}is-inactive{% endif %}">
-                          {% if t.is_active %}有効{% else %}無効{% endif %}
-                        </span>
-                        <button
-                          class="button {% if t.is_active %}danger{% else %}green{% endif %}"
-                          type="submit"
-                          formaction="{% url 'close_side:template_toggle_active' pk=t.pk %}"
-                          formmethod="post"
-                          onclick="return confirm('{% if t.is_active %}このテンプレートを無効にしますか？{% else %}このテンプレートを有効にしますか？{% endif %}');"
-                        >
-                          {% if t.is_active %}無効にする{% else %}有効にする{% endif %}
-                        </button>
-                      </div>
+                      <span class="badge template-status-badge {% if t.is_active %}is-active{% else %}is-inactive{% endif %}">
+                        {% if t.is_active %}有効{% else %}無効{% endif %}
+                      </span>
                     </td>
                     <td>{{ t.created_by.username|default:"-" }}</td>
                     <td>{{ t.updated_at }}</td>
                     <td>
-                      <div class="template-actions">
-                        <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
-                        <a class="button primary" href="{% url 'close_side:template_edit' pk=t.pk %}">編集</a>
-                        <a class="button" href="{% url 'close_side:template_input_fields_edit' template_type=t.template_type %}">欄編集</a>
-                        <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=t.template_type %}">入力欄初期値</a>
-                        <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=t.template_type %}">チェックボックス項目</a>
-                        <button
-                          class="button danger"
-                          type="submit"
-                          formaction="{% url 'close_side:template_delete' pk=t.pk %}"
-                          formmethod="post"
-                          onclick="return confirm('このテンプレートを削除しますか？');"
-                        >
-                          削除
-                        </button>
-                      </div>
+                      <a class="button" href="{% url 'close_side:template_detail' template_name=t.name %}">詳細</a>
                     </td>
                   </tr>
                 {% endfor %}
@@ -265,210 +319,212 @@
         {% else %}
           <p class="empty">テンプレートがありません。</p>
         {% endif %}
-      </form>
+      {% endif %}
     </div>
   </section>
 
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const editor = document.querySelector('[data-template-order-editor]');
-      if (!editor) {
-        return;
-      }
-
-      let draggingRow = null;
-
-      function getList() {
-        return editor.querySelector('[data-template-row-list]');
-      }
-
-      function getRows() {
-        const list = getList();
-        if (!list) {
-          return [];
+  {% if can_manage_templates %}
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const editor = document.querySelector('[data-template-order-editor]');
+        if (!editor) {
+          return;
         }
-        return Array.from(list.querySelectorAll('[data-template-row]'));
-      }
 
-      function updateMoveButtonState() {
-        const rows = getRows();
-        rows.forEach(function (row, index) {
-          row.querySelectorAll('[data-move-row]').forEach(function (button) {
-            const moveType = button.dataset.moveRow || '';
-            button.disabled = (
-              (moveType === 'up' && index === 0)
-              || (moveType === 'down' && index === rows.length - 1)
-            );
+        let draggingRow = null;
+
+        function getList() {
+          return editor.querySelector('[data-template-row-list]');
+        }
+
+        function getRows() {
+          const list = getList();
+          if (!list) {
+            return [];
+          }
+          return Array.from(list.querySelectorAll('[data-template-row]'));
+        }
+
+        function updateMoveButtonState() {
+          const rows = getRows();
+          rows.forEach(function (row, index) {
+            row.querySelectorAll('[data-move-row]').forEach(function (button) {
+              const moveType = button.dataset.moveRow || '';
+              button.disabled = (
+                (moveType === 'up' && index === 0)
+                || (moveType === 'down' && index === rows.length - 1)
+              );
+            });
           });
-        });
-      }
+        }
 
-      function syncOrderInputs() {
-        const rows = getRows();
-        rows.forEach(function (row, index) {
-          const orderInput = row.querySelector('[data-role="template-order-input"]');
+        function syncOrderInputs() {
+          const rows = getRows();
+          rows.forEach(function (row, index) {
+            const orderInput = row.querySelector('[data-role="template-order-input"]');
+            if (orderInput) {
+              orderInput.value = String(index + 1);
+            }
+          });
+          updateMoveButtonState();
+        }
+
+        function insertRowAt(row, index) {
+          const list = getList();
+          if (!list || !row) {
+            return;
+          }
+
+          const rows = getRows().filter(function (item) {
+            return item !== row;
+          });
+          const targetRow = rows[index] || null;
+          if (targetRow) {
+            list.insertBefore(row, targetRow);
+          } else {
+            list.appendChild(row);
+          }
+          syncOrderInputs();
+        }
+
+        function moveRow(row, direction) {
+          const rows = getRows();
+          const currentIndex = rows.indexOf(row);
+          if (currentIndex < 0) {
+            return;
+          }
+
+          if (direction === 'up') {
+            insertRowAt(row, Math.max(0, currentIndex - 1));
+            return;
+          }
+          if (direction === 'down') {
+            insertRowAt(row, Math.min(rows.length - 1, currentIndex + 1));
+          }
+        }
+
+        function sortRowsByInputValue(targetInput) {
+          const rows = getRows();
+          const currentIndex = new Map(rows.map(function (row, index) {
+            return [row, index];
+          }));
+
+          rows.sort(function (left, right) {
+            const leftInput = left.querySelector('[data-role="template-order-input"]');
+            const rightInput = right.querySelector('[data-role="template-order-input"]');
+            const leftValue = Number.parseInt(leftInput ? leftInput.value : '', 10);
+            const rightValue = Number.parseInt(rightInput ? rightInput.value : '', 10);
+            const leftOrder = Number.isFinite(leftValue) && leftValue > 0 ? leftValue : currentIndex.get(left) + 1;
+            const rightOrder = Number.isFinite(rightValue) && rightValue > 0 ? rightValue : currentIndex.get(right) + 1;
+
+            if (leftOrder !== rightOrder) {
+              return leftOrder - rightOrder;
+            }
+            return currentIndex.get(left) - currentIndex.get(right);
+          });
+
+          const list = getList();
+          if (!list) {
+            return;
+          }
+
+          rows.forEach(function (row) {
+            list.appendChild(row);
+          });
+          syncOrderInputs();
+          if (targetInput && typeof targetInput.focus === 'function') {
+            targetInput.focus();
+          }
+        }
+
+        editor.addEventListener('click', function (event) {
+          const moveButton = event.target.closest('[data-move-row]');
+          if (moveButton) {
+            const row = moveButton.closest('[data-template-row]');
+            if (row) {
+              moveRow(row, moveButton.dataset.moveRow || '');
+            }
+            return;
+          }
+        });
+
+        editor.addEventListener('change', function (event) {
+          const orderInput = event.target.closest('[data-role="template-order-input"]');
           if (orderInput) {
-            orderInput.value = String(index + 1);
+            sortRowsByInputValue(orderInput);
           }
         });
-        updateMoveButtonState();
-      }
 
-      function insertRowAt(row, index) {
-        const list = getList();
-        if (!list || !row) {
-          return;
-        }
-
-        const rows = getRows().filter(function (item) {
-          return item !== row;
-        });
-        const targetRow = rows[index] || null;
-        if (targetRow) {
-          list.insertBefore(row, targetRow);
-        } else {
-          list.appendChild(row);
-        }
-        syncOrderInputs();
-      }
-
-      function moveRow(row, direction) {
-        const rows = getRows();
-        const currentIndex = rows.indexOf(row);
-        if (currentIndex < 0) {
-          return;
-        }
-
-        if (direction === 'up') {
-          insertRowAt(row, Math.max(0, currentIndex - 1));
-          return;
-        }
-        if (direction === 'down') {
-          insertRowAt(row, Math.min(rows.length - 1, currentIndex + 1));
-        }
-      }
-
-      function sortRowsByInputValue(targetInput) {
-        const rows = getRows();
-        const currentIndex = new Map(rows.map(function (row, index) {
-          return [row, index];
-        }));
-
-        rows.sort(function (left, right) {
-          const leftInput = left.querySelector('[data-role="template-order-input"]');
-          const rightInput = right.querySelector('[data-role="template-order-input"]');
-          const leftValue = Number.parseInt(leftInput ? leftInput.value : '', 10);
-          const rightValue = Number.parseInt(rightInput ? rightInput.value : '', 10);
-          const leftOrder = Number.isFinite(leftValue) && leftValue > 0 ? leftValue : currentIndex.get(left) + 1;
-          const rightOrder = Number.isFinite(rightValue) && rightValue > 0 ? rightValue : currentIndex.get(right) + 1;
-
-          if (leftOrder !== rightOrder) {
-            return leftOrder - rightOrder;
+        editor.addEventListener('dragstart', function (event) {
+          const handle = event.target.closest('[data-drag-handle]');
+          if (!handle || !editor.contains(handle)) {
+            return;
           }
-          return currentIndex.get(left) - currentIndex.get(right);
-        });
-
-        const list = getList();
-        if (!list) {
-          return;
-        }
-
-        rows.forEach(function (row) {
-          list.appendChild(row);
-        });
-        syncOrderInputs();
-        if (targetInput && typeof targetInput.focus === 'function') {
-          targetInput.focus();
-        }
-      }
-
-      editor.addEventListener('click', function (event) {
-        const moveButton = event.target.closest('[data-move-row]');
-        if (moveButton) {
-          const row = moveButton.closest('[data-template-row]');
-          if (row) {
-            moveRow(row, moveButton.dataset.moveRow || '');
+          const row = handle.closest('[data-template-row]');
+          if (!row) {
+            return;
           }
-          return;
-        }
-      });
-
-      editor.addEventListener('change', function (event) {
-        const orderInput = event.target.closest('[data-role="template-order-input"]');
-        if (orderInput) {
-          sortRowsByInputValue(orderInput);
-        }
-      });
-
-      editor.addEventListener('dragstart', function (event) {
-        const handle = event.target.closest('[data-drag-handle]');
-        if (!handle || !editor.contains(handle)) {
-          return;
-        }
-        const row = handle.closest('[data-template-row]');
-        if (!row) {
-          return;
-        }
-        draggingRow = row;
-        row.classList.add('is-dragging');
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = 'move';
-          try {
-            event.dataTransfer.setData('text/plain', row.dataset.templateId || '');
-          } catch (error) {
-            // ignore
+          draggingRow = row;
+          row.classList.add('is-dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            try {
+              event.dataTransfer.setData('text/plain', row.dataset.templateId || '');
+            } catch (error) {
+              // ignore
+            }
           }
-        }
-      });
-
-      editor.addEventListener('dragover', function (event) {
-        if (!draggingRow) {
-          return;
-        }
-        const targetRow = event.target.closest('[data-template-row]');
-        const list = event.target.closest('[data-template-row-list]');
-        if ((!targetRow && !list) || targetRow === draggingRow) {
-          return;
-        }
-        if (!list) {
-          return;
-        }
-
-        event.preventDefault();
-        if (!targetRow) {
-          list.appendChild(draggingRow);
-          return;
-        }
-
-        const rect = targetRow.getBoundingClientRect();
-        const shouldInsertBefore = event.clientY < rect.top + (rect.height / 2);
-        if (shouldInsertBefore) {
-          list.insertBefore(draggingRow, targetRow);
-        } else {
-          list.insertBefore(draggingRow, targetRow.nextElementSibling);
-        }
-      });
-
-      editor.addEventListener('drop', function (event) {
-        if (!draggingRow) {
-          return;
-        }
-        event.preventDefault();
-        syncOrderInputs();
-      });
-
-      editor.addEventListener('dragend', function () {
-        if (draggingRow) {
-          draggingRow.classList.remove('is-dragging');
-        }
-        draggingRow = null;
-        editor.querySelectorAll('[data-template-row]').forEach(function (row) {
-          row.classList.remove('is-dragging');
         });
+
+        editor.addEventListener('dragover', function (event) {
+          if (!draggingRow) {
+            return;
+          }
+          const targetRow = event.target.closest('[data-template-row]');
+          const list = event.target.closest('[data-template-row-list]');
+          if ((!targetRow && !list) || targetRow === draggingRow) {
+            return;
+          }
+          if (!list) {
+            return;
+          }
+
+          event.preventDefault();
+          if (!targetRow) {
+            list.appendChild(draggingRow);
+            return;
+          }
+
+          const rect = targetRow.getBoundingClientRect();
+          const shouldInsertBefore = event.clientY < rect.top + (rect.height / 2);
+          if (shouldInsertBefore) {
+            list.insertBefore(draggingRow, targetRow);
+          } else {
+            list.insertBefore(draggingRow, targetRow.nextElementSibling);
+          }
+        });
+
+        editor.addEventListener('drop', function (event) {
+          if (!draggingRow) {
+            return;
+          }
+          event.preventDefault();
+          syncOrderInputs();
+        });
+
+        editor.addEventListener('dragend', function () {
+          if (draggingRow) {
+            draggingRow.classList.remove('is-dragging');
+          }
+          draggingRow = null;
+          editor.querySelectorAll('[data-template-row]').forEach(function (row) {
+            row.classList.remove('is-dragging');
+          });
+          syncOrderInputs();
+        });
+
         syncOrderInputs();
       });
-
-      syncOrderInputs();
-    });
-  </script>
+    </script>
+  {% endif %}
 {% endblock %}

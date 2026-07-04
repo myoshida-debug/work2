@@ -29,6 +29,10 @@ INPUT_MODE_CHOICES = [
 ]
 
 
+def _is_admin_user(user) -> bool:
+    return bool(getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False))
+
+
 class AnonymizeForm(forms.Form):
     template = forms.ChoiceField(label='書類テンプレート')
     input_mode = forms.ChoiceField(
@@ -42,6 +46,14 @@ class AnonymizeForm(forms.Form):
         widget=forms.Textarea(attrs={'rows': 8}),
         required=False,
     )
+    text_file = forms.FileField(
+        label='ファイル',
+        required=False,
+        widget=forms.FileInput(attrs={
+            'accept': '.txt,.md,.csv,.log,.json,.xlsx,.docx,.pdf,text/plain,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf',
+        }),
+    )
+    text_file_snapshot = forms.CharField(required=False, widget=forms.HiddenInput())
     transcript_text = forms.CharField(
         label='文字起こし結果',
         widget=forms.Textarea(attrs={'rows': 8}),
@@ -93,16 +105,34 @@ class PatientForm(forms.ModelForm):
             'birth_date',
             'sex',
             'primary_diagnosis',
+            'is_admin_only',
         ]
-    widgets = {
-        'patient_id': forms.TextInput(attrs={'autocomplete': 'off'}),
-        'surname': forms.TextInput(attrs={'autocomplete': 'off'}),
-        'given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
-        'kana_surname': forms.TextInput(attrs={'autocomplete': 'off'}),
-        'kana_given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
-        'sex': forms.Select(),
-        'primary_diagnosis': forms.Textarea(attrs={'rows': 3}),
-    }
+        labels = {
+            'patient_id': '患者ID',
+            'surname': '姓',
+            'given_name': '名',
+            'kana_surname': 'ふりかな姓',
+            'kana_given_name': 'ふりかな名',
+            'sex': '性別',
+            'primary_diagnosis': '主病名',
+            'is_admin_only': '管理者のみ閲覧可',
+        }
+        widgets = {
+            'patient_id': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'sex': forms.Select(),
+            'primary_diagnosis': forms.Textarea(attrs={'rows': 3}),
+            'is_admin_only': forms.CheckboxInput(),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+        if not _is_admin_user(user):
+            self.fields.pop('is_admin_only', None)
 
 
 class StaffForm(forms.ModelForm):
@@ -140,11 +170,16 @@ class StaffForm(forms.ModelForm):
 
 
 class PatientLinkedPersonFormMixin:
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
     def clean_patient_id(self):
         patient_id = str(self.cleaned_data.get('patient_id') or '').strip()
         if not patient_id:
             raise forms.ValidationError('患者IDを入力してください。')
-        if not Patient.objects.filter(patient_id=patient_id).exists():
+        patient_queryset = Patient.objects.all() if _is_admin_user(self.user) else Patient.objects.filter(is_admin_only=False)
+        if not patient_queryset.filter(patient_id=patient_id).exists():
             raise forms.ValidationError(f'患者ID {patient_id} が見つかりません。')
         return patient_id
 

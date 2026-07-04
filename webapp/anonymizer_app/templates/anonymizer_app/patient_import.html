@@ -19,10 +19,11 @@
         <div class="card">
           <h3>取込ルール</h3>
           <ul>
-            <li>ヘッダー例: <code>ID,姓,名,ふりかな姓,ふりかな名,生年月日,性別,主病名</code></li>
+            <li>ヘッダー例: <code>ID,姓,名,ふりかな姓,ふりかな名,生年月日,性別,主病名,管理者のみ</code></li>
             <li>IDが既存と一致する場合は更新します。</li>
             <li>CSVの空白項目は既存値を上書きしません。</li>
             <li>性別は <code>男 / 女 / その他 / 不明</code> または <code>male / female / other / unknown</code> を受け付けます。</li>
+            <li><code>管理者のみ</code> に <code>1</code>、<code>はい</code>、<code>管理者のみ</code> などを入れると、その患者は管理者だけが閲覧できます。</li>
           </ul>
         </div>
 
