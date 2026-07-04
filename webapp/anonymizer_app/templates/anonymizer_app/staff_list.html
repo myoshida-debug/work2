@@ -1,0 +1,178 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 職員管理{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}職員管理{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">職員マスタの検索、追加、編集、削除、CSV取込を行います。職種と役職を分けて管理します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+  <a class="button" href="{% url 'close_side:staff_import' %}">CSV取込</a>
+  <a class="button primary" href="{% url 'close_side:staff_create' %}">新規追加</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .staff-search-form {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px 14px;
+      align-items: end;
+    }
+
+    .staff-search-field {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .staff-search-field .field-label {
+      margin-bottom: 0;
+    }
+
+    .staff-search-field input,
+    .staff-search-field select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .staff-search-field input:focus,
+    .staff-search-field select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .staff-search-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .staff-table .staff-id-cell {
+      white-space: nowrap;
+    }
+
+    .staff-table .staff-actions {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 980px) {
+      .staff-search-form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">職員マスタ一覧</h3>
+      <span class="badge">{{ query_count }}件</span>
+    </div>
+    <div class="panel-body">
+      <form method="get" class="staff-search-form">
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.staff_id.id_for_label }}">ID</label>
+          {{ form.staff_id }}
+        </div>
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.kana.id_for_label }}">ふりかな</label>
+          {{ form.kana }}
+        </div>
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.occupation_label.id_for_label }}">職種</label>
+          {{ form.occupation_label }}
+        </div>
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.position_label.id_for_label }}">役職</label>
+          {{ form.position_label }}
+        </div>
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.is_active.id_for_label }}">状態</label>
+          {{ form.is_active }}
+        </div>
+        <div class="staff-search-field">
+          <label class="field-label" for="{{ form.sort.id_for_label }}">ソート</label>
+          {{ form.sort }}
+        </div>
+        <div class="staff-search-actions">
+          <button class="primary" type="submit">検索</button>
+          {% if has_filters %}
+            <a class="button" href="{% url 'close_side:staff_list' %}">検索解除</a>
+          {% endif %}
+            <span class="muted">検索キー: ID、ふりかな、職種、役職、状態</span>
+        </div>
+      </form>
+
+      {% if form.errors %}
+        <div class="error-list" style="margin-top: 16px;">
+          {% for field in form %}
+            {% if field.errors %}
+              {% for error in field.errors %}
+                <div>{{ field.label }}: {{ error }}</div>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+          {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if staff_members %}
+        <div class="table-scroll" style="margin-top: 16px;">
+          <table class="history-table staff-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>氏名</th>
+                <th>ふりかな</th>
+                <th>職種</th>
+                <th>役職</th>
+                <th>状態</th>
+                <th>更新日時</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for staff in staff_members %}
+                <tr>
+                  <td class="staff-id-cell"><strong>{{ staff.staff_id }}</strong></td>
+                  <td>{{ staff.full_name|default:"-" }}</td>
+                  <td>{{ staff.kana_full_name|default:"-" }}</td>
+                  <td>{{ staff.occupation_label|default:"-" }}</td>
+                  <td>{{ staff.position_label|default:"-" }}</td>
+                  <td>{% if staff.is_active %}有効{% else %}無効{% endif %}</td>
+                  <td>{{ staff.updated_at|date:"Y-m-d H:i:s" }}</td>
+                  <td class="staff-actions">
+                    <div class="actions">
+                      <a class="button" href="{% url 'close_side:staff_edit' pk=staff.pk %}">編集</a>
+                      <form
+                        class="inline-form"
+                        method="post"
+                        action="{% url 'close_side:staff_delete' pk=staff.pk %}"
+                        onsubmit="return confirm('この職員マスタを削除しますか？');"
+                      >
+                        {% csrf_token %}
+                        <button class="danger" type="submit">削除</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">職員マスタがありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

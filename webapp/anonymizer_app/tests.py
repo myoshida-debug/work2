@@ -640,6 +640,27 @@ class StructuredInputHelperTests(TestCase):
         self.assertNotIn('P12345', result.text)
         self.assertNotIn('101号室', result.text)
 
+    def test_anonymize_text_supports_multiple_preferred_entity_groups(self):
+        result = anonymize_text(
+            '山田太郎と佐藤花子が同席した。',
+            preferred_entity_groups=[
+                {
+                    'label': '患者本人A',
+                    'names': ['山田太郎', '山田 太郎', '山田　太郎'],
+                    'original': '山田太郎',
+                },
+                {
+                    'label': '看護師A',
+                    'names': ['佐藤花子', '佐藤 花子', '佐藤　花子'],
+                    'original': '佐藤花子',
+                },
+            ],
+        )
+
+        self.assertEqual(result.text, '患者本人Aと看護師Aが同席した。')
+        self.assertEqual(result.restore_map['患者本人A'], '山田太郎')
+        self.assertEqual(result.restore_map['看護師A'], '佐藤花子')
+
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
 class TemplateSelectionTests(TestCase):

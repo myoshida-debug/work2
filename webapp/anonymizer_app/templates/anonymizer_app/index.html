@@ -762,6 +762,8 @@
           <a href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
           <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
           <a href="{% url 'close_side:patient_list' %}">患者管理</a>
+          <a href="{% url 'close_side:staff_list' %}">職員管理</a>
+          <a href="{% url 'close_side:linked_person_list' %}">患者関連者管理</a>
           <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
           {% if request.user.is_staff or request.user.is_superuser %}
             <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>

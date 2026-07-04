@@ -13,10 +13,14 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from anonymizer_app.models import (
+    Guardian,
     Patient,
+    PatientFamily,
+    PatientLinkedPerson,
     Prompt,
     RestoreMetadata,
     RestoredResult,
+    Staff,
     Template,
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
@@ -1144,3 +1148,444 @@ class PatientManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['show_patient_panel'])
         self.assertNotContains(response, '患者マスタ連携')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class StaffManagementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+
+    def test_staff_crud_and_delete(self):
+        create_response = self.client.post(
+            reverse('close_side:staff_create'),
+            {
+                'staff_id': 'S001',
+                'surname': '佐藤',
+                'given_name': '花子',
+                'kana_surname': 'さとう',
+                'kana_given_name': 'はなこ',
+                'occupation_label': '看護師',
+                'position_label': '主任',
+                'is_active': 'on',
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        staff = Staff.objects.get(staff_id='S001')
+        self.assertEqual(staff.full_name, '佐藤花子')
+        self.assertEqual(staff.display_role_label, '看護師 / 主任')
+        self.assertEqual(staff.anonymization_label_prefix, '看護師')
+        self.assertEqual(staff.role_label, '看護師')
+        self.assertTrue(staff.is_active)
+
+        edit_response = self.client.post(
+            reverse('close_side:staff_edit', args=[staff.pk]),
+            {
+                'staff_id': 'S001',
+                'surname': '佐藤',
+                'given_name': '美咲',
+                'kana_surname': 'さとう',
+                'kana_given_name': 'みさき',
+                'occupation_label': '相談員',
+                'position_label': '係長',
+                'is_active': '',
+            },
+        )
+
+        self.assertEqual(edit_response.status_code, 302)
+        staff.refresh_from_db()
+        self.assertEqual(staff.full_name, '佐藤美咲')
+        self.assertEqual(staff.occupation_label, '相談員')
+        self.assertEqual(staff.position_label, '係長')
+        self.assertEqual(staff.display_role_label, '相談員 / 係長')
+        self.assertEqual(staff.anonymization_label_prefix, '相談員')
+        self.assertEqual(staff.role_label, '相談員')
+        self.assertFalse(staff.is_active)
+
+        delete_response = self.client.post(reverse('close_side:staff_delete', args=[staff.pk]))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(Staff.objects.filter(staff_id='S001').exists())
+
+    def test_staff_csv_import_updates_existing_rows_without_overwriting_blank_values(self):
+        Staff.objects.create(
+            staff_id='S001',
+            surname='佐藤',
+            given_name='花子',
+            kana_surname='さとう',
+            kana_given_name='はなこ',
+            occupation_label='看護師',
+            position_label='主任',
+            is_active=True,
+        )
+
+        csv_text = (
+            'ID,姓,名,ふりかな姓,ふりかな名,職種,役職,有効\n'
+            'S001,佐藤,美咲,さとう,, , ,無効\n'
+            'S002,田中,一郎,たなか,いちろう,医師,部長,有効\n'
+        )
+        upload = SimpleUploadedFile('staffs.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:staff_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        existing = Staff.objects.get(staff_id='S001')
+        imported = Staff.objects.get(staff_id='S002')
+        self.assertEqual(existing.given_name, '美咲')
+        self.assertEqual(existing.kana_surname, 'さとう')
+        self.assertEqual(existing.kana_given_name, 'はなこ')
+        self.assertEqual(existing.occupation_label, '看護師')
+        self.assertEqual(existing.position_label, '主任')
+        self.assertEqual(existing.role_label, '看護師')
+        self.assertFalse(existing.is_active)
+        self.assertEqual(imported.full_name, '田中一郎')
+        self.assertEqual(imported.occupation_label, '医師')
+        self.assertEqual(imported.position_label, '部長')
+        self.assertEqual(imported.display_role_label, '医師 / 部長')
+        self.assertEqual(imported.role_label, '医師')
+        self.assertTrue(imported.is_active)
+
+    def test_home_uses_staff_master_labels(self):
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+        Staff.objects.create(
+            staff_id='S001',
+            surname='佐藤',
+            given_name='花子',
+            kana_surname='さとう',
+            kana_given_name='はなこ',
+            occupation_label='看護師',
+            position_label='主任',
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': '看護計画',
+                'input_mode': 'free',
+                'text': '山田太郎と佐藤花子が同席した。',
+                'patient_id': 'P001',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('患者本人A', response.context['text_items'][0]['anonymized'])
+        self.assertIn('看護師A', response.context['text_items'][0]['anonymized'])
+        self.assertNotIn('山田太郎', response.context['text_items'][0]['anonymized'])
+        self.assertNotIn('佐藤花子', response.context['text_items'][0]['anonymized'])
+        self.assertEqual(response.context['restore_map']['患者本人A'], '山田太郎')
+        self.assertEqual(response.context['restore_map']['看護師A'], '佐藤花子')
+
+    def test_home_uses_family_and_guardian_master_labels(self):
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+        PatientFamily.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='family',
+            surname='山田',
+            given_name='花子',
+            kana_surname='やまだ',
+            kana_given_name='はなこ',
+            relationship_label='母',
+            is_active=True,
+        )
+        Guardian.objects.create(
+            patient_id='P001',
+            branch_no=2,
+            relation_kind='guardian',
+            surname='山田',
+            given_name='次郎',
+            kana_surname='やまだ',
+            kana_given_name='じろう',
+            relationship_label='後見人',
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': '看護計画',
+                'input_mode': 'free',
+                'text': '山田太郎と山田花子と山田次郎が同席した。',
+                'patient_id': 'P001',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        anonymized_text = response.context['text_items'][0]['anonymized']
+        self.assertIn('患者本人A', anonymized_text)
+        self.assertIn('家族（母）A', anonymized_text)
+        self.assertIn('後見人A', anonymized_text)
+        self.assertNotIn('山田太郎', anonymized_text)
+        self.assertNotIn('山田花子', anonymized_text)
+        self.assertNotIn('山田次郎', anonymized_text)
+        self.assertEqual(response.context['restore_map']['患者本人A'], '山田太郎')
+        self.assertEqual(response.context['restore_map']['家族（母）A'], '山田花子')
+        self.assertEqual(response.context['restore_map']['後見人A'], '山田次郎')
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class FamilyManagementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user_family',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+
+    def test_family_crud_and_delete(self):
+        create_response = self.client.post(
+            reverse('close_side:family_create'),
+            {
+                'patient_id': 'P001',
+                'branch_no': '1',
+                'surname': '山田',
+                'given_name': '花子',
+                'kana_surname': 'やまだ',
+                'kana_given_name': 'はなこ',
+                'relationship_label': '母',
+                'is_active': 'on',
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        family = PatientFamily.objects.get(patient_id='P001', branch_no=1)
+        self.assertEqual(family.linked_person_code, f'LP{family.pk:08d}')
+        self.assertEqual(family.full_name, '山田花子')
+        self.assertEqual(family.branch_display_label, 'P001-1')
+        self.assertEqual(family.linked_person_display_label, f'{family.linked_person_code} (P001-1)')
+        self.assertEqual(family.anonymization_label_prefix, '家族（母）')
+        self.assertTrue(family.is_active)
+
+        edit_response = self.client.post(
+            reverse('close_side:family_edit', args=[family.pk]),
+            {
+                'patient_id': 'P001',
+                'branch_no': '1',
+                'surname': '山田',
+                'given_name': '美咲',
+                'kana_surname': 'やまだ',
+                'kana_given_name': 'みさき',
+                'relationship_label': '姉',
+                'is_active': '',
+            },
+        )
+
+        self.assertEqual(edit_response.status_code, 302)
+        family.refresh_from_db()
+        self.assertEqual(family.linked_person_code, f'LP{family.pk:08d}')
+        self.assertEqual(family.full_name, '山田美咲')
+        self.assertEqual(family.relationship_label, '姉')
+        self.assertEqual(family.branch_display_label, 'P001-1')
+        self.assertEqual(family.anonymization_label_prefix, '家族（姉）')
+        self.assertFalse(family.is_active)
+
+        delete_response = self.client.post(reverse('close_side:family_delete', args=[family.pk]))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(PatientFamily.objects.filter(patient_id='P001', branch_no=1).exists())
+
+    def test_linked_person_list_renders_combined_master(self):
+        response = self.client.get(reverse('close_side:linked_person_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '患者関連者管理')
+        self.assertContains(response, '個別コード')
+
+    def test_family_csv_import_updates_existing_rows_without_overwriting_blank_values(self):
+        PatientFamily.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='family',
+            surname='山田',
+            given_name='花子',
+            kana_surname='やまだ',
+            kana_given_name='はなこ',
+            relationship_label='母',
+            is_active=True,
+        )
+
+        csv_text = (
+            '患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効\n'
+            'P001,1,家族,母,山田,美咲,やまだ,,無効\n'
+            'P999,9,家族,兄,無効,無効,むこう,むこう,有効\n'
+            'P001,2,家族,兄,佐藤,次郎,さとう,じろう,有効\n'
+        )
+        upload = SimpleUploadedFile('families.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:family_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        existing = PatientFamily.objects.get(patient_id='P001', branch_no=1)
+        imported = PatientFamily.objects.get(patient_id='P001', branch_no=2)
+        self.assertEqual(existing.linked_person_code, f'LP{existing.pk:08d}')
+        self.assertEqual(imported.linked_person_code, f'LP{imported.pk:08d}')
+        self.assertEqual(existing.given_name, '美咲')
+        self.assertEqual(existing.kana_surname, 'やまだ')
+        self.assertEqual(existing.kana_given_name, 'はなこ')
+        self.assertEqual(existing.relationship_label, '母')
+        self.assertEqual(existing.branch_display_label, 'P001-1')
+        self.assertEqual(existing.anonymization_label_prefix, '家族（母）')
+        self.assertFalse(existing.is_active)
+        self.assertEqual(imported.full_name, '佐藤次郎')
+        self.assertEqual(imported.relationship_label, '兄')
+        self.assertEqual(imported.branch_display_label, 'P001-2')
+        self.assertEqual(imported.anonymization_label_prefix, '家族（兄）')
+        self.assertTrue(imported.is_active)
+        self.assertFalse(PatientFamily.objects.filter(patient_id='P999', branch_no=9).exists())
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False)
+class GuardianManagementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='close_user_guardian',
+            password='pass12345',
+        )
+        self.client.force_login(self.user)
+        Patient.objects.create(
+            patient_id='P001',
+            surname='山田',
+            given_name='太郎',
+            kana_surname='やまだ',
+            kana_given_name='たろう',
+            birth_date=date(1980, 1, 2),
+            sex='male',
+            primary_diagnosis='統合失調症',
+        )
+
+    def test_guardian_crud_and_delete(self):
+        create_response = self.client.post(
+            reverse('close_side:guardian_create'),
+            {
+                'patient_id': 'P001',
+                'branch_no': '1',
+                'surname': '山田',
+                'given_name': '次郎',
+                'kana_surname': 'やまだ',
+                'kana_given_name': 'じろう',
+                'relationship_label': '後見人',
+                'is_active': 'on',
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        guardian = Guardian.objects.get(patient_id='P001', branch_no=1)
+        self.assertEqual(guardian.linked_person_code, f'LP{guardian.pk:08d}')
+        self.assertEqual(guardian.full_name, '山田次郎')
+        self.assertEqual(guardian.branch_display_label, 'P001-1')
+        self.assertEqual(guardian.linked_person_display_label, f'{guardian.linked_person_code} (P001-1)')
+        self.assertEqual(guardian.relation_kind, 'guardian')
+        self.assertEqual(guardian.anonymization_label_prefix, '後見人')
+        self.assertTrue(guardian.is_active)
+
+        edit_response = self.client.post(
+            reverse('close_side:guardian_edit', args=[guardian.pk]),
+            {
+                'patient_id': 'P001',
+                'branch_no': '1',
+                'surname': '山田',
+                'given_name': '次郎',
+                'kana_surname': 'やまだ',
+                'kana_given_name': 'じろう',
+                'relationship_label': '保佐人',
+                'is_active': '',
+            },
+        )
+
+        self.assertEqual(edit_response.status_code, 302)
+        guardian.refresh_from_db()
+        self.assertEqual(guardian.linked_person_code, f'LP{guardian.pk:08d}')
+        self.assertEqual(guardian.relationship_label, '保佐人')
+        self.assertEqual(guardian.branch_display_label, 'P001-1')
+        self.assertEqual(guardian.relation_kind, 'guardian')
+        self.assertEqual(guardian.anonymization_label_prefix, '保佐人')
+        self.assertFalse(guardian.is_active)
+
+        delete_response = self.client.post(reverse('close_side:guardian_delete', args=[guardian.pk]))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(Guardian.objects.filter(patient_id='P001', branch_no=1).exists())
+
+    def test_guardian_csv_import_updates_existing_rows_without_overwriting_blank_values(self):
+        Guardian.objects.create(
+            patient_id='P001',
+            branch_no=1,
+            relation_kind='guardian',
+            surname='山田',
+            given_name='次郎',
+            kana_surname='やまだ',
+            kana_given_name='じろう',
+            relationship_label='後見人',
+            is_active=True,
+        )
+
+        csv_text = (
+            '患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効\n'
+            'P001,1,後見人,後見人,山田,太郎,やまだ,,無効\n'
+            'P999,9,後見人,保佐人,無効,無効,むこう,むこう,有効\n'
+            'P001,2,後見人,保佐人,佐藤,花子,さとう,はなこ,有効\n'
+        )
+        upload = SimpleUploadedFile('guardians.csv', csv_text.encode('utf-8'), content_type='text/csv')
+
+        response = self.client.post(
+            reverse('close_side:guardian_import'),
+            {'csv_file': upload},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        existing = Guardian.objects.get(patient_id='P001', branch_no=1)
+        imported = Guardian.objects.get(patient_id='P001', branch_no=2)
+        self.assertEqual(existing.linked_person_code, f'LP{existing.pk:08d}')
+        self.assertEqual(imported.linked_person_code, f'LP{imported.pk:08d}')
+        self.assertEqual(existing.given_name, '太郎')
+        self.assertEqual(existing.kana_surname, 'やまだ')
+        self.assertEqual(existing.kana_given_name, 'じろう')
+        self.assertEqual(existing.relationship_label, '後見人')
+        self.assertEqual(existing.branch_display_label, 'P001-1')
+        self.assertEqual(existing.anonymization_label_prefix, '後見人')
+        self.assertFalse(existing.is_active)
+        self.assertEqual(imported.full_name, '佐藤花子')
+        self.assertEqual(imported.relationship_label, '保佐人')
+        self.assertEqual(imported.branch_display_label, 'P001-2')
+        self.assertEqual(imported.anonymization_label_prefix, '保佐人')
+        self.assertEqual(imported.relation_kind, 'guardian')
+        self.assertTrue(imported.is_active)
+        self.assertFalse(Guardian.objects.filter(patient_id='P999', branch_no=9).exists())

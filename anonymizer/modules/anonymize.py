@@ -15,6 +15,7 @@ class AnonymizationResult:
 
 
 PREFERRED_PERSON_SENTINEL = '__PREFERRED_PATIENT_PERSON__'
+PREFERRED_ENTITY_SENTINEL_PREFIX = '__PREFERRED_ENTITY_'
 
 
 DEFAULT_NAME_PATTERNS = [
@@ -342,10 +343,51 @@ def _normalize_preferred_person_names(preferred_person_names) -> list[str]:
     return normalized
 
 
+def _normalize_preferred_entity_groups(
+    preferred_entity_groups=None,
+    *,
+    preferred_person_names=None,
+    preferred_person_label: str = '患者本人A',
+    preferred_person_original: str = '',
+) -> list[dict[str, object]]:
+    if preferred_entity_groups:
+        if isinstance(preferred_entity_groups, dict):
+            candidates = [preferred_entity_groups]
+        else:
+            candidates = list(preferred_entity_groups)
+
+        normalized_groups: list[dict[str, object]] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            names = candidate.get('names') or candidate.get('preferred_person_names') or []
+            label = str(candidate.get('label') or candidate.get('preferred_person_label') or '').strip()
+            original = str(candidate.get('original') or candidate.get('preferred_person_original') or '').strip()
+            normalized_names = _normalize_preferred_person_names(names)
+            if not label or not normalized_names:
+                continue
+            normalized_groups.append({
+                'label': label,
+                'names': normalized_names,
+                'original': original or normalized_names[0],
+            })
+        return normalized_groups
+
+    normalized_names = _normalize_preferred_person_names(preferred_person_names)
+    if not normalized_names:
+        return []
+    return [{
+        'label': preferred_person_label,
+        'names': normalized_names,
+        'original': preferred_person_original or normalized_names[0],
+    }]
+
+
 def anonymize_text(
     text: str,
     template_type: str = 'generic',
     *,
+    preferred_entity_groups=None,
     preferred_person_names=None,
     preferred_person_label: str = '患者本人A',
     preferred_person_original: str = '',
@@ -353,9 +395,28 @@ def anonymize_text(
     config = load_config(Path(__file__).resolve().parents[1] / 'config')
     restore_map = {}
     working_text = text
-    preferred_names = _normalize_preferred_person_names(preferred_person_names)
-    for preferred_name in sorted(preferred_names, key=len, reverse=True):
-        working_text = working_text.replace(preferred_name, PREFERRED_PERSON_SENTINEL)
+    preferred_groups = _normalize_preferred_entity_groups(
+        preferred_entity_groups,
+        preferred_person_names=preferred_person_names,
+        preferred_person_label=preferred_person_label,
+        preferred_person_original=preferred_person_original,
+    )
+    if preferred_groups:
+        ordered_groups = sorted(
+            enumerate(preferred_groups),
+            key=lambda item: (
+                -max(len(name) for name in item[1]['names']),
+                item[0],
+            ),
+        )
+        group_sentinels: list[tuple[str, dict[str, object]]] = []
+        for index, group in ordered_groups:
+            sentinel = f'{PREFERRED_ENTITY_SENTINEL_PREFIX}{index}__'
+            group_sentinels.append((sentinel, group))
+            for preferred_name in sorted(group['names'], key=len, reverse=True):
+                working_text = working_text.replace(preferred_name, sentinel)
+    else:
+        group_sentinels = []
 
     anonymized = normalize_fullwidth_text(working_text, restore_map)
 
@@ -371,12 +432,15 @@ def anonymize_text(
     anonymized = anonymize_person_names(anonymized, restore_map, name_patterns)
     anonymized = generalize_age_text(anonymized, restore_map, age_patterns)
     anonymized = anonymize_contact_text(anonymized, restore_map, config)
-    if PREFERRED_PERSON_SENTINEL in anonymized:
-        anonymized = anonymized.replace(PREFERRED_PERSON_SENTINEL, preferred_person_label)
-        if preferred_person_original:
-            restore_map[preferred_person_label] = preferred_person_original
-        elif preferred_names:
-            restore_map[preferred_person_label] = preferred_names[0]
+    for sentinel, group in group_sentinels:
+        if sentinel not in anonymized:
+            continue
+        label = str(group.get('label') or '').strip()
+        original = str(group.get('original') or '').strip()
+        if not label:
+            continue
+        anonymized = anonymized.replace(sentinel, label)
+        restore_map[label] = original or str(group.get('names', [''])[0] or '')
     anonymized = normalize_whitespace(anonymized)
 
     entity_replacements = config.get('entity_replacements', [])

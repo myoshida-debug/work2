@@ -1,0 +1,50 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 職員CSV取込{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}職員CSV取込{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">CSVファイルから職員マスタを一括登録・更新します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{{ back_url }}">職員管理へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">CSV取込</h3>
+      <span class="badge">UTF-8 / CP932</span>
+    </div>
+    <div class="panel-body">
+      <div class="stacked-panels">
+        <div class="card">
+          <h3>取込ルール</h3>
+          <ul>
+            <li>ヘッダー例: <code>ID,姓,名,ふりかな姓,ふりかな名,職種,役職,有効</code></li>
+            <li>IDが既存と一致する場合は更新します。</li>
+            <li>CSVの空白項目は既存値を上書きしません。</li>
+            <li>有効列は <code>有効 / 無効</code> または <code>1 / 0</code>、<code>true / false</code> を受け付けます。</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>CSVファイル選択</h3>
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="error-list">{{ form.non_field_errors }}</div>
+            {% endif %}
+            <p>
+              <label class="field-label" for="{{ form.csv_file.id_for_label }}">CSVファイル</label><br>
+              {{ form.csv_file }}
+              {% if form.csv_file.errors %}<div class="field-error">{{ form.csv_file.errors }}</div>{% endif %}
+            </p>
+            <div class="actions">
+              <button class="primary" type="submit">取込実行</button>
+              <a class="button" href="{{ back_url }}">キャンセル</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

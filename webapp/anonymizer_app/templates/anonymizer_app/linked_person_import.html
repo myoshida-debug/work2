@@ -1,0 +1,58 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide {{ page_title }}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ page_subtitle }}</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{{ back_url }}">一覧へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">CSV取込</h3>
+      <span class="badge">UTF-8 / CP932</span>
+      {% if default_relation_kind_label %}
+        <span class="badge">既定: {{ default_relation_kind_label }}</span>
+      {% endif %}
+    </div>
+    <div class="panel-body">
+      <div class="stacked-panels">
+        <div class="card">
+          <h3>取込ルール</h3>
+          <ul>
+            <li>ヘッダー例: <code>患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効</code></li>
+            <li>個別コードは保存時に自動採番されるため、CSV には含めなくて構いません。</li>
+            <li>枝番は患者ごとの並び順や旧CSV互換のために残しています。</li>
+            <li>「種別」には <code>家族</code> または <code>後見人</code> を入れてください。</li>
+            <li>「属性」には <code>父</code>、<code>母</code>、<code>後見人</code>、<code>保佐人</code>、<code>補助人</code> などを入れられます。</li>
+            <li>旧CSVの <code>続柄</code> や <code>区分</code> も読み取れます。</li>
+            <li>患者IDと枝番が既存と一致する場合は更新します。</li>
+            <li>CSVの空白項目は既存値を上書きしません。</li>
+            <li>患者IDは既存の患者マスタに存在する必要があります。</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>CSVファイル選択</h3>
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="error-list">{{ form.non_field_errors }}</div>
+            {% endif %}
+            <p>
+              <label class="field-label" for="{{ form.csv_file.id_for_label }}">CSVファイル</label><br>
+              {{ form.csv_file }}
+              {% if form.csv_file.errors %}<div class="field-error">{{ form.csv_file.errors }}</div>{% endif %}
+            </p>
+            <div class="actions">
+              <button class="primary" type="submit">取込実行</button>
+              <a class="button" href="{{ back_url }}">キャンセル</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

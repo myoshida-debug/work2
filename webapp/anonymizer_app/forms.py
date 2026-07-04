@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Patient, Template
+from .models import Patient, PatientLinkedPerson, Staff, Template
 from .template_input_schemas import get_template_input_schema
 from .prompt_template_store import list_template_sources, sync_templates_to_db
 
@@ -105,6 +105,50 @@ class PatientForm(forms.ModelForm):
     }
 
 
+class StaffForm(forms.ModelForm):
+    class Meta:
+        model = Staff
+        fields = [
+            'staff_id',
+            'surname',
+            'given_name',
+            'kana_surname',
+            'kana_given_name',
+            'occupation_label',
+            'position_label',
+            'is_active',
+        ]
+        labels = {
+            'staff_id': '職員ID',
+            'surname': '姓',
+            'given_name': '名',
+            'kana_surname': 'ふりかな姓',
+            'kana_given_name': 'ふりかな名',
+            'occupation_label': '職種',
+            'position_label': '役職',
+            'is_active': '有効',
+        }
+        widgets = {
+            'staff_id': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'occupation_label': forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': '看護師 / 医師 / 相談員'}),
+            'position_label': forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': '主任 / 部長 / 係長'}),
+        }
+
+
+class PatientLinkedPersonFormMixin:
+    def clean_patient_id(self):
+        patient_id = str(self.cleaned_data.get('patient_id') or '').strip()
+        if not patient_id:
+            raise forms.ValidationError('患者IDを入力してください。')
+        if not Patient.objects.filter(patient_id=patient_id).exists():
+            raise forms.ValidationError(f'患者ID {patient_id} が見つかりません。')
+        return patient_id
+
+
 class PatientSearchForm(forms.Form):
     patient_id = forms.CharField(label='ID', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
     kana = forms.CharField(label='ふりかな', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
@@ -132,8 +176,137 @@ class PatientSearchForm(forms.Form):
     )
 
 
+class StaffSearchForm(forms.Form):
+    staff_id = forms.CharField(label='ID', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    kana = forms.CharField(label='ふりかな', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    occupation_label = forms.CharField(label='職種', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    position_label = forms.CharField(label='役職', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    is_active = forms.ChoiceField(
+        label='状態',
+        required=False,
+        choices=[('', 'すべて'), ('1', '有効'), ('0', '無効')],
+    )
+    sort = forms.ChoiceField(
+        label='ソート',
+        required=False,
+        choices=[
+            ('staff_id', 'ID'),
+            ('kana', 'ふりかな'),
+            ('occupation_label', '職種'),
+            ('position_label', '役職'),
+            ('is_active', '状態'),
+            ('updated_at', '更新日時'),
+        ],
+    )
+
+
 class PatientImportForm(forms.Form):
     csv_file = forms.FileField(label='CSVファイル', widget=forms.FileInput(attrs={'accept': '.csv,text/csv'}))
+
+
+class StaffImportForm(forms.Form):
+    csv_file = forms.FileField(label='CSVファイル', widget=forms.FileInput(attrs={'accept': '.csv,text/csv'}))
+
+
+class PatientLinkedPersonForm(PatientLinkedPersonFormMixin, forms.ModelForm):
+    class Meta:
+        model = PatientLinkedPerson
+        fields = [
+            'patient_id',
+            'branch_no',
+            'relation_kind',
+            'surname',
+            'given_name',
+            'kana_surname',
+            'kana_given_name',
+            'relationship_label',
+            'is_active',
+        ]
+        labels = {
+            'patient_id': '患者ID',
+            'branch_no': '枝番',
+            'relation_kind': '種別',
+            'surname': '姓',
+            'given_name': '名',
+            'kana_surname': 'ふりかな姓',
+            'kana_given_name': 'ふりかな名',
+            'relationship_label': '属性',
+            'is_active': '有効',
+        }
+        widgets = {
+            'patient_id': forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': '患者ID'}),
+            'branch_no': forms.NumberInput(attrs={'min': 1, 'autocomplete': 'off', 'placeholder': '1'}),
+            'relation_kind': forms.Select(attrs={'autocomplete': 'off'}),
+            'surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_surname': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'kana_given_name': forms.TextInput(attrs={'autocomplete': 'off'}),
+            'relationship_label': forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': '父 / 母 / 夫 / 妻 / 子 / 後見人 / 保佐人 / 補助人'}),
+        }
+
+
+class PatientLinkedPersonSearchForm(forms.Form):
+    linked_person_code = forms.CharField(
+        label='個別コード',
+        required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'off', 'placeholder': 'LP00000001'}),
+    )
+    patient_id = forms.CharField(label='患者ID', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    branch_no = forms.IntegerField(label='枝番', required=False, min_value=1, widget=forms.NumberInput(attrs={'autocomplete': 'off', 'min': '1'}))
+    relation_kind = forms.ChoiceField(
+        label='種別',
+        required=False,
+        choices=[('', 'すべて')] + list(PatientLinkedPerson.RELATION_KIND_CHOICES),
+    )
+    kana = forms.CharField(label='ふりかな', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    relationship_label = forms.CharField(label='属性', required=False, widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    is_active = forms.ChoiceField(
+        label='状態',
+        required=False,
+        choices=[('', 'すべて'), ('1', '有効'), ('0', '無効')],
+    )
+    sort = forms.ChoiceField(
+        label='ソート',
+        required=False,
+        choices=[
+            ('linked_person_code', '個別コード'),
+            ('patient_id', '患者ID'),
+            ('branch_no', '枝番'),
+            ('relation_kind', '種別'),
+            ('kana', 'ふりかな'),
+            ('relationship_label', '属性'),
+            ('is_active', '状態'),
+            ('updated_at', '更新日時'),
+        ],
+    )
+
+
+class PatientLinkedPersonImportForm(forms.Form):
+    csv_file = forms.FileField(label='CSVファイル', widget=forms.FileInput(attrs={'accept': '.csv,text/csv'}))
+
+
+class FamilyForm(PatientLinkedPersonForm):
+    pass
+
+
+class FamilySearchForm(PatientLinkedPersonSearchForm):
+    pass
+
+
+class FamilyImportForm(PatientLinkedPersonImportForm):
+    pass
+
+
+class GuardianForm(PatientLinkedPersonForm):
+    pass
+
+
+class GuardianSearchForm(PatientLinkedPersonSearchForm):
+    pass
+
+
+class GuardianImportForm(PatientLinkedPersonImportForm):
+    pass
 
 
 class DMZImportForm(forms.Form):

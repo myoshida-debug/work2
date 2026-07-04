@@ -27,8 +27,14 @@ from anonymizer_app.forms import (
     DMZExportForm,
     DMZResultImportForm,
     PatientForm,
+    PatientLinkedPersonForm,
+    PatientLinkedPersonImportForm,
+    PatientLinkedPersonSearchForm,
     PatientImportForm,
     PatientSearchForm,
+    StaffForm,
+    StaffImportForm,
+    StaffSearchForm,
     PromptForm,
     TemplateForm,
     TemplateInputDefaultsForm,
@@ -44,9 +50,11 @@ from anonymizer_app.models import (
     FIELD_INPUT_TYPE_CHOICES,
     OperationLog,
     Patient,
+    PatientLinkedPerson,
     Prompt,
     RestoredResult,
     RestoreMetadata,
+    Staff,
     Template,
     TemplateInputCheckboxGroup,
     TemplateInputCheckboxOption,
@@ -134,6 +142,69 @@ PATIENT_CSV_HEADER_ALIASES = {
     '性別': 'sex',
     '主病名': 'primary_diagnosis',
 }
+STAFF_CSV_HEADER_ALIASES = {
+    'id': 'staff_id',
+    'staff_id': 'staff_id',
+    '職員id': 'staff_id',
+    '職員_id': 'staff_id',
+    '職員id番号': 'staff_id',
+    '姓': 'surname',
+    '名': 'given_name',
+    'ふりかな姓': 'kana_surname',
+    'ふりかな名': 'kana_given_name',
+    'ふりがな姓': 'kana_surname',
+    'ふりがな名': 'kana_given_name',
+    'ふりかな': 'kana_full_name',
+    'ふりがな': 'kana_full_name',
+    '職種': 'occupation_label',
+    '役割': 'position_label',
+    '職種ラベル': 'occupation_label',
+    '役割ラベル': 'position_label',
+    '役職': 'position_label',
+    '職位': 'position_label',
+    'ラベル': 'occupation_label',
+    '有効': 'is_active',
+    '稼働': 'is_active',
+    'active': 'is_active',
+    'is_active': 'is_active',
+}
+LINKED_PERSON_CSV_HEADER_ALIASES = {
+    'id': 'branch_no',
+    'family_id': 'branch_no',
+    'guardian_id': 'branch_no',
+    '家族id': 'branch_no',
+    '家族_id': 'branch_no',
+    '後見人id': 'branch_no',
+    '後見人_id': 'branch_no',
+    '患者id': 'patient_id',
+    'patient_id': 'patient_id',
+    '患者_id': 'patient_id',
+    '枝番': 'branch_no',
+    '枝番番号': 'branch_no',
+    '番号': 'branch_no',
+    '姓': 'surname',
+    '名': 'given_name',
+    'ふりかな姓': 'kana_surname',
+    'ふりかな名': 'kana_given_name',
+    'ふりがな姓': 'kana_surname',
+    'ふりがな名': 'kana_given_name',
+    'ふりかな': 'kana_full_name',
+    'ふりがな': 'kana_full_name',
+    '種別': 'relation_kind',
+    '分類': 'relation_kind',
+    '区分種別': 'relation_kind',
+    '属性種別': 'relation_kind',
+    '属性': 'relationship_label',
+    '続柄': 'relationship_label',
+    '区分': 'relationship_label',
+    '関係': 'relationship_label',
+    '有効': 'is_active',
+    '稼働': 'is_active',
+    'active': 'is_active',
+    'is_active': 'is_active',
+}
+FAMILY_CSV_HEADER_ALIASES = LINKED_PERSON_CSV_HEADER_ALIASES
+GUARDIAN_CSV_HEADER_ALIASES = LINKED_PERSON_CSV_HEADER_ALIASES
 
 
 def _template_supports_patient_master(template_type: str) -> bool:
@@ -158,6 +229,78 @@ def _patient_name_variants(patient: Patient | None) -> list[str]:
     return patient.name_variants()
 
 
+def _staff_full_name(staff: Staff | None) -> str:
+    if staff is None:
+        return ''
+    return f'{staff.surname}{staff.given_name}'.strip()
+
+
+def _staff_kana_full_name(staff: Staff | None) -> str:
+    if staff is None:
+        return ''
+    return f'{staff.kana_surname}{staff.kana_given_name}'.strip()
+
+
+def _staff_name_variants(staff: Staff | None) -> list[str]:
+    if staff is None:
+        return []
+    return staff.name_variants()
+
+
+def _staff_anonymization_label_prefix(staff: Staff | None) -> str:
+    if staff is None:
+        return '職員'
+    return staff.anonymization_label_prefix or '職員'
+
+
+def _family_full_name(family: PatientLinkedPerson | None) -> str:
+    if family is None:
+        return ''
+    return f'{family.surname}{family.given_name}'.strip()
+
+
+def _family_kana_full_name(family: PatientLinkedPerson | None) -> str:
+    if family is None:
+        return ''
+    return f'{family.kana_surname}{family.kana_given_name}'.strip()
+
+
+def _family_name_variants(family: PatientLinkedPerson | None) -> list[str]:
+    if family is None:
+        return []
+    return family.name_variants()
+
+
+def _family_anonymization_label_prefix(family: PatientLinkedPerson | None) -> str:
+    if family is None:
+        return '家族'
+    return family.anonymization_label_prefix or '家族'
+
+
+def _guardian_full_name(guardian: PatientLinkedPerson | None) -> str:
+    if guardian is None:
+        return ''
+    return f'{guardian.surname}{guardian.given_name}'.strip()
+
+
+def _guardian_kana_full_name(guardian: PatientLinkedPerson | None) -> str:
+    if guardian is None:
+        return ''
+    return f'{guardian.kana_surname}{guardian.kana_given_name}'.strip()
+
+
+def _guardian_name_variants(guardian: PatientLinkedPerson | None) -> list[str]:
+    if guardian is None:
+        return []
+    return guardian.name_variants()
+
+
+def _guardian_anonymization_label_prefix(guardian: PatientLinkedPerson | None) -> str:
+    if guardian is None:
+        return '後見人'
+    return guardian.anonymization_label_prefix or '後見人'
+
+
 def _patient_payload(patient: Patient | None) -> dict[str, object]:
     if patient is None:
         return {}
@@ -175,6 +318,74 @@ def _patient_payload(patient: Patient | None) -> dict[str, object]:
         'sex': patient.sex or '',
         'sex_display': patient.get_sex_display() if patient.sex else '',
         'primary_diagnosis': patient.primary_diagnosis or '',
+    }
+
+
+def _staff_payload(staff: Staff | None) -> dict[str, object]:
+    if staff is None:
+        return {}
+    return {
+        'staff_id': staff.staff_id or '',
+        'surname': staff.surname or '',
+        'given_name': staff.given_name or '',
+        'kana_surname': staff.kana_surname or '',
+        'kana_given_name': staff.kana_given_name or '',
+        'full_name': _staff_full_name(staff),
+        'kana_full_name': _staff_kana_full_name(staff),
+        'role_label': staff.role_label or '',
+        'occupation_label': staff.occupation_label or '',
+        'position_label': staff.position_label or '',
+        'display_role_label': staff.display_role_label,
+        'anonymization_label_prefix': _staff_anonymization_label_prefix(staff),
+        'is_active': bool(staff.is_active),
+    }
+
+
+def _family_payload(family: PatientLinkedPerson | None) -> dict[str, object]:
+    if family is None:
+        return {}
+    return {
+        'linked_person_code': family.linked_person_code or '',
+        'linked_person_display_label': family.linked_person_display_label,
+        'branch_no': family.branch_no,
+        'branch_display_label': family.branch_display_label,
+        'patient_id': family.patient_id or '',
+        'relation_kind': family.relation_kind or '',
+        'relation_kind_label': family.relation_kind_label,
+        'surname': family.surname or '',
+        'given_name': family.given_name or '',
+        'kana_surname': family.kana_surname or '',
+        'kana_given_name': family.kana_given_name or '',
+        'full_name': _family_full_name(family),
+        'kana_full_name': _family_kana_full_name(family),
+        'relationship_label': family.relationship_label or '',
+        'display_relationship_label': family.relationship_display_label,
+        'anonymization_label_prefix': _family_anonymization_label_prefix(family),
+        'is_active': bool(family.is_active),
+    }
+
+
+def _guardian_payload(guardian: PatientLinkedPerson | None) -> dict[str, object]:
+    if guardian is None:
+        return {}
+    return {
+        'linked_person_code': guardian.linked_person_code or '',
+        'linked_person_display_label': guardian.linked_person_display_label,
+        'branch_no': guardian.branch_no,
+        'branch_display_label': guardian.branch_display_label,
+        'patient_id': guardian.patient_id or '',
+        'relation_kind': guardian.relation_kind or '',
+        'relation_kind_label': guardian.relation_kind_label,
+        'surname': guardian.surname or '',
+        'given_name': guardian.given_name or '',
+        'kana_surname': guardian.kana_surname or '',
+        'kana_given_name': guardian.kana_given_name or '',
+        'full_name': _guardian_full_name(guardian),
+        'kana_full_name': _guardian_kana_full_name(guardian),
+        'relationship_label': guardian.relationship_label or '',
+        'display_relationship_label': guardian.relationship_display_label,
+        'anonymization_label_prefix': _guardian_anonymization_label_prefix(guardian),
+        'is_active': bool(guardian.is_active),
     }
 
 
@@ -213,6 +424,102 @@ def _patient_profile_for_source_id(source_id: str, user) -> dict[str, object]:
     if not isinstance(patient_profile, dict):
         return {}
     return patient_profile
+
+
+def _patient_id_value(patient_record: Patient | None) -> str:
+    if patient_record is None:
+        return ''
+    return str(patient_record.patient_id or '').strip()
+
+
+def _family_queryset_for_patient_id(patient_id: str):
+    patient_id = str(patient_id or '').strip()
+    if not patient_id:
+        return PatientLinkedPerson.objects.none()
+    return PatientLinkedPerson.objects.filter(patient_id=patient_id, relation_kind='family')
+
+
+def _guardian_queryset_for_patient_id(patient_id: str):
+    patient_id = str(patient_id or '').strip()
+    if not patient_id:
+        return PatientLinkedPerson.objects.none()
+    return PatientLinkedPerson.objects.filter(patient_id=patient_id, relation_kind='guardian')
+
+
+def _staff_for_staff_id(staff_id: str) -> Staff | None:
+    staff_id = str(staff_id or '').strip()
+    if not staff_id:
+        return None
+    return Staff.objects.filter(staff_id=staff_id).first()
+
+
+def _alphabet_label(index: int) -> str:
+    index += 1
+    letters = []
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters.append(chr(ord('A') + remainder))
+    return ''.join(reversed(letters))
+
+
+def _append_labelled_name_groups(
+    groups: list[dict[str, object]],
+    queryset,
+    *,
+    name_getter,
+    prefix_getter,
+    original_getter,
+    sort_fields: tuple[str, ...],
+) -> None:
+    counters: dict[str, int] = {}
+    ordered_queryset = queryset.order_by(*sort_fields)
+    for item in ordered_queryset:
+        names = name_getter(item)
+        if not names:
+            continue
+        prefix = str(prefix_getter(item) or '').strip() or '関連者'
+        counter = counters.get(prefix, 0)
+        counters[prefix] = counter + 1
+        groups.append({
+            'label': f'{prefix}{_alphabet_label(counter)}',
+            'names': names,
+            'original': original_getter(item),
+        })
+
+
+def _preferred_entity_groups_for_anonymization(patient_record: Patient | None = None) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = []
+
+    if patient_record is not None:
+        patient_names = _patient_name_variants(patient_record)
+        if patient_names:
+            groups.append({
+                'label': '患者本人A',
+                'names': patient_names,
+                'original': _patient_full_name(patient_record),
+            })
+
+    _append_labelled_name_groups(
+        groups,
+        Staff.objects.filter(is_active=True),
+        name_getter=_staff_name_variants,
+        prefix_getter=_staff_anonymization_label_prefix,
+        original_getter=_staff_full_name,
+        sort_fields=('occupation_label', 'position_label', 'kana_surname', 'kana_given_name', 'staff_id'),
+    )
+
+    patient_id = _patient_id_value(patient_record)
+    if patient_id:
+        _append_labelled_name_groups(
+            groups,
+            PatientLinkedPerson.objects.filter(patient_id=patient_id, is_active=True),
+            name_getter=_family_name_variants,
+            prefix_getter=_family_anonymization_label_prefix,
+            original_getter=_family_full_name,
+            sort_fields=('branch_no', 'relation_kind', 'kana_surname', 'kana_given_name', 'patient_id'),
+        )
+
+    return groups
 
 
 def _patient_display_label(patient_profile: dict[str, object] | None) -> str:
@@ -463,6 +770,353 @@ def _import_patient_csv(uploaded_file) -> dict[str, int]:
         raise ValueError(
             '有効な患者IDが見つかりませんでした。'
             'CSVの1行目が `ID,姓,名,ふりかな姓,ふりかな名,生年月日,性別,主病名` になっているか、'
+            'Excelファイルをそのまま選んでいないか確認してください。'
+        )
+
+    return {
+        'created': created_count,
+        'updated': updated_count,
+        'skipped': skipped_count,
+        'processed': created_count + updated_count,
+        'unique_ids': len(seen_ids),
+    }
+
+
+def _normalize_staff_is_active(value: object) -> bool | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    normalized = text.casefold()
+    if normalized in {'1', 'true', 'yes', 'on', 't', 'y', '有効', 'はい', '稼働'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off', 'f', 'n', '無効', 'いいえ'}:
+        return False
+    return bool(_is_truthy(value))
+
+
+def _normalize_staff_csv_row(raw_row: dict[str, str]) -> dict[str, object]:
+    normalized: dict[str, object] = {
+        'staff_id': '',
+        'surname': '',
+        'given_name': '',
+        'kana_surname': '',
+        'kana_given_name': '',
+        'occupation_label': '',
+        'position_label': '',
+        'is_active': None,
+    }
+    for raw_key, raw_value in raw_row.items():
+        key = STAFF_CSV_HEADER_ALIASES.get(str(raw_key or '').strip().lower())
+        if not key:
+            key = STAFF_CSV_HEADER_ALIASES.get(str(raw_key or '').strip())
+        value = str(raw_value or '').strip()
+        if not key or not value:
+            continue
+        if key == 'kana_full_name':
+            kana_surname, kana_given_name = _split_name_value(value)
+            if kana_surname and not normalized['kana_surname']:
+                normalized['kana_surname'] = kana_surname
+            if kana_given_name and not normalized['kana_given_name']:
+                normalized['kana_given_name'] = kana_given_name
+            continue
+        if key == 'is_active':
+            normalized['is_active'] = _normalize_staff_is_active(value)
+            continue
+        normalized[key] = value
+    return normalized
+
+
+def _staff_sort_queryset(queryset, sort_key: str):
+    sort_key = str(sort_key or 'staff_id').strip() or 'staff_id'
+    if sort_key == 'kana':
+        return queryset.order_by('kana_surname', 'kana_given_name', 'staff_id')
+    if sort_key == 'occupation_label':
+        return queryset.order_by('occupation_label', 'staff_id')
+    if sort_key == 'position_label':
+        return queryset.order_by('position_label', 'staff_id')
+    if sort_key == 'is_active':
+        active_order = Case(
+            When(is_active=True, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        return queryset.annotate(_active_order=active_order).order_by('_active_order', 'occupation_label', 'position_label', 'staff_id')
+    if sort_key == 'updated_at':
+        return queryset.order_by('-updated_at', 'staff_id')
+    return queryset.order_by('staff_id')
+
+
+def _staff_upsert_from_csv_row(normalized_row: dict[str, object]) -> tuple[Staff | None, bool, bool]:
+    staff_id = str(normalized_row.get('staff_id') or '').strip()
+    if not staff_id:
+        return None, False, False
+
+    defaults: dict[str, object] = {}
+    for field_name in ('surname', 'given_name', 'kana_surname', 'kana_given_name', 'occupation_label', 'position_label'):
+        value = str(normalized_row.get(field_name) or '').strip()
+        if value:
+            defaults[field_name] = value
+    is_active = normalized_row.get('is_active')
+    if is_active is not None:
+        defaults['is_active'] = bool(is_active)
+
+    staff, created = Staff.objects.get_or_create(staff_id=staff_id, defaults=defaults)
+    if created:
+        return staff, True, bool(defaults)
+
+    changed_fields: list[str] = []
+    for field_name, value in defaults.items():
+        if getattr(staff, field_name) != value:
+            setattr(staff, field_name, value)
+            changed_fields.append(field_name)
+    if changed_fields:
+        staff.save(update_fields=changed_fields + ['updated_at'])
+    return staff, False, bool(changed_fields)
+
+
+def _import_staff_csv(uploaded_file) -> dict[str, int]:
+    csv_text = _decode_patient_csv_file(uploaded_file)
+    reader = csv.DictReader(StringIO(csv_text))
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    seen_ids: set[str] = set()
+
+    with transaction.atomic():
+        for raw_row in reader:
+            normalized_row = _normalize_staff_csv_row(raw_row)
+            staff_id = str(normalized_row.get('staff_id') or '').strip()
+            if not staff_id:
+                skipped_count += 1
+                continue
+
+            staff, created, changed = _staff_upsert_from_csv_row(normalized_row)
+            if staff is None:
+                skipped_count += 1
+                continue
+            if created:
+                created_count += 1
+            elif changed:
+                updated_count += 1
+            else:
+                skipped_count += 1
+            seen_ids.add(staff_id)
+
+    if not seen_ids:
+        raise ValueError(
+            '有効な職員IDが見つかりませんでした。'
+            'CSVの1行目が `ID,姓,名,ふりかな姓,ふりかな名,職種,役職,有効` になっているか、'
+            'Excelファイルをそのまま選んでいないか確認してください。'
+        )
+
+    return {
+        'created': created_count,
+        'updated': updated_count,
+        'skipped': skipped_count,
+        'processed': created_count + updated_count,
+        'unique_ids': len(seen_ids),
+    }
+
+
+def _normalize_patient_linked_is_active(value: object) -> bool | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    normalized = text.casefold()
+    if normalized in {'1', 'true', 'yes', 'on', 't', 'y', '有効', 'はい', '稼働'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off', 'f', 'n', '無効', 'いいえ'}:
+        return False
+    return bool(_is_truthy(value))
+
+
+def _normalize_branch_no_value(value: object) -> int | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+    if text.isdigit():
+        branch_no = int(text)
+        return branch_no if branch_no > 0 else None
+    match = re.search(r'(\d+)$', text)
+    if not match:
+        return None
+    branch_no = int(match.group(1))
+    return branch_no if branch_no > 0 else None
+
+
+def _normalize_relation_kind_value(value: object) -> str | None:
+    text = str(value or '').strip().casefold()
+    if not text:
+        return None
+    if text in {'family', '家族', 'familly', '親族', 'family_member', 'familymember'}:
+        return 'family'
+    if text in {'guardian', '後見人', '保佐人', '補助人', '成年後見人', '法定後見人'}:
+        return 'guardian'
+    if '後見' in text or '保佐' in text or '補助' in text:
+        return 'guardian'
+    if '家族' in text or '親族' in text:
+        return 'family'
+    return None
+
+
+def _normalize_linked_person_csv_row(raw_row: dict[str, str], header_aliases: dict[str, str]) -> dict[str, object]:
+    normalized: dict[str, object] = {
+        'branch_no': None,
+        'patient_id': '',
+        'relation_kind': '',
+        'surname': '',
+        'given_name': '',
+        'kana_surname': '',
+        'kana_given_name': '',
+        'relationship_label': '',
+        'occupation_label': '',
+        'position_label': '',
+        'is_active': None,
+    }
+    for raw_key, raw_value in raw_row.items():
+        key = header_aliases.get(str(raw_key or '').strip().lower())
+        if not key:
+            key = header_aliases.get(str(raw_key or '').strip())
+        value = str(raw_value or '').strip()
+        if not key or not value:
+            continue
+        if key == 'kana_full_name':
+            kana_surname, kana_given_name = _split_name_value(value)
+            if kana_surname and not normalized['kana_surname']:
+                normalized['kana_surname'] = kana_surname
+            if kana_given_name and not normalized['kana_given_name']:
+                normalized['kana_given_name'] = kana_given_name
+            continue
+        if key == 'is_active':
+            normalized['is_active'] = _normalize_patient_linked_is_active(value)
+            continue
+        if key == 'branch_no':
+            normalized['branch_no'] = _normalize_branch_no_value(value)
+            continue
+        if key == 'relation_kind':
+            normalized['relation_kind'] = _normalize_relation_kind_value(value) or ''
+            continue
+        normalized[key] = value
+    return normalized
+
+
+def _patient_linked_person_sort_queryset(queryset, sort_key: str, id_field: str):
+    sort_key = str(sort_key or id_field).strip() or id_field
+    if sort_key == 'linked_person_code':
+        return queryset.order_by('linked_person_code', 'patient_id', 'branch_no')
+    if sort_key == 'kana':
+        return queryset.order_by('kana_surname', 'kana_given_name', 'patient_id', 'branch_no')
+    if sort_key == 'patient_id':
+        return queryset.order_by('patient_id', 'branch_no')
+    if sort_key == 'branch_no':
+        return queryset.order_by('patient_id', 'branch_no')
+    if sort_key == 'relation_kind':
+        kind_order = Case(
+            When(relation_kind='family', then=Value(0)),
+            When(relation_kind='guardian', then=Value(1)),
+            default=Value(2),
+            output_field=IntegerField(),
+        )
+        return queryset.annotate(_kind_order=kind_order).order_by('_kind_order', 'patient_id', 'branch_no')
+    if sort_key == 'relationship_label':
+        return queryset.order_by('relationship_label', 'patient_id', 'branch_no')
+    if sort_key == 'is_active':
+        active_order = Case(
+            When(is_active=True, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        return queryset.annotate(_active_order=active_order).order_by('_active_order', 'patient_id', 'branch_no')
+    if sort_key == 'updated_at':
+        return queryset.order_by('-updated_at', 'patient_id', 'branch_no')
+    return queryset.order_by('patient_id', 'branch_no')
+
+
+def _patient_linked_person_upsert_from_csv_row(
+    model_cls,
+    normalized_row: dict[str, object],
+    *,
+    default_relation_kind: str = 'family',
+) -> tuple[object | None, bool, bool]:
+    branch_no = _normalize_branch_no_value(normalized_row.get('branch_no'))
+    if branch_no is None:
+        return None, False, False
+
+    patient_id = str(normalized_row.get('patient_id') or '').strip()
+    if not patient_id or not Patient.objects.filter(patient_id=patient_id).exists():
+        return None, False, False
+
+    defaults: dict[str, object] = {}
+    relation_kind = _normalize_relation_kind_value(normalized_row.get('relation_kind')) or _normalize_relation_kind_value(default_relation_kind) or 'family'
+    defaults['relation_kind'] = relation_kind
+    for field_name in ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'relationship_label'):
+        value = str(normalized_row.get(field_name) or '').strip()
+        if value:
+            defaults[field_name] = value
+    is_active = normalized_row.get('is_active')
+    if is_active is not None:
+        defaults['is_active'] = bool(is_active)
+
+    record, created = model_cls.objects.get_or_create(patient_id=patient_id, branch_no=branch_no, defaults=defaults)
+    if created:
+        return record, True, bool(defaults)
+
+    changed_fields: list[str] = []
+    for field_name, value in defaults.items():
+        if getattr(record, field_name) != value:
+            setattr(record, field_name, value)
+            changed_fields.append(field_name)
+    if changed_fields:
+        record.save(update_fields=changed_fields + ['updated_at'])
+    return record, False, bool(changed_fields)
+
+
+def _import_patient_linked_csv(
+    uploaded_file,
+    *,
+    model_cls,
+    header_aliases: dict[str, str],
+    record_label: str,
+    header_example: str,
+    default_relation_kind: str = 'family',
+) -> dict[str, int]:
+    csv_text = _decode_patient_csv_file(uploaded_file)
+    reader = csv.DictReader(StringIO(csv_text))
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    seen_ids: set[str] = set()
+
+    with transaction.atomic():
+        for raw_row in reader:
+            normalized_row = _normalize_linked_person_csv_row(raw_row, header_aliases)
+            branch_no = _normalize_branch_no_value(normalized_row.get('branch_no'))
+            if branch_no is None:
+                skipped_count += 1
+                continue
+
+            record, created, changed = _patient_linked_person_upsert_from_csv_row(
+                model_cls,
+                normalized_row,
+                default_relation_kind=default_relation_kind,
+            )
+            if record is None:
+                skipped_count += 1
+                continue
+            if created:
+                created_count += 1
+            elif changed:
+                updated_count += 1
+            else:
+                skipped_count += 1
+            seen_ids.add(f"{getattr(record, 'patient_id', '')}:{getattr(record, 'branch_no', '')}")
+
+    if not seen_ids:
+        raise ValueError(
+            f'有効な{record_label}データの枝番が見つかりませんでした。'
+            f'CSVの1行目が `{header_example}` になっているか、'
             'Excelファイルをそのまま選んでいないか確認してください。'
         )
 
@@ -1373,11 +2027,13 @@ def home(request):
                     patient_profile=patient_profile,
                 ))
 
+        preferred_entity_groups = _preferred_entity_groups_for_anonymization(
+            patient_record if _template_supports_patient_master(template_name) else None
+        )
         result = anonymize_text(
             source_text,
             template_name,
-            preferred_person_names=_patient_name_variants(patient_record),
-            preferred_person_original=_patient_full_name(patient_record),
+            preferred_entity_groups=preferred_entity_groups,
         )
         anonymized_text = result.text
         restore_map = _augment_restore_map_with_patient_info(result.restore_map, patient_profile)
@@ -2107,6 +2763,572 @@ def patient_lookup(request, patient_id):
         'found': True,
         'patient': _patient_payload(patient),
     })
+
+
+def staff_list(request):
+    query_params = request.GET.copy()
+    sort_choices = {'staff_id', 'kana', 'occupation_label', 'position_label', 'is_active', 'updated_at'}
+    sort_value = str(query_params.get('sort') or 'staff_id').strip() or 'staff_id'
+    if sort_value not in sort_choices:
+        sort_value = 'staff_id'
+    query_params['sort'] = sort_value
+    form = StaffSearchForm(query_params)
+
+    staff_id_query = str(request.GET.get('staff_id') or '').strip()
+    kana_query = re.sub(r'[\s　]+', '', str(request.GET.get('kana') or '').strip())
+    occupation_label_query = str(request.GET.get('occupation_label') or '').strip()
+    position_label_query = str(request.GET.get('position_label') or '').strip()
+    is_active_query = str(request.GET.get('is_active') or '').strip()
+
+    queryset = Staff.objects.all()
+    if staff_id_query:
+        queryset = queryset.filter(staff_id__icontains=staff_id_query)
+    if kana_query:
+        queryset = queryset.annotate(kana_full_name_search=Concat('kana_surname', 'kana_given_name')).filter(
+            Q(kana_full_name_search__icontains=kana_query)
+            | Q(kana_surname__icontains=kana_query)
+            | Q(kana_given_name__icontains=kana_query)
+        )
+    if occupation_label_query:
+        queryset = queryset.filter(occupation_label__icontains=occupation_label_query)
+    if position_label_query:
+        queryset = queryset.filter(position_label__icontains=position_label_query)
+    if is_active_query in {'1', '0'}:
+        queryset = queryset.filter(is_active=is_active_query == '1')
+
+    staff_members = list(_staff_sort_queryset(queryset, sort_value))
+
+    return render(request, 'anonymizer_app/staff_list.html', {
+        'form': form,
+        'staff_members': staff_members,
+        'sort_value': sort_value,
+        'query_count': len(staff_members),
+        'has_filters': any([
+            staff_id_query,
+            kana_query,
+            occupation_label_query,
+            position_label_query,
+            is_active_query in {'1', '0'},
+        ]),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def staff_create(request):
+    if request.method == 'POST':
+        form = StaffForm(request.POST)
+        if form.is_valid():
+            staff = form.save()
+            _log_operation(request, 'staff_created', 'Staff', staff.staff_id)
+            messages.success(request, f'職員マスタを追加しました: {staff.staff_id}')
+            return redirect('close_side:staff_list')
+    else:
+        form = StaffForm()
+
+    return render(request, 'anonymizer_app/staff_form.html', {
+        'form': form,
+        'create': True,
+        'back_url': reverse('close_side:staff_list'),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def staff_edit(request, pk):
+    staff = get_object_or_404(Staff, pk=pk)
+    if request.method == 'POST':
+        form = StaffForm(request.POST, instance=staff)
+        if form.is_valid():
+            staff = form.save()
+            _log_operation(request, 'staff_updated', 'Staff', staff.staff_id)
+            messages.success(request, f'職員マスタを更新しました: {staff.staff_id}')
+            return redirect('close_side:staff_list')
+    else:
+        form = StaffForm(instance=staff)
+
+    return render(request, 'anonymizer_app/staff_form.html', {
+        'form': form,
+        'create': False,
+        'staff': staff,
+        'back_url': reverse('close_side:staff_list'),
+    })
+
+
+@require_http_methods(["POST"])
+def staff_delete(request, pk):
+    staff = get_object_or_404(Staff, pk=pk)
+    target_id = staff.staff_id
+    staff.delete()
+    _log_operation(request, 'staff_deleted', 'Staff', target_id)
+    messages.success(request, f'職員マスタを削除しました: {target_id}')
+    return redirect('close_side:staff_list')
+
+
+@require_http_methods(["GET", "POST"])
+def staff_import(request):
+    if request.method == 'POST':
+        form = StaffImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = form.cleaned_data['csv_file']
+            try:
+                import_summary = _import_staff_csv(csv_file)
+                _log_operation(
+                    request,
+                    'staff_imported',
+                    'Staff',
+                    getattr(csv_file, 'name', ''),
+                    import_summary,
+                )
+                messages.success(
+                    request,
+                    (
+                        f"職員CSVを取り込みました。"
+                        f"新規 {import_summary['created']} 件、"
+                        f"更新 {import_summary['updated']} 件、"
+                        f"スキップ {import_summary['skipped']} 件。"
+                    ),
+                )
+                return redirect('close_side:staff_list')
+            except Exception as e:
+                form.add_error('csv_file', f'CSV取込に失敗しました: {e}')
+                _log_operation(
+                    request,
+                    'staff_imported',
+                    'Staff',
+                    getattr(csv_file, 'name', ''),
+                    import_summary if 'import_summary' in locals() else None,
+                    result='failure',
+                    error_message=str(e),
+                )
+    else:
+        form = StaffImportForm()
+
+    return render(request, 'anonymizer_app/staff_import.html', {
+        'form': form,
+        'back_url': reverse('close_side:staff_list'),
+    })
+
+
+def _linked_person_form_post_data(post_data, default_relation_kind: str | None = None):
+    if default_relation_kind is None:
+        return post_data
+
+    data = post_data.copy()
+    if not str(data.get('relation_kind') or '').strip():
+        data['relation_kind'] = default_relation_kind
+    return data
+
+
+def _linked_person_list_view(
+    request,
+    *,
+    page_title: str,
+    page_subtitle: str,
+    relation_kind_filter: str | None = None,
+    create_url_name: str = 'close_side:linked_person_create',
+    import_url_name: str = 'close_side:linked_person_import',
+    edit_url_name: str = 'close_side:linked_person_edit',
+    delete_url_name: str = 'close_side:linked_person_delete',
+    clear_url_name: str = 'close_side:linked_person_list',
+):
+    query_params = request.GET.copy()
+    sort_choices = {'linked_person_code', 'patient_id', 'branch_no', 'relation_kind', 'kana', 'relationship_label', 'is_active', 'updated_at'}
+    sort_value = str(query_params.get('sort') or 'patient_id').strip() or 'patient_id'
+    if sort_value not in sort_choices:
+        sort_value = 'patient_id'
+    query_params['sort'] = sort_value
+    if relation_kind_filter:
+        query_params['relation_kind'] = relation_kind_filter
+    form = PatientLinkedPersonSearchForm(query_params)
+    if relation_kind_filter:
+        form.fields['relation_kind'].disabled = True
+
+    linked_person_code_query = str(request.GET.get('linked_person_code') or '').strip()
+    patient_id_query = str(request.GET.get('patient_id') or '').strip()
+    branch_no_query = str(request.GET.get('branch_no') or '').strip()
+    relation_kind_query = relation_kind_filter or str(request.GET.get('relation_kind') or '').strip()
+    kana_query = re.sub(r'[\s　]+', '', str(request.GET.get('kana') or '').strip())
+    relationship_label_query = str(request.GET.get('relationship_label') or '').strip()
+    is_active_query = str(request.GET.get('is_active') or '').strip()
+
+    queryset = PatientLinkedPerson.objects.all()
+    if relation_kind_filter:
+        queryset = queryset.filter(relation_kind=relation_kind_filter)
+    elif relation_kind_query:
+        normalized_relation_kind = _normalize_relation_kind_value(relation_kind_query)
+        if normalized_relation_kind:
+            queryset = queryset.filter(relation_kind=normalized_relation_kind)
+    relation_kind_filter_label = '家族' if relation_kind_filter == 'family' else '後見人' if relation_kind_filter == 'guardian' else ''
+    if linked_person_code_query:
+        queryset = queryset.filter(linked_person_code__icontains=linked_person_code_query)
+    if patient_id_query:
+        queryset = queryset.filter(patient_id__icontains=patient_id_query)
+    branch_no_value = _normalize_branch_no_value(branch_no_query)
+    if branch_no_value is not None:
+        queryset = queryset.filter(branch_no=branch_no_value)
+    if kana_query:
+        queryset = queryset.annotate(kana_full_name_search=Concat('kana_surname', 'kana_given_name')).filter(
+            Q(kana_full_name_search__icontains=kana_query)
+            | Q(kana_surname__icontains=kana_query)
+            | Q(kana_given_name__icontains=kana_query)
+        )
+    if relationship_label_query:
+        queryset = queryset.filter(relationship_label__icontains=relationship_label_query)
+    if is_active_query in {'1', '0'}:
+        queryset = queryset.filter(is_active=is_active_query == '1')
+
+    linked_persons = list(_patient_linked_person_sort_queryset(queryset, sort_value, 'branch_no'))
+    clear_url = reverse(clear_url_name)
+
+    return render(request, 'anonymizer_app/linked_person_list.html', {
+        'form': form,
+        'linked_persons': linked_persons,
+        'sort_value': sort_value,
+        'query_count': len(linked_persons),
+        'has_filters': any([
+            linked_person_code_query,
+            patient_id_query,
+            branch_no_query,
+            relation_kind_query if not relation_kind_filter else False,
+            kana_query,
+            relationship_label_query,
+            is_active_query in {'1', '0'},
+        ]),
+        'page_title': page_title,
+        'page_subtitle': page_subtitle,
+        'clear_url': clear_url,
+        'create_url': reverse(create_url_name),
+        'import_url': reverse(import_url_name),
+        'list_title': page_title,
+        'entity_label': relation_kind_filter_label or '患者関連者',
+        'edit_url_name': edit_url_name,
+        'delete_url_name': delete_url_name,
+        'relation_kind_filter': relation_kind_filter or '',
+        'relation_kind_filter_label': relation_kind_filter_label,
+    })
+
+
+def _linked_person_form_view(
+    request,
+    *,
+    create: bool,
+    back_url_name: str,
+    page_title: str,
+    page_subtitle: str,
+    relation_kind_filter: str | None = None,
+    instance: PatientLinkedPerson | None = None,
+    success_action: str,
+):
+    back_url = reverse(back_url_name)
+    relation_kind_filter_label = '家族' if relation_kind_filter == 'family' else '後見人' if relation_kind_filter == 'guardian' else ''
+    if request.method == 'POST':
+        form_data = _linked_person_form_post_data(request.POST, relation_kind_filter)
+        form = PatientLinkedPersonForm(form_data, instance=instance)
+        if relation_kind_filter:
+            form.fields['relation_kind'].disabled = True
+            form.initial['relation_kind'] = relation_kind_filter
+        if form.is_valid():
+            linked_person = form.save()
+            target_label = linked_person.linked_person_display_label
+            _log_operation(request, success_action, 'PatientLinkedPerson', target_label)
+            messages.success(
+                request,
+                f'{linked_person.relation_kind_label}マスタを{"追加" if create else "更新"}しました: {target_label}',
+            )
+            return redirect(back_url_name)
+    else:
+        initial = {}
+        if relation_kind_filter:
+            initial['relation_kind'] = relation_kind_filter
+        form = PatientLinkedPersonForm(instance=instance, initial=initial)
+        if relation_kind_filter:
+            form.fields['relation_kind'].disabled = True
+
+    return render(request, 'anonymizer_app/linked_person_form.html', {
+        'form': form,
+        'create': create,
+        'page_title': page_title,
+        'page_subtitle': page_subtitle,
+        'back_url': back_url,
+        'entity_label': relation_kind_filter_label or '患者関連者',
+        'relation_kind_filter_label': relation_kind_filter_label,
+    })
+
+
+def _linked_person_delete_view(
+    request,
+    *,
+    pk: int,
+    back_url_name: str,
+    success_action: str,
+    relation_kind_filter: str | None = None,
+):
+    queryset = PatientLinkedPerson.objects.all()
+    if relation_kind_filter:
+        queryset = queryset.filter(relation_kind=relation_kind_filter)
+    linked_person = get_object_or_404(queryset, pk=pk)
+    target_id = linked_person.linked_person_display_label
+    linked_person.delete()
+    _log_operation(request, success_action, 'PatientLinkedPerson', target_id)
+    messages.success(request, f'{linked_person.relation_kind_label}マスタを削除しました: {target_id}')
+    return redirect(back_url_name)
+
+
+def _linked_person_import_view(
+    request,
+    *,
+    back_url_name: str,
+    page_title: str,
+    page_subtitle: str,
+    record_label: str,
+    default_relation_kind: str | None,
+    import_action: str,
+):
+    if request.method == 'POST':
+        form = PatientLinkedPersonImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = form.cleaned_data['csv_file']
+            try:
+                import_summary = _import_patient_linked_csv(
+                    csv_file,
+                    model_cls=PatientLinkedPerson,
+                    header_aliases=LINKED_PERSON_CSV_HEADER_ALIASES,
+                    record_label=record_label,
+                    header_example='患者ID,枝番,種別,属性,姓,名,ふりかな姓,ふりかな名,有効',
+                    default_relation_kind=default_relation_kind,
+                )
+                _log_operation(
+                    request,
+                    import_action,
+                    'PatientLinkedPerson',
+                    getattr(csv_file, 'name', ''),
+                    import_summary,
+                )
+                messages.success(
+                    request,
+                    (
+                        f"{record_label}CSVを取り込みました。"
+                        f"新規 {import_summary['created']} 件、"
+                        f"更新 {import_summary['updated']} 件、"
+                        f"スキップ {import_summary['skipped']} 件。"
+                    ),
+                )
+                return redirect(back_url_name)
+            except Exception as e:
+                form.add_error('csv_file', f'CSV取込に失敗しました: {e}')
+                _log_operation(
+                    request,
+                    import_action,
+                    'PatientLinkedPerson',
+                    getattr(csv_file, 'name', ''),
+                    import_summary if 'import_summary' in locals() else None,
+                    result='failure',
+                    error_message=str(e),
+                )
+    else:
+        form = PatientLinkedPersonImportForm()
+
+    return render(request, 'anonymizer_app/linked_person_import.html', {
+        'form': form,
+        'page_title': page_title,
+        'page_subtitle': page_subtitle,
+        'back_url': reverse(back_url_name),
+        'entity_label': record_label,
+        'default_relation_kind_label': '家族' if default_relation_kind == 'family' else '後見人' if default_relation_kind == 'guardian' else '',
+    })
+
+
+def linked_person_list(request):
+    return _linked_person_list_view(
+        request,
+        page_title='患者関連者管理',
+        page_subtitle='患者に紐づく家族・後見人マスターの検索、追加、編集、削除、CSV取込を行います。個別コードは自動採番、枝番は患者内の並び順として残します。',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def linked_person_create(request):
+    return _linked_person_form_view(
+        request,
+        create=True,
+        back_url_name='close_side:linked_person_list',
+        page_title='患者関連者マスタ追加',
+        page_subtitle='患者に紐づく家族・後見人マスターを追加します。個別コードは保存時に自動採番されます。',
+        relation_kind_filter=None,
+        instance=None,
+        success_action='linked_person_created',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def linked_person_edit(request, pk):
+    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk)
+    return _linked_person_form_view(
+        request,
+        create=False,
+        back_url_name='close_side:linked_person_list',
+        page_title='患者関連者マスタ編集',
+        page_subtitle='患者に紐づく家族・後見人マスターを編集します。個別コードは変更しません。',
+        relation_kind_filter=None,
+        instance=linked_person,
+        success_action='linked_person_updated',
+    )
+
+
+@require_http_methods(["POST"])
+def linked_person_delete(request, pk):
+    return _linked_person_delete_view(
+        request,
+        pk=pk,
+        back_url_name='close_side:linked_person_list',
+        success_action='linked_person_deleted',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def linked_person_import(request):
+    return _linked_person_import_view(
+        request,
+        back_url_name='close_side:linked_person_list',
+        page_title='患者関連者CSV取込',
+        page_subtitle='患者に紐づく家族・後見人マスターをCSVから一括登録・更新します。個別コードは自動採番されるため、CSVでは患者IDと枝番を使います。',
+        record_label='患者関連者',
+        default_relation_kind=None,
+        import_action='linked_person_imported',
+    )
+
+
+def family_list(request):
+    return _linked_person_list_view(
+        request,
+        page_title='家族管理',
+        page_subtitle='患者に紐づく家族マスターの検索、追加、編集、削除、CSV取込を行います。',
+        relation_kind_filter='family',
+        create_url_name='close_side:family_create',
+        import_url_name='close_side:family_import',
+        edit_url_name='close_side:family_edit',
+        delete_url_name='close_side:family_delete',
+        clear_url_name='close_side:family_list',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def family_create(request):
+    return _linked_person_form_view(
+        request,
+        create=True,
+        back_url_name='close_side:family_list',
+        page_title='家族マスタ追加',
+        page_subtitle='患者に紐づく家族マスターを追加します。',
+        relation_kind_filter='family',
+        instance=None,
+        success_action='family_created',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def family_edit(request, pk):
+    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk, relation_kind='family')
+    return _linked_person_form_view(
+        request,
+        create=False,
+        back_url_name='close_side:family_list',
+        page_title='家族マスタ編集',
+        page_subtitle='患者に紐づく家族マスターを編集します。',
+        relation_kind_filter='family',
+        instance=linked_person,
+        success_action='family_updated',
+    )
+
+
+@require_http_methods(["POST"])
+def family_delete(request, pk):
+    return _linked_person_delete_view(
+        request,
+        pk=pk,
+        back_url_name='close_side:family_list',
+        success_action='family_deleted',
+        relation_kind_filter='family',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def family_import(request):
+    return _linked_person_import_view(
+        request,
+        back_url_name='close_side:family_list',
+        page_title='家族CSV取込',
+        page_subtitle='患者に紐づく家族マスターをCSVから一括登録・更新します。',
+        record_label='家族',
+        default_relation_kind='family',
+        import_action='family_imported',
+    )
+
+
+def guardian_list(request):
+    return _linked_person_list_view(
+        request,
+        page_title='後見人管理',
+        page_subtitle='患者に紐づく後見人マスターの検索、追加、編集、削除、CSV取込を行います。',
+        relation_kind_filter='guardian',
+        create_url_name='close_side:guardian_create',
+        import_url_name='close_side:guardian_import',
+        edit_url_name='close_side:guardian_edit',
+        delete_url_name='close_side:guardian_delete',
+        clear_url_name='close_side:guardian_list',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def guardian_create(request):
+    return _linked_person_form_view(
+        request,
+        create=True,
+        back_url_name='close_side:guardian_list',
+        page_title='後見人マスタ追加',
+        page_subtitle='患者に紐づく後見人マスターを追加します。',
+        relation_kind_filter='guardian',
+        instance=None,
+        success_action='guardian_created',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def guardian_edit(request, pk):
+    linked_person = get_object_or_404(PatientLinkedPerson, pk=pk, relation_kind='guardian')
+    return _linked_person_form_view(
+        request,
+        create=False,
+        back_url_name='close_side:guardian_list',
+        page_title='後見人マスタ編集',
+        page_subtitle='患者に紐づく後見人マスターを編集します。',
+        relation_kind_filter='guardian',
+        instance=linked_person,
+        success_action='guardian_updated',
+    )
+
+
+@require_http_methods(["POST"])
+def guardian_delete(request, pk):
+    return _linked_person_delete_view(
+        request,
+        pk=pk,
+        back_url_name='close_side:guardian_list',
+        success_action='guardian_deleted',
+        relation_kind_filter='guardian',
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def guardian_import(request):
+    return _linked_person_import_view(
+        request,
+        back_url_name='close_side:guardian_list',
+        page_title='後見人CSV取込',
+        page_subtitle='患者に紐づく後見人マスターをCSVから一括登録・更新します。',
+        record_label='後見人',
+        default_relation_kind='guardian',
+        import_action='guardian_imported',
+    )
 
 
 def prompts_list(request):

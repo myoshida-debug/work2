@@ -1,6 +1,6 @@
 from django.conf import settings
+from django.db import models, transaction
 from django.utils import timezone
-from django.db import models
 
 
 class RestoreMetadata(models.Model):
@@ -48,7 +48,34 @@ class RestoredResult(models.Model):
         return f'{self.result_id or self.source_id} ({self.template_type})'
 
 
-class Patient(models.Model):
+class PersonNameMixin(models.Model):
+    class Meta:
+        abstract = True
+
+    @property
+    def full_name(self) -> str:
+        return f'{self.surname}{self.given_name}'.strip()
+
+    @property
+    def kana_full_name(self) -> str:
+        return f'{self.kana_surname}{self.kana_given_name}'.strip()
+
+    def name_variants(self) -> list[str]:
+        variants: list[str] = []
+        for candidate in (
+            self.full_name,
+            f'{self.surname} {self.given_name}'.strip(),
+            f'{self.surname}　{self.given_name}'.strip(),
+            self.kana_full_name,
+            f'{self.kana_surname} {self.kana_given_name}'.strip(),
+            f'{self.kana_surname}　{self.kana_given_name}'.strip(),
+        ):
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+        return variants
+
+
+class Patient(PersonNameMixin):
     SEX_CHOICES = [
         ('male', '男'),
         ('female', '女'),
@@ -73,27 +100,147 @@ class Patient(models.Model):
     def __str__(self):
         return f'{self.patient_id} {self.full_name}'.strip()
 
-    @property
-    def full_name(self) -> str:
-        return f'{self.surname}{self.given_name}'.strip()
+
+class Staff(PersonNameMixin):
+    staff_id = models.CharField(max_length=255, unique=True, db_index=True)
+    surname = models.CharField(max_length=255, blank=True, default='')
+    given_name = models.CharField(max_length=255, blank=True, default='')
+    kana_surname = models.CharField(max_length=255, blank=True, default='')
+    kana_given_name = models.CharField(max_length=255, blank=True, default='')
+    role_label = models.CharField(max_length=255, blank=True, default='職員')
+    occupation_label = models.CharField(max_length=255, blank=True, default='')
+    position_label = models.CharField(max_length=255, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['staff_id']
+
+    def __str__(self):
+        return f'{self.staff_id} {self.full_name} {self.display_role_label}'.strip()
+
+    def save(self, *args, **kwargs):
+        self.role_label = self.occupation_label or self.position_label or self.role_label or '職員'
+        super().save(*args, **kwargs)
 
     @property
-    def kana_full_name(self) -> str:
-        return f'{self.kana_surname}{self.kana_given_name}'.strip()
+    def anonymization_label_prefix(self) -> str:
+        return (self.occupation_label or self.role_label or self.position_label or '職員').strip() or '職員'
 
-    def name_variants(self) -> list[str]:
-        variants: list[str] = []
-        for candidate in (
-            self.full_name,
-            f'{self.surname} {self.given_name}'.strip(),
-            f'{self.surname}　{self.given_name}'.strip(),
-            self.kana_full_name,
-            f'{self.kana_surname} {self.kana_given_name}'.strip(),
-            f'{self.kana_surname}　{self.kana_given_name}'.strip(),
-        ):
-            if candidate and candidate not in variants:
-                variants.append(candidate)
-        return variants
+    @property
+    def display_role_label(self) -> str:
+        parts = [part.strip() for part in (self.occupation_label, self.position_label) if str(part or '').strip()]
+        if parts:
+            return ' / '.join(parts)
+        return (self.role_label or '職員').strip() or '職員'
+
+
+class PatientLinkedPersonMixin(PersonNameMixin):
+    class Meta:
+        abstract = True
+
+    RELATION_KIND_CHOICES = [
+        ('family', '家族'),
+        ('guardian', '後見人'),
+    ]
+    LINKED_PERSON_CODE_PREFIX = 'LP'
+
+    patient_id = models.CharField(max_length=255, db_index=True)
+    branch_no = models.PositiveIntegerField(verbose_name='枝番', db_index=True)
+    linked_person_code = models.CharField(
+        verbose_name='個別コード',
+        max_length=16,
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    relation_kind = models.CharField(max_length=16, verbose_name='種別', choices=RELATION_KIND_CHOICES, default='family', db_index=True)
+    surname = models.CharField(max_length=255, blank=True, default='')
+    given_name = models.CharField(max_length=255, blank=True, default='')
+    kana_surname = models.CharField(max_length=255, blank=True, default='')
+    kana_given_name = models.CharField(max_length=255, blank=True, default='')
+    relationship_label = models.CharField(max_length=255, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.relation_kind = str(self.relation_kind or 'family').strip() or 'family'
+        self.relationship_label = str(self.relationship_label or '').strip()
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            expected_code = self.build_linked_person_code(self.pk)
+            if expected_code and self.linked_person_code != expected_code:
+                type(self).objects.filter(pk=self.pk).update(linked_person_code=expected_code)
+                self.linked_person_code = expected_code
+
+    @classmethod
+    def build_linked_person_code(cls, pk: int | None) -> str:
+        if not pk:
+            return ''
+        return f'{cls.LINKED_PERSON_CODE_PREFIX}{int(pk):08d}'
+
+    @property
+    def branch_display_label(self) -> str:
+        patient_id = str(self.patient_id or '').strip()
+        branch_no = self.branch_no
+        if patient_id and branch_no:
+            return f'{patient_id}-{branch_no}'
+        if branch_no:
+            return str(branch_no)
+        return patient_id
+
+    @property
+    def linked_person_display_label(self) -> str:
+        code = str(self.linked_person_code or '').strip()
+        branch = self.branch_display_label
+        if code and branch and code != branch:
+            return f'{code} ({branch})'
+        return code or branch
+
+    @property
+    def anonymization_label_prefix(self) -> str:
+        relationship = str(self.relationship_label or '').strip()
+        relation_kind = str(self.relation_kind or '').strip()
+        if relation_kind == 'guardian':
+            return relationship or '後見人'
+        if relationship:
+            return f'家族（{relationship}）'
+        return '家族'
+
+    @property
+    def patient_label(self) -> str:
+        return str(self.patient_id or '').strip()
+
+    @property
+    def relation_kind_label(self) -> str:
+        relation_kind = str(self.relation_kind or '').strip()
+        if relation_kind == 'guardian':
+            return '後見人'
+        return '家族'
+
+    @property
+    def relationship_display_label(self) -> str:
+        return str(self.relationship_label or '').strip()
+
+
+class PatientLinkedPerson(PatientLinkedPersonMixin):
+    class Meta:
+        ordering = ['patient_id', 'branch_no']
+        constraints = [
+            models.UniqueConstraint(fields=['patient_id', 'branch_no'], name='unique_patient_linked_person_branch_no'),
+        ]
+
+    def __str__(self):
+        return f'{self.linked_person_display_label} {self.full_name} {self.relation_kind_label} {self.relationship_display_label}'.strip()
+
+
+# Backward-compatible aliases for older imports.
+PatientFamily = PatientLinkedPerson
+Guardian = PatientLinkedPerson
 
 
 class Prompt(models.Model):

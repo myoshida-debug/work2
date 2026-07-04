@@ -1,5 +1,16 @@
 from django.contrib import admin
-from .models import AnonymizationRule, OperationLog, Patient, Prompt, RestoredResult, RestoreMetadata, Template, TemplateInputField
+from .models import (
+    AnonymizationRule,
+    OperationLog,
+    Patient,
+    PatientLinkedPerson,
+    Prompt,
+    RestoredResult,
+    RestoreMetadata,
+    Staff,
+    Template,
+    TemplateInputField,
+)
 
 
 @admin.register(RestoreMetadata)
@@ -28,6 +39,22 @@ class PatientAdmin(admin.ModelAdmin):
     search_fields = ('patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'primary_diagnosis')
     list_filter = ('sex',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(Staff)
+class StaffAdmin(admin.ModelAdmin):
+    list_display = ('staff_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'occupation_label', 'position_label', 'is_active', 'updated_at')
+    search_fields = ('staff_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'occupation_label', 'position_label', 'role_label')
+    list_filter = ('is_active',)
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(PatientLinkedPerson)
+class PatientLinkedPersonAdmin(admin.ModelAdmin):
+    list_display = ('linked_person_code', 'patient_id', 'branch_no', 'relation_kind', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'relationship_label', 'is_active', 'updated_at')
+    search_fields = ('linked_person_code', 'patient_id', 'surname', 'given_name', 'kana_surname', 'kana_given_name', 'relation_kind', 'relationship_label')
+    list_filter = ('relation_kind', 'is_active')
+    readonly_fields = ('linked_person_code', 'created_at', 'updated_at')
 
 
 @admin.register(Template)
