@@ -1,0 +1,2788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>CloseSide 匿名化画面</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #fff;
+      --surface: #f7f8fb;
+      --panel: #fff;
+      --line: #d6dbe6;
+      --line-strong: #a8b1c2;
+      --text: #1d2433;
+      --muted: #657084;
+      --blue: #1f5eff;
+      --blue-dark: #1747bd;
+      --green: #138a5b;
+      --amber: #a96a00;
+      --danger: #b42318;
+      --shadow: 0 10px 26px rgba(29, 36, 51, 0.08);
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 4px;
+    }
+
+    button,
+    select,
+    textarea,
+    input {
+      font: inherit;
+    }
+
+    button {
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+
+    .page {
+      min-height: 100vh;
+      background: #fff;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 18px 28px;
+    }
+
+    .brand-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .top-nav form {
+      margin: 0;
+    }
+
+    .top-nav a,
+    .top-nav button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--blue-dark);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .top-nav a:hover,
+    .top-nav button:hover {
+      border-color: var(--blue);
+      background: #f3f7ff;
+    }
+
+    .content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .error-list {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid #f0b8b2;
+      border-left: 5px solid var(--danger);
+      border-radius: 6px;
+      background: #fff7f6;
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .workspace-form {
+      display: grid;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .workspace-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(380px, 0.6fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .workspace-column {
+      display: grid;
+      gap: 20px;
+      min-width: 0;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 56px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .panel-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .input-panel {
+      display: grid;
+      gap: 20px;
+    }
+
+    .input-mode-panel .panel-body {
+      display: grid;
+      gap: 14px;
+    }
+
+    .input-mode-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .input-mode-options label {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .input-mode-options input {
+      margin: 0;
+    }
+
+    .mode-actions {
+      justify-content: flex-start;
+    }
+
+    .structured-input-panel[hidden],
+    .editor-grid[hidden],
+    .voice-input-panel[hidden],
+    .free-input-panel[hidden] {
+      display: none;
+    }
+
+    .structured-fields {
+      display: grid;
+      gap: 16px;
+    }
+
+    .structured-section-heading {
+      margin: 8px 0 0;
+      padding: 10px 14px;
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: #f7f9ff;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    .structured-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .structured-field-input {
+      min-height: 102px;
+    }
+
+    .structured-checkbox-group {
+      display: grid;
+      gap: 12px;
+    }
+
+    .structured-checkbox-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 14px;
+    }
+
+    .structured-checkbox-option {
+      display: inline-flex;
+      gap: 8px;
+      align-items: flex-start;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .structured-checkbox-option input {
+      margin-top: 4px;
+      flex: 0 0 auto;
+    }
+
+    .structured-other-row {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcff;
+    }
+
+    .structured-other-toggle {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .structured-other-toggle input {
+      margin: 0;
+    }
+
+    .structured-other-input {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .structured-other-hidden {
+      display: none;
+    }
+
+    .required-mark {
+      margin-left: 8px;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .field-help-text {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .schema-note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .free-upload-panel {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .free-upload-panel[hidden] {
+      display: none;
+    }
+
+    .text-file-upload {
+      display: grid;
+      gap: 10px;
+    }
+
+    .text-file-upload input[type="file"] {
+      width: 100%;
+      max-width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .text-file-upload input[type="file"]:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .file-status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .voice-controls {
+      display: grid;
+      gap: 14px;
+    }
+
+    .voice-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .voice-preview audio {
+      width: 100%;
+    }
+
+    .voice-transcript .field-area {
+      min-height: 220px;
+    }
+
+    .voice-status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .editor-grid.structured-mode {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .editor-grid.voice-mode {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .editor-grid.structured-mode .input-text,
+    .editor-grid.voice-mode .input-text {
+      display: none;
+    }
+
+    .editor-column {
+      min-width: 0;
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .field-area {
+      width: 100%;
+      min-height: 320px;
+      padding: 12px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.65;
+      resize: vertical;
+      outline: none;
+    }
+
+    .field-area:focus,
+    select:focus,
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .field-area.structured-date-input {
+      width: 12rem;
+      min-width: 12rem;
+      max-width: 100%;
+      min-height: 44px;
+      height: 44px;
+      justify-self: start;
+      align-self: start;
+    }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .plain-button,
+    .label-action-button,
+    .dmz-button {
+      min-height: 40px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 13px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .plain-button:disabled,
+    .label-action-button:disabled,
+    .dmz-button:disabled {
+      color: #8a94a6;
+      background: #eef1f6;
+      cursor: default;
+      transform: none;
+    }
+
+    .primary-button {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .primary-button:not(:disabled):hover {
+      background: var(--blue-dark);
+      border-color: var(--blue-dark);
+    }
+
+    .green-button {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+
+    .amber-button {
+      border-color: #d99a32;
+      background: #fff8ed;
+      color: var(--amber);
+    }
+
+    .template-row {
+      display: grid;
+      grid-template-columns: minmax(260px, 420px) auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .patient-panel[hidden] {
+      display: none;
+    }
+
+    .patient-panel .panel-body {
+      display: grid;
+      gap: 14px;
+    }
+
+    .patient-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 16px;
+    }
+
+    .patient-summary-field {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .patient-summary-field.is-full-width {
+      grid-column: 1 / -1;
+    }
+
+    .patient-summary-input,
+    .patient-summary-textarea {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 15px;
+      line-height: 1.5;
+      outline: none;
+    }
+
+    .patient-summary-input {
+      min-height: 44px;
+      height: 44px;
+    }
+
+    .patient-summary-textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .patient-summary-input:focus,
+    .patient-summary-textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .patient-summary-input[readonly],
+    .patient-summary-textarea[readonly] {
+      background: #f8fafc;
+      color: #31415b;
+    }
+
+    .patient-message {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .template-field select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 15px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    .label-panel .panel-body {
+      padding: 0;
+    }
+
+    .label-table-wrap {
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .label-items {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      table-layout: fixed;
+    }
+
+    .label-items th,
+    .label-items td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      vertical-align: top;
+    }
+
+    .label-items th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    .label-edit-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 8px;
+      font-size: 14px;
+      line-height: 1.35;
+      outline: none;
+    }
+
+    .label-edit-input:focus {
+      border-color: var(--blue);
+      background: #f8fbff;
+    }
+
+    .label-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 16px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .edit-status {
+      min-height: 22px;
+      margin: 0 16px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .label-delete-button {
+      min-height: 32px;
+      padding: 5px 9px;
+      border-color: #f0b8b2;
+      color: var(--danger);
+    }
+
+    .diff-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .diff-document {
+      min-width: 0;
+    }
+
+    .diff-output {
+      min-height: 220px;
+      max-height: 420px;
+      margin: 0;
+      overflow: auto;
+      padding: 12px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .anonymized-label.changed {
+      border: 1px solid #ffe08a;
+      border-radius: 4px;
+      background: #fff3bf;
+      color: #3d3d3d;
+      padding: 1px 4px;
+      font-weight: 800;
+    }
+
+    .dmz-form {
+      display: flex;
+      justify-content: flex-end;
+      max-width: 1400px;
+      margin: 20px auto 0;
+      padding: 0 28px 32px;
+    }
+
+    .dmz-button {
+      min-width: 180px;
+      border-color: #29364f;
+      background: #29364f;
+      color: #fff;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 980px) {
+      .header-inner,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .header-inner,
+      .workspace-columns,
+      .editor-grid,
+      .diff-grid,
+      .template-row {
+        grid-template-columns: 1fr;
+      }
+
+      .header-inner {
+        display: grid;
+      }
+
+      .top-nav {
+        justify-content: flex-start;
+      }
+
+      .field-area {
+        min-height: 240px;
+      }
+
+      .field-area.structured-date-input {
+        width: min(100%, 12rem);
+        min-width: 0;
+        min-height: 44px;
+        height: 44px;
+        justify-self: start;
+      }
+
+      .dmz-form {
+        justify-content: flex-start;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="brand">
+          <h1 class="brand-title">CloseSide 匿名化</h1>
+        </div>
+        <nav class="top-nav" aria-label="主要メニュー">
+          <a href="{% url 'close_side:menu' %}">CloseSideメニュー</a>
+          <a href="{% url 'close_side:home' %}">匿名化画面へ</a>
+          <a href="{% url 'close_side:prompts_list' %}">プロンプト一覧</a>
+          <a href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴</a>
+          <a href="{% url 'close_side:result_import_list' %}">返却DMZから取り込み</a>
+          <a href="{% url 'close_side:templates_list' %}">テンプレート管理</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'close_side:patient_list' %}">患者管理</a>
+            <a href="{% url 'close_side:staff_list' %}">職員管理</a>
+            <a href="{% url 'close_side:linked_person_list' %}">患者関連者管理</a>
+          {% endif %}
+          <a href="{% url 'open_side:dmz_list' %}">OpenSide</a>
+          {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'close_side:operation_logs' %}">操作ログ</a>
+            <a href="{% url 'close_side:user_list' %}">ユーザー管理</a>
+          {% endif %}
+          <form method="post" action="{% url 'close_side:logout' %}">
+            {% csrf_token %}
+            <button type="submit">{{ request.user.username }} / ログアウト</button>
+          </form>
+        </nav>
+      </div>
+    </header>
+
+    <div class="content">
+      {% if form.errors or structured_field_errors %}
+        <div class="error-list">
+          入力内容を確認してください。
+          {{ form.non_field_errors }}
+          {{ form.text.errors }}
+          {{ form.text_file.errors }}
+          {{ form.transcript_text.errors }}
+          {{ form.template.errors }}
+          {{ form.input_mode.errors }}
+          {{ form.structured_input.errors }}
+          {{ form.patient_id.errors }}
+          {% for field in structured_fields %}
+            {% if field.error %}
+              <div>{{ field.error }}</div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" id="anonymize-form" class="workspace-form" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.structured_input }}
+        {{ form.transcript_source }}
+        {{ form.text_file_snapshot }}
+
+        <section class="panel input-mode-panel" aria-labelledby="input-mode-panel-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="input-mode-panel-title">入力方式</h2>
+          </div>
+          <div class="panel-body">
+            <div class="input-mode-options">
+              {{ form.input_mode }}
+            </div>
+          </div>
+        </section>
+
+        <div class="workspace-columns">
+          <div class="workspace-column">
+            <section class="panel input-panel" aria-labelledby="text-panel-title">
+              <div class="panel-header">
+                <h2 class="panel-title" id="text-panel-title">文章編集</h2>
+              </div>
+              <div class="panel-body">
+                <div class="template-row">
+                  <div class="template-field">
+                    <label class="field-label" for="{{ form.template.id_for_label }}">テンプレート</label>
+                    {{ form.template }}
+                  </div>
+                  <button class="plain-button green-button" type="button" id="build-prompt-button">プロンプト作成</button>
+                </div>
+
+                {% if show_patient_panel %}
+                  <section class="panel patient-panel" id="patient-panel" data-lookup-url-template="{{ patient_lookup_url_template }}">
+                    <div class="panel-header">
+                      <h3 class="panel-title">患者マスタ連携</h3>
+                      <span class="badge">会議以外</span>
+                    </div>
+                    <div class="panel-body">
+                      <p class="schema-note">患者IDを入力すると、匿名化ID、氏名、生年月日、性別、主病名を自動取得します。</p>
+                      <div class="patient-summary-grid">
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="{{ form.patient_id.id_for_label }}">患者ID</label>
+                          {{ form.patient_id }}
+                          {% if form.patient_id.errors %}<div class="field-error">{{ form.patient_id.errors }}</div>{% endif %}
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-anonymized-id">匿名化ID</label>
+                          <input class="patient-summary-input" id="patient-anonymized-id" type="text" readonly value="{{ patient_profile.anonymized_patient_id|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-full-name">氏名</label>
+                          <input class="patient-summary-input" id="patient-full-name" type="text" readonly value="{{ patient_profile.full_name|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-kana-full-name">ふりかな</label>
+                          <input class="patient-summary-input" id="patient-kana-full-name" type="text" readonly value="{{ patient_profile.kana_full_name|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-birth-date">生年月日</label>
+                          <input class="patient-summary-input" id="patient-birth-date" type="text" readonly value="{{ patient_profile.birth_date_display|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field">
+                          <label class="field-label" for="patient-sex">性別</label>
+                          <input class="patient-summary-input" id="patient-sex" type="text" readonly value="{{ patient_profile.sex_display|default_if_none:'' }}">
+                        </div>
+                        <div class="patient-summary-field is-full-width">
+                          <label class="field-label" for="patient-primary-diagnosis">主病名</label>
+                          <textarea class="patient-summary-textarea" id="patient-primary-diagnosis" readonly rows="2">{% if patient_profile.primary_diagnosis %}{{ patient_profile.primary_diagnosis }}{% endif %}</textarea>
+                        </div>
+                        <div class="patient-message is-full-width" id="patient-lookup-message" aria-live="polite"></div>
+                      </div>
+                    </div>
+                  </section>
+                {% endif %}
+
+                <div class="actions-row mode-actions">
+                  <button class="plain-button" type="button" id="clear-input">クリア</button>
+                  <button class="plain-button primary-button" type="submit">匿名化する</button>
+                </div>
+
+                <div id="structured-input-panel" class="panel structured-input-panel" {% if input_mode != 'structured' %}hidden{% endif %}>
+                  <div class="panel-header">
+                    <h3 class="panel-title">テンプレート項目入力</h3>
+                  </div>
+                  <div class="panel-body">
+                    <div id="structured-input-fields" class="structured-fields">
+                      {% for field in structured_fields %}
+                        {% if field.section_title %}
+                          {% ifchanged field.section_title %}
+                            <div class="structured-section-heading">{{ field.section_title }}</div>
+                          {% endifchanged %}
+                        {% endif %}
+                        <div class="structured-field" data-field-key="{{ field.key }}" data-input-type="{{ field.input_type|default:'textarea' }}" data-has-checkbox-options="{% if field.has_checkbox_options %}true{% else %}false{% endif %}">
+                          <label class="field-label" {% if not field.has_checkbox_options %}for="structured-{{ field.key }}"{% endif %}>
+                            {{ field.label }}
+                            {% if field.required %}<span class="required-mark">必須</span>{% endif %}
+                          </label>
+                          {% if field.has_checkbox_options %}
+                            <div class="structured-checkbox-group">
+                              <div class="structured-checkbox-options">
+                                {% if field.options %}
+                                  {% for option in field.options %}
+                                    {% with option_value=option.value|default:option option_label=option.label|default:option %}
+                                      <label class="structured-checkbox-option">
+                                        <input
+                                          type="checkbox"
+                                          name="structured__{{ field.key }}"
+                                          value="{{ option_value }}"
+                                          data-structured-option="true"
+                                          {% if field.selected_values and option_value in field.selected_values %}checked{% endif %}
+                                        >
+                                        <span>{{ option_label }}</span>
+                                      </label>
+                                    {% endwith %}
+                                  {% endfor %}
+                                {% else %}
+                                  <p class="field-help-text">チェックボックス項目はまだ登録されていません。</p>
+                                {% endif %}
+                              </div>
+                              {% if field.allow_other %}
+                                <div class="structured-other-row" data-structured-other-row="true">
+                                  <label class="structured-other-toggle">
+                                    <input
+                                      type="checkbox"
+                                      name="structured__{{ field.key }}__other_checked"
+                                      value="1"
+                                      data-structured-other-toggle="true"
+                                      {% if field.other_checked or field.other_text %}checked{% endif %}
+                                    >
+                                    <span>{{ field.other_label|default:"その他" }}</span>
+                                  </label>
+                                  <textarea
+                                    class="field-area structured-other-input"
+                                    name="structured__{{ field.key }}__other"
+                                    data-structured-other-input="true"
+                                    rows="2"
+                                    style="min-height: calc(2 * 1.65em + 24px);"
+                                    placeholder="{{ field.other_placeholder|default:'自由入力' }}"
+                                  >{% if field.other_text %}{{ field.other_text }}{% endif %}</textarea>
+                                </div>
+                              {% endif %}
+                              {% if field.help_text %}<p class="field-help-text">{{ field.help_text }}</p>{% endif %}
+                            </div>
+                          {% elif field.input_type == 'date' %}
+                            <input
+                              class="field-area structured-field-input structured-date-input"
+                              id="structured-{{ field.key }}"
+                              type="date"
+                              name="structured__{{ field.key }}"
+                              data-structured-input="true"
+                              value="{% if field.value %}{{ field.value }}{% endif %}"
+                            >
+                          {% else %}
+                            <textarea
+                              class="field-area structured-field-input"
+                              id="structured-{{ field.key }}"
+                              name="structured__{{ field.key }}"
+                              data-structured-input="true"
+                              rows="{{ field.textarea_rows|default:3 }}"
+                              style="min-height: calc({{ field.textarea_rows|default:3 }} * 1.65em + 24px);"
+                            >{% if field.value %}{{ field.value }}{% endif %}</textarea>
+                          {% endif %}
+                          {% if field.error %}<div class="field-error">{{ field.error }}</div>{% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                    <p class="schema-note">文書種別に応じた項目を入力すると、本文を自動生成して匿名化します。</p>
+                  </div>
+                </div>
+
+                <div id="voice-input-panel" class="panel voice-input-panel" {% if input_mode != 'voice' %}hidden{% endif %}>
+                  <div class="panel-header">
+                    <h3 class="panel-title">録音・文字起こし入力</h3>
+                  </div>
+                  <div class="panel-body">
+                    <div class="voice-controls">
+                      <div class="voice-toolbar">
+                        <button class="plain-button primary-button" type="button" id="voice-record-start">録音開始</button>
+                        <button class="plain-button" type="button" id="voice-record-stop" disabled>録音停止</button>
+                        <button class="plain-button" type="button" id="voice-transcribe">文字起こし実行</button>
+                      </div>
+                      <div class="voice-upload">
+                        <label class="field-label" for="voice-audio-file">音声ファイルアップロード</label>
+                        <input id="voice-audio-file" type="file" accept="audio/*">
+                      </div>
+                      <div class="voice-preview">
+                        <label class="field-label" for="voice-audio-preview">録音再生プレビュー</label>
+                        <audio id="voice-audio-preview" controls hidden preload="none"></audio>
+                      </div>
+                      <div class="voice-transcript">
+                        <label class="field-label" for="{{ form.transcript_text.id_for_label }}">文字起こし結果</label>
+                        {{ form.transcript_text }}
+                      </div>
+                      <p class="schema-note">この文字起こし結果を匿名化前文章として使用します。</p>
+                      <div class="voice-status" id="voice-status" aria-live="polite"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="free-upload-panel" id="free-upload-panel" {% if input_mode != 'free' %}hidden{% endif %}>
+                  <label class="field-label" for="{{ form.text_file.id_for_label }}">ファイルを読み込む</label>
+                  <div class="text-file-upload">
+                    {{ form.text_file }}
+                    <div class="file-status" id="text-file-status" aria-live="polite"></div>
+                    <p class="schema-note">`.txt` / `.md` / `.csv` / `.log` / `.json` / `.xlsx` / `.docx` / `.pdf` に対応します。Excel と Word は `.xlsx` / `.docx` 形式を想定しています。</p>
+                  </div>
+                </div>
+
+                <div class="editor-grid {% if input_mode == 'structured' %}structured-mode{% elif input_mode == 'voice' %}voice-mode{% endif %}" id="anonymize-grid">
+                  <div class="editor-column input-text free-input-panel" id="free-input-panel" {% if input_mode != 'free' %}hidden{% endif %}>
+                    <label class="field-label" for="{{ form.text.id_for_label }}">入力文章</label>
+                    {{ form.text }}
+                  </div>
+
+                  <div class="editor-column">
+                    <label class="field-label" for="anonymized-output">匿名化文章</label>
+                    <textarea class="field-area anonymized-output" id="anonymized-output">{% if text_items %}{{ text_items.0.anonymized }}{% endif %}</textarea>
+                    <div class="actions-row">
+                      <button class="plain-button amber-button" type="button" id="reanonymize-from-labels">再匿名化</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {% if text_items %}
+              <section class="panel compare-panel" aria-labelledby="compare-panel-title">
+                <div class="panel-header">
+                  <h2 class="panel-title" id="compare-panel-title">匿名化前後の変更箇所</h2>
+                </div>
+                <div class="panel-body">
+                  <div class="diff-grid">
+                    <div class="diff-document">
+                      <label class="field-label">匿名化前文書</label>
+                      <pre class="diff-output">{{ text_items.0.original_html|safe }}</pre>
+                    </div>
+                    <div class="diff-document">
+                      <label class="field-label">匿名化後文書</label>
+                      <pre class="diff-output">{{ text_items.0.anonymized_html|safe }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            {% endif %}
+          </div>
+
+          <div class="workspace-column">
+            <section class="panel label-panel" aria-labelledby="label-panel-title">
+              <div class="panel-header">
+                <h2 class="panel-title" id="label-panel-title">匿名ラベル</h2>
+              </div>
+              <div class="panel-body">
+                <div class="label-table-wrap">
+                  <table class="label-items">
+                    <thead>
+                      <tr>
+                        <th>匿名前文字</th>
+                        <th>匿名後文字</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="label-items-body">
+                      {% for label, original in restore_map_items %}
+                        <tr class="label-row" data-current-label="{{ label }}">
+                          <td>
+                            <input class="label-edit-input original-value" type="text" value="{{ original }}" aria-label="匿名前文字">
+                          </td>
+                          <td>
+                            <input class="label-edit-input label-value" type="text" value="{{ label }}" aria-label="匿名後文字">
+                          </td>
+                          <td>
+                            <button class="label-action-button label-delete-button delete-label-row" type="button">削除</button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                <div class="label-actions">
+                  <button class="label-action-button" type="button" id="add-label-row">匿名ラベル追加</button>
+                  <button class="label-action-button primary-button" type="button" id="apply-label-edits" {% if not restore_map_items %}disabled{% endif %}>ラベル反映</button>
+                </div>
+                <div class="edit-status" id="edit-status" aria-live="polite"></div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <form class="dmz-form" id="dmz-export-form" method="post" action="{% url 'close_side:dmz_export' %}">
+      {% csrf_token %}
+      <input type="hidden" name="source_id" id="source-id-field" value="{{ source_id|default_if_none:'' }}">
+      <button class="dmz-button" type="submit" {% if not source_id %}disabled{% endif %}>DMZへ出力</button>
+    </form>
+  </main>
+
+  {{ template_input_schemas|json_script:"template-input-schemas" }}
+
+  <script>
+    const anonymizeForm = document.getElementById('anonymize-form');
+    const textArea = document.querySelector('textarea[name="text"]');
+    const templateSelect = document.querySelector('select[name="template"]');
+    const sourceIdField = document.getElementById('source-id-field');
+    const statusArea = document.getElementById('edit-status');
+    const labelItemsBody = document.getElementById('label-items-body');
+    const compareOutputs = Array.from(document.querySelectorAll('.compare-panel .diff-output'));
+    const compareOriginalOutput = compareOutputs[0] || null;
+    const compareAnonymizedOutput = compareOutputs[1] || null;
+    const inputModeRadios = Array.from(document.querySelectorAll('input[name="input_mode"]'));
+    const structuredPanel = document.getElementById('structured-input-panel');
+    const voicePanel = document.getElementById('voice-input-panel');
+    const structuredFieldsHost = document.getElementById('structured-input-fields');
+    const freeUploadPanel = document.getElementById('free-upload-panel');
+    const freeInputPanel = document.getElementById('free-input-panel');
+    const inputGrid = document.getElementById('anonymize-grid');
+    const structuredInputHidden = document.querySelector('input[name="structured_input"]');
+    const transcriptTextArea = document.querySelector('textarea[name="transcript_text"]');
+    const transcriptSourceField = document.querySelector('input[name="transcript_source"]');
+    const textFileInput = document.querySelector('input[name="text_file"]');
+    const textFileSnapshotField = document.querySelector('input[name="text_file_snapshot"]');
+    const textFileStatusArea = document.getElementById('text-file-status');
+    const textFilePreviewUrl = '{% url "close_side:text_file_preview" %}';
+    const templateInputSchemasScript = document.getElementById('template-input-schemas');
+    const templateInputSchemas = templateInputSchemasScript ? JSON.parse(templateInputSchemasScript.textContent || '{}') : {};
+    const clearButton = document.getElementById('clear-input');
+    const reanonymizeButton = document.getElementById('reanonymize-from-labels');
+    const anonymizedOutput = document.getElementById('anonymized-output');
+    const voiceRecordStartButton = document.getElementById('voice-record-start');
+    const voiceRecordStopButton = document.getElementById('voice-record-stop');
+    const voiceTranscribeButton = document.getElementById('voice-transcribe');
+    const voiceTranscribeButtonLabel = voiceTranscribeButton ? voiceTranscribeButton.textContent : '文字起こし実行';
+    const voiceAudioFileInput = document.getElementById('voice-audio-file');
+    const voiceAudioPreview = document.getElementById('voice-audio-preview');
+    const voiceStatusArea = document.getElementById('voice-status');
+    const patientPanel = document.getElementById('patient-panel');
+    const patientLookupMessage = document.getElementById('patient-lookup-message');
+    const patientLookupUrlTemplate = patientPanel ? (patientPanel.dataset.lookupUrlTemplate || '') : '';
+    const patientIdInput = patientPanel ? patientPanel.querySelector('input[name="patient_id"]') : null;
+    const patientAnonymizedIdInput = document.getElementById('patient-anonymized-id');
+    const patientFullNameInput = document.getElementById('patient-full-name');
+    const patientKanaFullNameInput = document.getElementById('patient-kana-full-name');
+    const patientBirthDateInput = document.getElementById('patient-birth-date');
+    const patientSexInput = document.getElementById('patient-sex');
+    const patientPrimaryDiagnosisInput = document.getElementById('patient-primary-diagnosis');
+    let freeTextSnapshot = textArea ? textArea.value : '';
+    let voiceRecordingStream = null;
+    let voiceRecorder = null;
+    let voiceRecordedChunks = [];
+    let voiceRecordedBlob = null;
+    let voicePreviewObjectUrl = '';
+    let voiceResetPending = false;
+    let patientLookupTimer = null;
+    let patientLookupRequestToken = 0;
+    let textFilePreviewRequestToken = 0;
+
+    if (textArea) {
+      textArea.classList.add('field-area');
+      textArea.removeAttribute('rows');
+      textArea.removeAttribute('cols');
+    }
+
+    function getCsrfToken() {
+      const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+      return tokenInput ? tokenInput.value : '';
+    }
+
+    function setStatus(message) {
+      if (statusArea) {
+        statusArea.textContent = message;
+      }
+    }
+
+    function setPatientLookupMessage(message, isError = false) {
+      if (!patientLookupMessage) {
+        return;
+      }
+      patientLookupMessage.textContent = message || '';
+      patientLookupMessage.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+
+    function setPatientFieldValue(element, value) {
+      if (!element) {
+        return;
+      }
+      element.value = value || '';
+    }
+
+    function setPatientProfileFields(profile = {}) {
+      setPatientFieldValue(patientAnonymizedIdInput, profile.anonymized_patient_id || '');
+      setPatientFieldValue(patientFullNameInput, profile.full_name || '');
+      setPatientFieldValue(patientKanaFullNameInput, profile.kana_full_name || '');
+      setPatientFieldValue(patientBirthDateInput, profile.birth_date_display || '');
+      setPatientFieldValue(patientSexInput, profile.sex_display || '');
+      if (patientPrimaryDiagnosisInput) {
+        patientPrimaryDiagnosisInput.value = profile.primary_diagnosis || '';
+      }
+    }
+
+    function clearPatientProfileFields() {
+      setPatientProfileFields({});
+    }
+
+    function cancelPatientLookup() {
+      patientLookupRequestToken += 1;
+      if (patientLookupTimer) {
+        window.clearTimeout(patientLookupTimer);
+        patientLookupTimer = null;
+      }
+    }
+
+    function isPatientMasterTemplate() {
+      return !templateSelect || templateSelect.value !== '委員会議事録';
+    }
+
+    function updatePatientPanelVisibility() {
+      if (!patientPanel) {
+        return;
+      }
+      const enabled = isPatientMasterTemplate();
+      patientPanel.hidden = !enabled;
+      if (patientIdInput) {
+        patientIdInput.disabled = !enabled;
+      }
+      if (!enabled) {
+        cancelPatientLookup();
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return;
+      }
+      if (patientIdInput && patientIdInput.value.trim()) {
+        queuePatientLookup(patientIdInput.value.trim(), { silent: true });
+      } else {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+      }
+    }
+
+    function queuePatientLookup(patientId, options = {}) {
+      if (!patientPanel || patientPanel.hidden) {
+        return;
+      }
+      const trimmed = (patientId || '').trim();
+      cancelPatientLookup();
+      if (!trimmed) {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return;
+      }
+      const immediate = Boolean(options.immediate);
+      const silent = Boolean(options.silent);
+      const execute = () => {
+        lookupPatientById(trimmed, { silent });
+      };
+      if (immediate) {
+        execute();
+        return;
+      }
+      patientLookupTimer = window.setTimeout(execute, 300);
+    }
+
+    async function lookupPatientById(patientId, options = {}) {
+      if (!patientPanel || patientPanel.hidden || !patientLookupUrlTemplate) {
+        return null;
+      }
+      const requestedId = (patientId || '').trim();
+      if (!requestedId) {
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        return null;
+      }
+
+      const requestToken = ++patientLookupRequestToken;
+      if (!options.silent) {
+        setPatientLookupMessage('患者情報を取得しています...');
+      }
+
+      const lookupUrl = patientLookupUrlTemplate.replace('__PATIENT_ID__', encodeURIComponent(requestedId));
+      try {
+        const response = await fetch(lookupUrl, {
+          headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (requestToken !== patientLookupRequestToken) {
+          return null;
+        }
+        if (patientIdInput && patientIdInput.value.trim() !== requestedId) {
+          return null;
+        }
+        if (!response.ok) {
+          throw new Error(data.error || `患者ID ${requestedId} が見つかりません。`);
+        }
+        const patient = data.patient || {};
+        setPatientProfileFields(patient);
+        setPatientLookupMessage(options.silent ? '' : `患者情報を取得しました: ${requestedId}`);
+        return patient;
+      } catch (error) {
+        if (requestToken !== patientLookupRequestToken) {
+          return null;
+        }
+        if (patientIdInput && patientIdInput.value.trim() !== requestedId) {
+          return null;
+        }
+        clearPatientProfileFields();
+        setPatientLookupMessage(error.message || `患者ID ${requestedId} が見つかりません。`, true);
+        return null;
+      }
+    }
+
+    function getSelectedInputMode() {
+      const selected = inputModeRadios.find((radio) => radio.checked);
+      return selected ? selected.value : 'free';
+    }
+
+    function getSchemaForTemplate(templateName) {
+      return templateInputSchemas[templateName] || templateInputSchemas.__default__ || [];
+    }
+
+    function getFieldInputType(field) {
+      return field && field.input_type ? field.input_type : 'textarea';
+    }
+
+    function normalizeTextareaRows(rows, fallback = 3) {
+      const parsed = Number.parseInt(String(rows || '').trim(), 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+      return fallback;
+    }
+
+    function fieldHasCheckboxOptions(field) {
+      return Boolean(field && Array.isArray(field.options) && field.options.length) || getFieldInputType(field) === 'checkbox_group';
+    }
+
+    function getFieldTextInputName(field) {
+      return fieldHasCheckboxOptions(field) ? `structured__${field.key}__text` : `structured__${field.key}`;
+    }
+
+    function getFieldTextareaRows(field) {
+      return normalizeTextareaRows(field && field.textarea_rows, 3);
+    }
+
+    function applyTextareaRows(textarea, rows, fallback = 3) {
+      if (!textarea) {
+        return;
+      }
+      const normalizedRows = normalizeTextareaRows(rows, fallback);
+      textarea.rows = normalizedRows;
+      textarea.style.minHeight = `calc(${normalizedRows} * 1.65em + 24px)`;
+    }
+
+    function setStructuredInputHiddenValue(values) {
+      if (!structuredInputHidden) {
+        return;
+      }
+      structuredInputHidden.value = JSON.stringify(values || {});
+    }
+
+    function getStructuredFieldContainerValues(fieldWrap) {
+      if (!fieldWrap) {
+        return '';
+      }
+
+      const hasCheckboxOptions = fieldWrap.dataset.hasCheckboxOptions === 'true';
+      if (hasCheckboxOptions) {
+        const textInput = fieldWrap.querySelector('[data-structured-text-input]');
+        const selected = Array.from(fieldWrap.querySelectorAll('input[type="checkbox"][data-structured-option="true"]'))
+          .filter((checkbox) => checkbox.checked)
+          .map((checkbox) => checkbox.value.trim())
+          .filter(Boolean);
+        const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+        const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+        const otherText = otherInput ? otherInput.value.trim() : '';
+        const otherChecked = Boolean(otherToggle && otherToggle.checked) || Boolean(otherText);
+        return {
+          text: textInput ? textInput.value.trim() : '',
+          selected,
+          other: otherText,
+          other_checked: otherChecked,
+        };
+      }
+
+      const input = fieldWrap.querySelector('[data-structured-input]');
+      return input ? input.value.trim() : '';
+    }
+
+    function collectStructuredFieldValues() {
+      const values = {};
+      if (!structuredFieldsHost) {
+        return values;
+      }
+      structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+        const key = field.dataset.fieldKey || '';
+        if (!key) {
+          return;
+        }
+        values[key] = getStructuredFieldContainerValues(field);
+      });
+      return values;
+    }
+
+    function collectStructuredInputLabels() {
+      const labels = [];
+      const schema = getSchemaForTemplate(templateSelect ? templateSelect.value : '');
+      const values = collectStructuredFieldValues();
+      schema.forEach((field) => {
+        const value = values[field.key];
+        if (fieldHasCheckboxOptions(field)) {
+          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+          const textValue = (valueMap.text || '').toString().trim();
+          const selected = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+          const otherText = (valueMap.other || '').toString().trim();
+          if (textValue || selected.length || otherText) {
+            labels.push(field.label || field.key);
+          }
+          return;
+        }
+
+        if ((value || '').toString().trim()) {
+          labels.push(field.label || field.key);
+        }
+      });
+      return labels;
+    }
+
+    function getCheckboxOptionDisplayMap(field) {
+      const map = {};
+      (field.options || []).forEach((option) => {
+        const optionValue = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'value'))
+          ? option.value
+          : option;
+        const optionLabel = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'label'))
+          ? option.label
+          : optionValue;
+        if (optionValue !== undefined && optionValue !== null && String(optionValue).trim()) {
+          map[String(optionValue)] = (optionLabel || optionValue).toString().trim();
+        }
+      });
+      return map;
+    }
+
+    function getFieldSectionTitle(field) {
+      return (field && field.section_title ? field.section_title : '').toString().trim();
+    }
+
+    function formatCheckboxGroupFieldValue(field, value) {
+      const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      const textValue = (valueMap.text || '').toString().trim();
+      if (textValue) {
+        return textValue;
+      }
+      const selected = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+      const otherText = (valueMap.other || '').toString().trim();
+      const otherChecked = Boolean(valueMap.other_checked);
+      const displayMap = getCheckboxOptionDisplayMap(field);
+      const lines = selected
+        .map((item) => {
+          const rawValue = (item || '').toString().trim();
+          if (!rawValue) {
+            return '';
+          }
+          return displayMap[rawValue] || rawValue;
+        })
+        .filter(Boolean)
+        .map((item) => `・${item}`);
+
+      if (otherText) {
+        lines.push(`・${field.other_label || 'その他'}: ${otherText}`);
+      } else if (otherChecked) {
+        lines.push(`・${field.other_label || 'その他'}`);
+      }
+
+      return lines.join('\n').trim();
+    }
+
+    function buildStructuredSourceText(templateName, values) {
+      const blocks = [];
+      let currentSectionTitle = '';
+      let currentSectionBlocks = [];
+      let currentSectionHasContent = false;
+
+      const flushSection = () => {
+        if (currentSectionTitle && currentSectionHasContent) {
+          blocks.push(`## ${currentSectionTitle}\n\n${currentSectionBlocks.join('\n\n')}`);
+        } else if (currentSectionBlocks.length) {
+          blocks.push(...currentSectionBlocks);
+        }
+        currentSectionTitle = '';
+        currentSectionBlocks = [];
+        currentSectionHasContent = false;
+      };
+
+      getSchemaForTemplate(templateName).forEach((field) => {
+        const sectionTitle = getFieldSectionTitle(field);
+        const value = values[field.key];
+        const fieldValue = fieldHasCheckboxOptions(field)
+          ? formatCheckboxGroupFieldValue(field, value)
+          : (value || '').toString().trim();
+        if (sectionTitle) {
+          if (sectionTitle !== currentSectionTitle) {
+            flushSection();
+            currentSectionTitle = sectionTitle;
+          }
+          if (fieldValue) {
+            const fieldLabel = field.label || field.key;
+            currentSectionBlocks.push(
+              fieldLabel === sectionTitle ? fieldValue : `### ${fieldLabel}\n${fieldValue}`,
+            );
+            currentSectionHasContent = true;
+          }
+          return;
+        }
+        flushSection();
+        if (fieldValue) {
+          blocks.push(`【${field.label}】\n${fieldValue}`);
+        }
+      });
+
+      flushSection();
+      return blocks.join('\n\n');
+    }
+
+    function syncStructuredSourceText() {
+      if (!textArea) {
+        return '';
+      }
+      const mode = getSelectedInputMode();
+      const values = collectStructuredFieldValues();
+      setStructuredInputHiddenValue(values);
+      if (mode !== 'structured') {
+        return textArea.value;
+      }
+      const sourceText = buildStructuredSourceText(templateSelect ? templateSelect.value : '', values);
+      textArea.value = sourceText;
+      return sourceText;
+    }
+
+    function setStructuredCheckboxGroupState(fieldWrap) {
+      if (!fieldWrap || fieldWrap.dataset.hasCheckboxOptions !== 'true') {
+        return;
+      }
+      const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+      const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+      if (!otherInput) {
+        return;
+      }
+      const isChecked = Boolean(otherToggle && otherToggle.checked);
+      otherInput.hidden = !isChecked;
+      otherInput.disabled = !isChecked;
+      if (!isChecked) {
+        otherInput.value = '';
+      }
+    }
+
+    function syncAllStructuredCheckboxGroupState() {
+      if (!structuredFieldsHost) {
+        return;
+      }
+      structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+        setStructuredCheckboxGroupState(field);
+      });
+    }
+
+    function handleStructuredFieldInteraction(event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const fieldWrap = target.closest('.structured-field');
+      if (!fieldWrap) {
+        return;
+      }
+
+      const hasCheckboxOptions = fieldWrap.dataset.hasCheckboxOptions === 'true';
+      if (hasCheckboxOptions) {
+        if (target.matches('[data-structured-other-toggle]')) {
+          setStructuredCheckboxGroupState(fieldWrap);
+          const otherInput = fieldWrap.querySelector('[data-structured-other-input]');
+          if (otherInput && !otherInput.hidden && !otherInput.disabled && target.checked) {
+            otherInput.focus();
+          }
+        } else if (target.matches('[data-structured-other-input]')) {
+          const otherToggle = fieldWrap.querySelector('[data-structured-other-toggle]');
+          if (otherToggle && target.value.trim() && !otherToggle.checked) {
+            otherToggle.checked = true;
+            setStructuredCheckboxGroupState(fieldWrap);
+          }
+        }
+      }
+
+      setStructuredInputHiddenValue(collectStructuredFieldValues());
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
+      markEdited();
+    }
+
+    function renderStructuredFields(templateName, values = {}) {
+      if (!structuredFieldsHost) {
+        return;
+      }
+      const schema = getSchemaForTemplate(templateName);
+      structuredFieldsHost.innerHTML = '';
+      let currentSectionTitle = '';
+
+      schema.forEach((field) => {
+        const sectionTitle = getFieldSectionTitle(field);
+        if (sectionTitle && sectionTitle !== currentSectionTitle) {
+          const sectionHeading = document.createElement('div');
+          sectionHeading.className = 'structured-section-heading';
+          sectionHeading.textContent = sectionTitle;
+          structuredFieldsHost.appendChild(sectionHeading);
+          currentSectionTitle = sectionTitle;
+        }
+
+        const fieldWrap = document.createElement('div');
+        fieldWrap.className = 'structured-field';
+        fieldWrap.dataset.fieldKey = field.key;
+        fieldWrap.dataset.inputType = getFieldInputType(field);
+        const inputType = getFieldInputType(field);
+        const hasCheckboxOptions = fieldHasCheckboxOptions(field);
+        fieldWrap.dataset.hasCheckboxOptions = hasCheckboxOptions ? 'true' : 'false';
+
+        const label = document.createElement('label');
+        label.className = 'field-label';
+        label.htmlFor = `structured-${field.key}`;
+        label.append(document.createTextNode(field.label || field.key));
+        if (field.required) {
+          const requiredMark = document.createElement('span');
+          requiredMark.className = 'required-mark';
+          requiredMark.textContent = '必須';
+          label.appendChild(requiredMark);
+        }
+
+        fieldWrap.appendChild(label);
+        const hasValue = Object.prototype.hasOwnProperty.call(values, field.key);
+        let textInput = null;
+        if (hasCheckboxOptions) {
+          label.removeAttribute('for');
+        } else if (inputType === 'date') {
+          textInput = document.createElement('input');
+          textInput.type = 'date';
+          textInput.className = 'field-area structured-field-input structured-date-input';
+          textInput.id = `structured-${field.key}`;
+          textInput.name = getFieldTextInputName(field);
+          textInput.dataset.structuredInput = 'true';
+          textInput.value = hasValue ? (values[field.key] || '') : (field.default || '');
+        } else {
+          textInput = document.createElement('textarea');
+          textInput.className = 'field-area structured-field-input';
+          textInput.id = `structured-${field.key}`;
+          textInput.name = getFieldTextInputName(field);
+          textInput.dataset.structuredInput = 'true';
+          applyTextareaRows(textInput, getFieldTextareaRows(field), 3);
+          textInput.value = hasValue ? (values[field.key] || '') : (field.default || '');
+        }
+        if (textInput) {
+          fieldWrap.appendChild(textInput);
+        }
+
+        if (hasCheckboxOptions) {
+          const group = document.createElement('div');
+          group.className = 'structured-checkbox-group';
+
+          const optionsWrap = document.createElement('div');
+          optionsWrap.className = 'structured-checkbox-options';
+          const value = hasValue ? values[field.key] : {};
+          const valueMap = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+          const selectedValues = Array.isArray(valueMap.selected) ? valueMap.selected : [];
+          const otherText = (valueMap.other || '').toString().trim();
+          const otherChecked = Boolean(valueMap.other_checked || otherText);
+
+          (field.options || []).forEach((option) => {
+            const optionValue = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'value'))
+              ? option.value
+              : option;
+            const optionLabel = (option && typeof option === 'object' && Object.prototype.hasOwnProperty.call(option, 'label'))
+              ? option.label
+              : optionValue;
+            const optionLabelWrap = document.createElement('label');
+            optionLabelWrap.className = 'structured-checkbox-option';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = `structured__${field.key}`;
+            checkbox.value = optionValue;
+            checkbox.dataset.structuredOption = 'true';
+            if (selectedValues.some((selectedValue) => String(selectedValue) === String(optionValue))) {
+              checkbox.checked = true;
+            }
+
+            const text = document.createElement('span');
+            text.textContent = optionLabel;
+            optionLabelWrap.appendChild(checkbox);
+            optionLabelWrap.appendChild(text);
+            optionsWrap.appendChild(optionLabelWrap);
+          });
+
+          group.appendChild(optionsWrap);
+
+          if (field.allow_other) {
+            const otherRow = document.createElement('div');
+            otherRow.className = 'structured-other-row';
+            otherRow.dataset.structuredOtherRow = 'true';
+
+            const otherToggleLabel = document.createElement('label');
+            otherToggleLabel.className = 'structured-other-toggle';
+
+            const otherToggle = document.createElement('input');
+            otherToggle.type = 'checkbox';
+            otherToggle.name = `structured__${field.key}__other_checked`;
+            otherToggle.value = '1';
+            otherToggle.dataset.structuredOtherToggle = 'true';
+            if (otherChecked) {
+              otherToggle.checked = true;
+            }
+
+            const otherToggleText = document.createElement('span');
+            otherToggleText.textContent = field.other_label || 'その他';
+            otherToggleLabel.appendChild(otherToggle);
+            otherToggleLabel.appendChild(otherToggleText);
+            otherRow.appendChild(otherToggleLabel);
+
+            const otherInput = document.createElement('textarea');
+            otherInput.className = 'field-area structured-other-input';
+            otherInput.name = `structured__${field.key}__other`;
+            otherInput.dataset.structuredOtherInput = 'true';
+            applyTextareaRows(otherInput, 2, 2);
+            otherInput.placeholder = field.other_placeholder || '自由入力';
+            otherInput.value = otherText || '';
+            otherRow.appendChild(otherInput);
+            group.appendChild(otherRow);
+          }
+
+          if (field.help_text) {
+            const helpText = document.createElement('p');
+            helpText.className = 'field-help-text';
+            helpText.textContent = field.help_text;
+            group.appendChild(helpText);
+          }
+
+          fieldWrap.appendChild(group);
+          setStructuredCheckboxGroupState(fieldWrap);
+        }
+
+        const error = document.createElement('div');
+        error.className = 'field-error';
+        error.textContent = '';
+        fieldWrap.appendChild(error);
+        structuredFieldsHost.appendChild(fieldWrap);
+      });
+
+      updateModeUI({ preserveFreeTextSnapshot: true });
+    }
+
+    function updateModeUI(options = {}) {
+      const { preserveFreeTextSnapshot = false } = options;
+      const mode = getSelectedInputMode();
+      const isStructured = mode === 'structured';
+      const isVoice = mode === 'voice';
+
+      if (structuredPanel) {
+        structuredPanel.hidden = !isStructured;
+      }
+      if (freeUploadPanel) {
+        freeUploadPanel.hidden = isStructured || isVoice;
+      }
+      if (freeInputPanel) {
+        freeInputPanel.hidden = isStructured || isVoice;
+      }
+      if (isStructured || isVoice) {
+        textFilePreviewRequestToken += 1;
+      }
+      if (voicePanel) {
+        voicePanel.hidden = !isVoice;
+      }
+      if (inputGrid) {
+        inputGrid.classList.toggle('structured-mode', isStructured);
+        inputGrid.classList.toggle('voice-mode', isVoice);
+      }
+      if (textArea) {
+        if (isStructured) {
+          if (!preserveFreeTextSnapshot) {
+            freeTextSnapshot = textArea.value;
+          }
+          textArea.readOnly = true;
+          syncStructuredSourceText();
+        } else if (isVoice) {
+          textArea.readOnly = false;
+        } else {
+          textArea.readOnly = false;
+          textArea.value = freeTextSnapshot;
+          setStructuredInputHiddenValue(collectStructuredFieldValues());
+        }
+      }
+      if (isVoice) {
+        if (!hasVoiceRecordingSupport()) {
+          setVoiceStatus('このブラウザでは録音機能を利用できません');
+        }
+        updateVoiceRecordingControls(Boolean(voiceRecorder && voiceRecorder.state === 'recording'));
+      } else if (voiceRecorder && voiceRecorder.state === 'recording') {
+        stopVoiceRecording();
+      }
+    }
+
+    function markEdited() {
+      if (sourceIdField && sourceIdField.value) {
+        setStatus('未反映の編集があります');
+      }
+      updateLabelActionState();
+    }
+
+    function clearCurrentInput() {
+      const mode = getSelectedInputMode();
+      if (mode === 'structured') {
+        if (structuredFieldsHost) {
+          structuredFieldsHost.querySelectorAll('.structured-field').forEach((field) => {
+            const hasCheckboxOptions = field.dataset.hasCheckboxOptions === 'true';
+            if (hasCheckboxOptions) {
+              field.querySelectorAll('input[type="checkbox"][data-structured-option="true"]').forEach((checkbox) => {
+                checkbox.checked = false;
+              });
+              const otherToggle = field.querySelector('[data-structured-other-toggle]');
+              if (otherToggle) {
+                otherToggle.checked = false;
+              }
+              const textInput = field.querySelector('[data-structured-text-input]');
+              if (textInput) {
+                textInput.value = '';
+              }
+              setStructuredCheckboxGroupState(field);
+              return;
+            }
+
+            const input = field.querySelector('[data-structured-input]');
+            if (input) {
+              input.value = '';
+            }
+          });
+        }
+        setStructuredInputHiddenValue(collectStructuredFieldValues());
+        syncStructuredSourceText();
+        setStatus('テンプレート項目入力をクリアしました');
+      } else if (mode === 'voice') {
+        if (voiceRecorder && voiceRecorder.state === 'recording') {
+          voiceResetPending = true;
+          stopVoiceRecording();
+        }
+        if (transcriptTextArea) {
+          transcriptTextArea.value = '';
+        }
+        clearVoiceInputs();
+        setVoiceStatus('録音音声と文字起こし結果をクリアしました');
+        setStatus('録音・文字起こし入力をクリアしました');
+      } else {
+        freeTextSnapshot = '';
+        textFilePreviewRequestToken += 1;
+        if (textArea) {
+          textArea.value = '';
+        }
+        if (textFileInput) {
+          textFileInput.value = '';
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        setTextFileStatus('');
+        setStructuredInputHiddenValue({});
+        setStatus('入力文章をクリアしました');
+      }
+
+      if (patientIdInput) {
+        patientIdInput.value = '';
+      }
+      clearPatientProfileFields();
+      setPatientLookupMessage('');
+      cancelPatientLookup();
+
+      setAnonymizedOutputText('', { emitInputEvent: false });
+      if (mode === 'structured' && structuredFieldsHost) {
+        const firstField = structuredFieldsHost.querySelector('.structured-field');
+        if (firstField) {
+          const firstFocusTarget = firstField.querySelector(
+            '[data-structured-text-input], [data-structured-input], [data-structured-option="true"], [data-structured-other-toggle], [data-structured-other-input]'
+          );
+          if (firstFocusTarget && typeof firstFocusTarget.focus === 'function') {
+            firstFocusTarget.focus();
+          }
+          return;
+        }
+      }
+      if (textArea) {
+        textArea.focus();
+      }
+    }
+
+    function replaceAllText(text, before, after) {
+      if (!before || before === after) {
+        return text;
+      }
+      return text.split(before).join(after);
+    }
+
+    function replaceNormalizedText(text, before, after) {
+      return replaceAllText(
+        normalizeFullWidthText(text),
+        normalizeFullWidthText(before),
+        normalizeFullWidthText(after),
+      );
+    }
+
+    function normalizeFullWidthText(text) {
+      if (!text) {
+        return text;
+      }
+
+      const replacements = {
+        '０': '0',
+        '１': '1',
+        '２': '2',
+        '３': '3',
+        '４': '4',
+        '５': '5',
+        '６': '6',
+        '７': '7',
+        '８': '8',
+        '９': '9',
+        'Ａ': 'A',
+        'Ｂ': 'B',
+        'Ｃ': 'C',
+        'Ｄ': 'D',
+        'Ｅ': 'E',
+        'Ｆ': 'F',
+        'Ｇ': 'G',
+        'Ｈ': 'H',
+        'Ｉ': 'I',
+        'Ｊ': 'J',
+        'Ｋ': 'K',
+        'Ｌ': 'L',
+        'Ｍ': 'M',
+        'Ｎ': 'N',
+        'Ｏ': 'O',
+        'Ｐ': 'P',
+        'Ｑ': 'Q',
+        'Ｒ': 'R',
+        'Ｓ': 'S',
+        'Ｔ': 'T',
+        'Ｕ': 'U',
+        'Ｖ': 'V',
+        'Ｗ': 'W',
+        'Ｘ': 'X',
+        'Ｙ': 'Y',
+        'Ｚ': 'Z',
+        'ａ': 'a',
+        'ｂ': 'b',
+        'ｃ': 'c',
+        'ｄ': 'd',
+        'ｅ': 'e',
+        'ｆ': 'f',
+        'ｇ': 'g',
+        'ｈ': 'h',
+        'ｉ': 'i',
+        'ｊ': 'j',
+        'ｋ': 'k',
+        'ｌ': 'l',
+        'ｍ': 'm',
+        'ｎ': 'n',
+        'ｏ': 'o',
+        'ｐ': 'p',
+        'ｑ': 'q',
+        'ｒ': 'r',
+        'ｓ': 's',
+        'ｔ': 't',
+        'ｕ': 'u',
+        'ｖ': 'v',
+        'ｗ': 'w',
+        'ｘ': 'x',
+        'ｙ': 'y',
+        'ｚ': 'z',
+        '：': ':',
+        '－': '-',
+        '，': ',',
+        '．': '.',
+        '（': '(',
+        '）': ')',
+      };
+
+      return text.replace(/[０-９Ａ-Ｚａ-ｚ：－，．（）]/g, (character) => replacements[character] || character);
+    }
+
+    function setAnonymizedOutputText(text, options = {}) {
+      if (!anonymizedOutput) {
+        return;
+      }
+      const { emitInputEvent = true } = options;
+      const nextText = text ?? '';
+      anonymizedOutput.value = nextText;
+      anonymizedOutput.defaultValue = nextText;
+      anonymizedOutput.textContent = nextText;
+      if (emitInputEvent) {
+        anonymizedOutput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    function setComparePanelHtml(originalHtml, anonymizedHtml) {
+      if (!compareOriginalOutput || !compareAnonymizedOutput) {
+        return;
+      }
+      compareOriginalOutput.innerHTML = originalHtml || '';
+      compareAnonymizedOutput.innerHTML = anonymizedHtml || '';
+    }
+
+    function setVoiceStatus(message) {
+      if (voiceStatusArea) {
+        voiceStatusArea.textContent = message;
+      }
+    }
+
+    function setTranscriptSource(source) {
+      if (transcriptSourceField) {
+        transcriptSourceField.value = source || 'manual_input';
+      }
+    }
+
+    function setTextFileStatus(message, isError = false) {
+      if (!textFileStatusArea) {
+        return;
+      }
+      textFileStatusArea.textContent = message || '';
+      textFileStatusArea.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+
+    async function loadTextFileIntoEditor(file) {
+      if (!file) {
+        textFilePreviewRequestToken += 1;
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        setTextFileStatus('');
+        return;
+      }
+
+      const requestToken = ++textFilePreviewRequestToken;
+      setTextFileStatus(`読み込み中です: ${file.name}`);
+      try {
+        const formData = new FormData();
+        formData.append('text_file', file, file.name || 'uploaded-file');
+        const response = await fetch(textFilePreviewUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: formData,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (requestToken !== textFilePreviewRequestToken) {
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(data.error || 'ファイルの読み込みに失敗しました');
+        }
+        const content = (data.text || '').toString();
+        if (textArea) {
+          textArea.value = content;
+          textArea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = content;
+        }
+        freeTextSnapshot = content;
+        setTextFileStatus(`読み込みました: ${file.name}`);
+      } catch (error) {
+        if (requestToken !== textFilePreviewRequestToken) {
+          return;
+        }
+        if (textArea) {
+          textArea.value = '';
+        }
+        if (textFileSnapshotField) {
+          textFileSnapshotField.value = '';
+        }
+        freeTextSnapshot = '';
+        if (textArea) {
+          textArea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        setTextFileStatus(error.message || 'ファイルの読み込みに失敗しました', true);
+      }
+    }
+
+    function hasVoiceRecordingSupport() {
+      return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+    }
+
+    function updateVoiceRecordingControls(isRecording) {
+      if (voiceRecordStartButton) {
+        voiceRecordStartButton.disabled = isRecording || !hasVoiceRecordingSupport();
+      }
+      if (voiceRecordStopButton) {
+        voiceRecordStopButton.disabled = !isRecording;
+      }
+    }
+
+    function revokeVoicePreviewUrl() {
+      if (voicePreviewObjectUrl) {
+        URL.revokeObjectURL(voicePreviewObjectUrl);
+        voicePreviewObjectUrl = '';
+      }
+    }
+
+    function setVoicePreviewSource(url) {
+      if (!voiceAudioPreview) {
+        return;
+      }
+      revokeVoicePreviewUrl();
+      if (!url) {
+        voiceAudioPreview.removeAttribute('src');
+        voiceAudioPreview.hidden = true;
+        voiceAudioPreview.load();
+        return;
+      }
+      voicePreviewObjectUrl = url;
+      voiceAudioPreview.src = url;
+      voiceAudioPreview.hidden = false;
+      voiceAudioPreview.load();
+    }
+
+    function clearVoiceInputs() {
+      setVoicePreviewSource('');
+      if (voiceAudioFileInput) {
+        voiceAudioFileInput.value = '';
+      }
+      voiceRecordedBlob = null;
+      setTranscriptSource('manual_input');
+      updateVoiceRecordingControls(false);
+    }
+
+    function setVoiceTranscribeBusy(isBusy) {
+      if (voiceTranscribeButton) {
+        voiceTranscribeButton.disabled = Boolean(isBusy);
+        voiceTranscribeButton.textContent = isBusy ? '文字起こし中...' : voiceTranscribeButtonLabel;
+      }
+    }
+
+    function getVoiceTranscribeSource() {
+      if (voiceRecorder && voiceRecorder.state === 'recording') {
+        setVoiceStatus('録音中は文字起こしできません。先に録音を停止してください。');
+        return null;
+      }
+
+      const uploadedFile = voiceAudioFileInput && voiceAudioFileInput.files && voiceAudioFileInput.files[0]
+        ? voiceAudioFileInput.files[0]
+        : null;
+      if (uploadedFile) {
+        return {
+          file: uploadedFile,
+          transcriptSource: 'uploaded_audio',
+          label: uploadedFile.name || '音声ファイル',
+        };
+      }
+
+      if (voiceRecordedBlob) {
+        const mimeType = voiceRecordedBlob.type || 'audio/webm';
+        const extension = mimeType.includes('/') ? mimeType.split('/')[1] : 'webm';
+        return {
+          file: voiceRecordedBlob,
+          transcriptSource: 'browser_recording',
+          label: '録音音声',
+          fileType: mimeType,
+          extension: extension || 'webm',
+        };
+      }
+
+      return null;
+    }
+
+    function buildLocalAudioFilename(source) {
+      const mimeType = (source && source.file && source.file.type) ? source.file.type : (source && source.fileType) ? source.fileType : 'audio/webm';
+      const extension = mimeType.includes('/') ? mimeType.split('/')[1] : 'webm';
+      const prefix = source && source.transcriptSource === 'uploaded_audio' ? 'uploaded_audio' : 'recording';
+      return `${prefix}.${extension || 'webm'}`.replace(/[^A-Za-z0-9._-]/g, '_');
+    }
+
+    function getCurrentSourceText() {
+      const mode = getSelectedInputMode();
+      if (mode === 'voice') {
+        return transcriptTextArea ? transcriptTextArea.value.trim() : '';
+      }
+      if (mode === 'structured') {
+        return syncStructuredSourceText();
+      }
+      return textArea ? textArea.value : '';
+    }
+
+    async function startVoiceRecording() {
+      if (!hasVoiceRecordingSupport()) {
+        setVoiceStatus('このブラウザでは録音機能を利用できません');
+        updateVoiceRecordingControls(false);
+        return;
+      }
+
+      try {
+        if (voiceRecordingStream) {
+          voiceRecordingStream.getTracks().forEach((track) => track.stop());
+        }
+        voiceRecordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceRecordedChunks = [];
+        voiceResetPending = false;
+        voiceRecorder = new MediaRecorder(voiceRecordingStream);
+        voiceRecorder.addEventListener('dataavailable', (event) => {
+          if (event.data && event.data.size > 0) {
+            voiceRecordedChunks.push(event.data);
+          }
+        });
+        voiceRecorder.addEventListener('stop', () => {
+          if (voiceResetPending) {
+            voiceResetPending = false;
+            if (voiceRecordingStream) {
+              voiceRecordingStream.getTracks().forEach((track) => track.stop());
+              voiceRecordingStream = null;
+            }
+            voiceRecorder = null;
+            voiceRecordedChunks = [];
+            clearVoiceInputs();
+            if (transcriptTextArea) {
+              transcriptTextArea.value = '';
+            }
+            setVoiceStatus('録音音声と文字起こし結果をクリアしました');
+            return;
+          }
+          const mimeType = voiceRecorder && voiceRecorder.mimeType ? voiceRecorder.mimeType : 'audio/webm';
+          const blob = new Blob(voiceRecordedChunks, { type: mimeType });
+          voiceRecordedBlob = blob;
+          const url = URL.createObjectURL(blob);
+          setVoicePreviewSource(url);
+          setTranscriptSource('browser_recording');
+          setVoiceStatus('録音を停止しました。文字起こし結果を入力してください。');
+          if (voiceRecordingStream) {
+            voiceRecordingStream.getTracks().forEach((track) => track.stop());
+            voiceRecordingStream = null;
+          }
+          voiceRecorder = null;
+          voiceRecordedChunks = [];
+          updateVoiceRecordingControls(false);
+        });
+        voiceRecorder.start();
+        setTranscriptSource('browser_recording');
+        setVoiceStatus('録音中です');
+        updateVoiceRecordingControls(true);
+      } catch (error) {
+        console.error(error);
+        setVoiceStatus('録音の開始に失敗しました');
+        updateVoiceRecordingControls(false);
+      }
+    }
+
+    function stopVoiceRecording() {
+      if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+        voiceRecorder.stop();
+      }
+    }
+
+    function nextAnimationFrame() {
+      return new Promise((resolve) => {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve());
+          return;
+        }
+        setTimeout(resolve, 0);
+      });
+    }
+
+    function collectLabelRows() {
+      return Array.from(document.querySelectorAll('.label-row')).map((row) => {
+        const originalInput = row.querySelector('.original-value');
+        const labelInput = row.querySelector('.label-value');
+        return {
+          row,
+          oldLabel: row.dataset.currentLabel || '',
+          original: originalInput ? originalInput.value.trim() : '',
+          label: labelInput ? labelInput.value.trim() : '',
+        };
+      });
+    }
+
+    function buildRestoreMap(rows) {
+      const restoreMap = {};
+      rows.forEach(({ original, label }) => {
+        if (original && label) {
+          restoreMap[label] = original;
+        }
+      });
+      return restoreMap;
+    }
+
+    function updateLabelActionState() {
+      const hasValidRows = collectLabelRows().some(({ original, label }) => original && label);
+      const applyLabelButton = document.getElementById('apply-label-edits');
+      if (applyLabelButton) {
+        applyLabelButton.disabled = !hasValidRows;
+      }
+      if (reanonymizeButton) {
+        reanonymizeButton.disabled = !hasValidRows;
+      }
+    }
+
+    function registerEditableField(field) {
+      if (!field) return;
+      field.addEventListener('input', markEdited);
+    }
+
+    function registerLabelDeleteButton(button) {
+      if (!button) return;
+      button.addEventListener('click', () => {
+        const row = button.closest('.label-row');
+        if (row) {
+          row.remove();
+          markEdited();
+          setStatus('匿名ラベル行を削除しました');
+        }
+      });
+    }
+
+    function createLabelRow(original = '', label = '', currentLabel = '') {
+      if (!labelItemsBody) return null;
+      const row = document.createElement('tr');
+      row.className = 'label-row';
+      row.dataset.currentLabel = currentLabel;
+
+      const originalCell = document.createElement('td');
+      const originalInput = document.createElement('input');
+      originalInput.className = 'label-edit-input original-value';
+      originalInput.type = 'text';
+      originalInput.value = original;
+      originalInput.setAttribute('aria-label', '匿名前文字');
+      originalCell.appendChild(originalInput);
+
+      const labelCell = document.createElement('td');
+      const labelInput = document.createElement('input');
+      labelInput.className = 'label-edit-input label-value';
+      labelInput.type = 'text';
+      labelInput.value = label;
+      labelInput.setAttribute('aria-label', '匿名後文字');
+      labelCell.appendChild(labelInput);
+
+      const actionCell = document.createElement('td');
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'label-action-button label-delete-button delete-label-row';
+      deleteButton.type = 'button';
+      deleteButton.textContent = '削除';
+      actionCell.appendChild(deleteButton);
+
+      row.appendChild(originalCell);
+      row.appendChild(labelCell);
+      row.appendChild(actionCell);
+      labelItemsBody.appendChild(row);
+      registerEditableField(originalInput);
+      registerEditableField(labelInput);
+      registerLabelDeleteButton(deleteButton);
+      updateLabelActionState();
+      originalInput.focus();
+      return row;
+    }
+
+    function reanonymizeFromLabels() {
+      if (!textArea || !anonymizedOutput) return false;
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
+      const sourceText = getCurrentSourceText();
+      const rows = collectLabelRows()
+        .filter(({ original, label }) => original && label)
+        .sort((a, b) => b.original.length - a.original.length);
+
+      if (!rows.length) {
+        setStatus('匿名ラベルを追加してください');
+        return false;
+      }
+      if (!sourceText) {
+        setStatus(getSelectedInputMode() === 'voice' ? '文字起こし結果を入力してください' : '入力文章を入力してください');
+        return false;
+      }
+
+      let editedText = sourceText;
+      rows.forEach(({ row, original, label }) => {
+        editedText = replaceNormalizedText(editedText, original, label);
+        row.dataset.currentLabel = label;
+      });
+      editedText = normalizeFullWidthText(editedText);
+      setAnonymizedOutputText(editedText);
+      setStatus('匿名ラベルに従って再匿名化しました');
+      return true;
+    }
+
+    function applyLabelChangesToText(rows) {
+      if (!anonymizedOutput) return;
+      let editedText = anonymizedOutput.value;
+      const sortedRows = rows.slice().sort((a, b) => (b.oldLabel || '').length - (a.oldLabel || '').length);
+      sortedRows.forEach(({ row, oldLabel, label }) => {
+        if (oldLabel && label && oldLabel !== label) {
+          editedText = replaceNormalizedText(editedText, oldLabel, label);
+        }
+        row.dataset.currentLabel = label;
+      });
+      setAnonymizedOutputText(editedText);
+    }
+
+    async function saveEditedPayload({ replaceLabels = false } = {}) {
+      const rows = collectLabelRows();
+      if (replaceLabels) {
+        applyLabelChangesToText(rows);
+        await nextAnimationFrame();
+      }
+
+      if (getSelectedInputMode() === 'structured') {
+        syncStructuredSourceText();
+      }
+      setStructuredInputHiddenValue(collectStructuredFieldValues());
+
+      const restoreMap = buildRestoreMap(rows);
+      const sourceId = sourceIdField ? sourceIdField.value : '';
+      if (!sourceId) {
+        setStatus('匿名化後に反映できます');
+        return null;
+      }
+
+      setStatus('反映中...');
+      const response = await fetch('{% url "close_side:update_prompt_payload" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({
+          source_id: sourceId,
+          template_type: templateSelect ? templateSelect.value : '',
+          input_mode: getSelectedInputMode(),
+          source_text: getCurrentSourceText(),
+          patient_id: patientIdInput && !patientIdInput.disabled ? patientIdInput.value.trim() : '',
+          structured_input: getSelectedInputMode() === 'structured' ? collectStructuredFieldValues() : {},
+          structured_input_labels: getSelectedInputMode() === 'structured' ? collectStructuredInputLabels() : [],
+          transcript_source: getSelectedInputMode() === 'voice' ? (transcriptSourceField ? transcriptSourceField.value : 'manual_input') : '',
+          anonymized_text: anonymizedOutput ? anonymizedOutput.value : '',
+          restore_map: restoreMap,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || '反映に失敗しました');
+      }
+
+      if (Object.prototype.hasOwnProperty.call(data, 'compare_original_html') && Object.prototype.hasOwnProperty.call(data, 'compare_anonymized_html')) {
+        setComparePanelHtml(data.compare_original_html, data.compare_anonymized_html);
+      }
+      if (sourceIdField) {
+        sourceIdField.value = data.source_id;
+      }
+      setStatus('反映しました');
+      return data;
+    }
+
+    if (structuredFieldsHost) {
+      structuredFieldsHost.addEventListener('input', handleStructuredFieldInteraction);
+      structuredFieldsHost.addEventListener('change', handleStructuredFieldInteraction);
+    }
+
+    if (templateSelect) {
+      templateSelect.addEventListener('change', () => {
+        const currentValues = collectStructuredFieldValues();
+        renderStructuredFields(templateSelect.value, currentValues);
+        updatePatientPanelVisibility();
+        if (getSelectedInputMode() === 'structured') {
+          syncStructuredSourceText();
+        }
+        markEdited();
+      });
+    }
+
+    inputModeRadios.forEach((radio) => {
+      radio.addEventListener('change', () => {
+        updateModeUI();
+        markEdited();
+      });
+    });
+
+    if (textArea) {
+      textArea.addEventListener('input', () => {
+        if (getSelectedInputMode() === 'free') {
+          freeTextSnapshot = textArea.value;
+        }
+        markEdited();
+      });
+    }
+
+    if (textFileInput) {
+      textFileInput.addEventListener('change', async () => {
+        const file = textFileInput.files && textFileInput.files[0] ? textFileInput.files[0] : null;
+        await loadTextFileIntoEditor(file);
+        markEdited();
+      });
+    }
+
+    if (transcriptTextArea) {
+      transcriptTextArea.addEventListener('input', () => {
+        markEdited();
+      });
+    }
+
+    if (patientIdInput) {
+      patientIdInput.addEventListener('input', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        cancelPatientLookup();
+        clearPatientProfileFields();
+        setPatientLookupMessage('');
+        markEdited();
+        const patientId = patientIdInput.value.trim();
+        if (!patientId) {
+          return;
+        }
+        setPatientLookupMessage('患者情報を取得しています...');
+        patientLookupTimer = window.setTimeout(() => {
+          lookupPatientById(patientId, { silent: false });
+        }, 300);
+      });
+      patientIdInput.addEventListener('change', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        queuePatientLookup(patientIdInput.value.trim(), { immediate: true });
+      });
+      patientIdInput.addEventListener('blur', () => {
+        if (!isPatientMasterTemplate()) {
+          return;
+        }
+        queuePatientLookup(patientIdInput.value.trim(), { immediate: true, silent: false });
+      });
+    }
+
+    if (clearButton) {
+      clearButton.addEventListener('click', () => {
+        clearCurrentInput();
+      });
+    }
+
+    if (reanonymizeButton && textArea && anonymizedOutput) {
+      reanonymizeButton.addEventListener('click', async () => {
+        try {
+          if (reanonymizeFromLabels()) {
+            await nextAnimationFrame();
+            await saveEditedPayload({ replaceLabels: false });
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    if (voiceRecordStartButton) {
+      voiceRecordStartButton.addEventListener('click', async () => {
+        await startVoiceRecording();
+      });
+    }
+
+    if (voiceRecordStopButton) {
+      voiceRecordStopButton.addEventListener('click', () => {
+        stopVoiceRecording();
+      });
+    }
+
+    if (voiceAudioFileInput) {
+      voiceAudioFileInput.addEventListener('change', () => {
+        const file = voiceAudioFileInput.files && voiceAudioFileInput.files[0] ? voiceAudioFileInput.files[0] : null;
+        if (!file) {
+          setVoicePreviewSource('');
+          setVoiceStatus('');
+          setTranscriptSource('manual_input');
+          markEdited();
+          return;
+        }
+        setVoicePreviewSource(URL.createObjectURL(file));
+        setTranscriptSource('uploaded_audio');
+        setVoiceStatus(`選択した音声ファイルをプレビューしています: ${file.name}`);
+        markEdited();
+      });
+    }
+
+    if (voiceTranscribeButton) {
+      voiceTranscribeButton.addEventListener('click', async () => {
+        const source = getVoiceTranscribeSource();
+        if (!source || !transcriptTextArea) {
+          if (!source) {
+            setVoiceStatus('文字起こしする音声ファイルを選択するか、録音してください。');
+          }
+          return;
+        }
+
+        setVoiceTranscribeBusy(true);
+        setVoiceStatus(`ローカルWhisperで文字起こし中です: ${source.label}`);
+        try {
+          const formData = new FormData();
+          formData.append('audio_file', source.file, buildLocalAudioFilename(source));
+          formData.append('template_type', templateSelect ? templateSelect.value : '');
+          formData.append('transcript_source', source.transcriptSource);
+
+          const response = await fetch('{% url "close_side:transcribe_audio" %}', {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: formData,
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || '文字起こしに失敗しました');
+          }
+          const transcriptText = (data.text || '').trim();
+          if (!transcriptText) {
+            throw new Error('文字起こし結果が空でした');
+          }
+
+          transcriptTextArea.value = transcriptText;
+          setTranscriptSource(data.transcript_source || source.transcriptSource);
+          transcriptTextArea.dispatchEvent(new Event('input', { bubbles: true }));
+          setVoiceStatus(`ローカルWhisperで文字起こしが完了しました: ${source.label}`);
+          setStatus('文字起こし結果を反映しました');
+          transcriptTextArea.focus();
+        } catch (error) {
+          console.error(error);
+          setVoiceStatus(error.message || '文字起こしに失敗しました');
+        } finally {
+          setVoiceTranscribeBusy(false);
+        }
+      });
+    }
+
+    if (anonymizeForm) {
+      anonymizeForm.addEventListener('submit', () => {
+        if (getSelectedInputMode() === 'structured') {
+          syncStructuredSourceText();
+        }
+        setStructuredInputHiddenValue(collectStructuredFieldValues());
+      });
+    }
+
+    updateModeUI();
+    updatePatientPanelVisibility();
+    syncAllStructuredCheckboxGroupState();
+    setStructuredInputHiddenValue(collectStructuredFieldValues());
+    updateVoiceRecordingControls(false);
+    if (getSelectedInputMode() === 'voice' && !hasVoiceRecordingSupport()) {
+      setVoiceStatus('このブラウザでは録音機能を利用できません');
+    }
+
+    const addLabelButton = document.getElementById('add-label-row');
+    if (addLabelButton) {
+      addLabelButton.addEventListener('click', () => {
+        createLabelRow();
+        setStatus('匿名ラベル行を追加しました');
+      });
+    }
+
+    const applyLabelButton = document.getElementById('apply-label-edits');
+    if (applyLabelButton) {
+      applyLabelButton.addEventListener('click', async () => {
+        try {
+          await saveEditedPayload({ replaceLabels: true });
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    const buildPromptButton = document.getElementById('build-prompt-button');
+    const promptPreviewStorageKey = 'closeSide.openPromptPreviewAfterAnonymize';
+    if (buildPromptButton && anonymizeForm) {
+      buildPromptButton.addEventListener('click', async () => {
+        if (!sourceIdField || !sourceIdField.value) {
+          sessionStorage.setItem(promptPreviewStorageKey, '1');
+          anonymizeForm.requestSubmit();
+          return;
+        }
+        try {
+          const data = await saveEditedPayload({ replaceLabels: true });
+          if (data && data.prompt_url) {
+            window.location.href = data.prompt_url;
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+
+    const shouldOpenPromptPreview = sessionStorage.getItem(promptPreviewStorageKey) === '1';
+    if (shouldOpenPromptPreview && sourceIdField && sourceIdField.value) {
+      sessionStorage.removeItem(promptPreviewStorageKey);
+      (async () => {
+        try {
+          const data = await saveEditedPayload({ replaceLabels: true });
+          if (data && data.prompt_url) {
+            window.location.href = data.prompt_url;
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      })();
+    }
+
+    const editableFields = [
+      anonymizedOutput,
+      ...document.querySelectorAll('.label-edit-input'),
+    ].filter(Boolean);
+    editableFields.forEach(registerEditableField);
+    document.querySelectorAll('.delete-label-row').forEach(registerLabelDeleteButton);
+    updateLabelActionState();
+
+    const dmzExportForm = document.getElementById('dmz-export-form');
+    let submittingDmz = false;
+    if (dmzExportForm) {
+      dmzExportForm.addEventListener('submit', async (event) => {
+        if (submittingDmz || !sourceIdField || !sourceIdField.value) {
+          return;
+        }
+        event.preventDefault();
+        try {
+          await saveEditedPayload({ replaceLabels: true });
+          submittingDmz = true;
+          dmzExportForm.submit();
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

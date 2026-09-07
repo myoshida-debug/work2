@@ -1,0 +1,165 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide {{ page_title }}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ page_subtitle }}</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+  <a class="button" href="{{ import_url }}">CSV取込</a>
+  <a class="button primary" href="{{ create_url }}">新規追加</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .master-search-form {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px 14px;
+      align-items: end;
+    }
+
+    .master-search-field {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .master-search-field .field-label {
+      margin-bottom: 0;
+    }
+
+    .master-search-field input,
+    .master-search-field select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .master-search-field input:focus,
+    .master-search-field select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(31, 94, 255, 0.16);
+    }
+
+    .master-search-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    @media (max-width: 980px) {
+      .master-search-form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">{{ list_title }}</h3>
+      <span class="badge">{{ query_count }}件</span>
+      {% if relation_kind_filter_label %}
+        <span class="badge">{{ relation_kind_filter_label }}のみ表示</span>
+      {% endif %}
+    </div>
+    <div class="panel-body">
+      <form method="get" class="master-search-form">
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.linked_person_code.id_for_label }}">個別コード</label>
+          {{ form.linked_person_code }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.patient_id.id_for_label }}">患者ID</label>
+          {{ form.patient_id }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.branch_no.id_for_label }}">枝番</label>
+          {{ form.branch_no }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.relation_kind.id_for_label }}">種別</label>
+          {{ form.relation_kind }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.kana.id_for_label }}">ふりかな</label>
+          {{ form.kana }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.relationship_label.id_for_label }}">属性</label>
+          {{ form.relationship_label }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.is_active.id_for_label }}">状態</label>
+          {{ form.is_active }}
+        </div>
+        <div class="master-search-field">
+          <label class="field-label" for="{{ form.sort.id_for_label }}">ソート</label>
+          {{ form.sort }}
+        </div>
+        <div class="master-search-actions">
+          <button class="primary" type="submit">検索</button>
+          {% if has_filters %}
+            <a class="button" href="{{ clear_url }}">検索解除</a>
+          {% endif %}
+          <span class="muted">検索キー: 個別コード、患者ID、枝番、種別、属性、ふりかな、状態</span>
+        </div>
+      </form>
+
+      {% if linked_persons %}
+        <div class="table-scroll" style="margin-top: 16px;">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>個別コード</th>
+                <th>患者ID</th>
+                <th>枝番</th>
+                <th>種別</th>
+                <th>属性</th>
+                <th>氏名</th>
+                <th>ふりかな</th>
+                <th>状態</th>
+                <th>更新日時</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for linked_person in linked_persons %}
+                <tr>
+                  <td><strong>{{ linked_person.linked_person_code|default:"-" }}</strong></td>
+                  <td>{{ linked_person.patient_id }}</td>
+                  <td><strong>{{ linked_person.branch_no }}</strong></td>
+                  <td>{{ linked_person.relation_kind_label }}</td>
+                  <td>{{ linked_person.relationship_display_label|default:"-" }}</td>
+                  <td>{{ linked_person.full_name|default:"-" }}</td>
+                  <td>{{ linked_person.kana_full_name|default:"-" }}</td>
+                  <td>{% if linked_person.is_active %}有効{% else %}無効{% endif %}</td>
+                  <td>{{ linked_person.updated_at|date:"Y-m-d H:i:s" }}</td>
+                  <td>
+                    <div class="actions">
+                      <a class="button" href="{% url edit_url_name pk=linked_person.pk %}">編集</a>
+                      <form class="inline-form" method="post" action="{% url delete_url_name pk=linked_person.pk %}" onsubmit="return confirm('この{{ entity_label }}を削除しますか？');">
+                        {% csrf_token %}
+                        <button class="danger" type="submit">削除</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">{{ entity_label }}がありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

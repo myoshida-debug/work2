@@ -1,0 +1,1 @@
+{% extends 'internal_ai/base.html' %}{% block content %}<div class="card"><h2>利用状況</h2><div class="stats"><div class="stat">今月の質問回数<strong>{{ count }}回</strong></div><div class="stat">今月の推定料金<strong>{{ total }}円</strong></div><div class="stat">残り利用可能額<strong>{{ remaining }}円</strong></div></div><p><a href="{% url 'internal_ai:chat' %}">AIチャットへ戻る</a></p></div>{% endblock %}

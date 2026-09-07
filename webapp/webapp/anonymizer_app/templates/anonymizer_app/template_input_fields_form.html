@@ -1,0 +1,1158 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}テンプレート欄編集{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}テンプレート欄編集{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">欄名、種類、大きさ、必須、その他、順番を編集します。チェックボックスの選択肢は別ページで管理します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:templates_list' %}">テンプレート一覧へ</a>
+  <a class="button" href="{% url 'close_side:template_input_defaults_edit' template_type=template_type %}">入力欄初期値へ</a>
+  <a class="button" href="{% url 'close_side:template_checkbox_options_edit' template_type=template_type %}">チェックボックス項目へ</a>
+{% endblock %}
+
+{% block content %}
+  <style>
+    .fields-note {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .aliases-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .field-editor-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .field-list {
+      display: grid;
+      gap: 18px;
+    }
+
+    .field-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .field-card.is-dragging {
+      opacity: 0.55;
+      background: #f6f8ff;
+      border-color: var(--blue);
+    }
+
+    .field-card.is-newly-added {
+      background: #f7fbff;
+      border-color: #8cb9ff;
+      box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.12);
+    }
+
+    .field-card-main {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .field-card-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .field-card-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .field-card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .field-card-body {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(180px, 0.7fr) minmax(0, 0.95fr) minmax(130px, 0.45fr);
+      gap: 12px;
+    }
+
+    .field-grid.secondary {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .field-block {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .field-block label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .field-block input,
+    .field-block select,
+    .field-block textarea {
+      width: 100%;
+    }
+
+    .field-block textarea {
+      min-height: 72px;
+    }
+
+    .field-size-input {
+      max-width: 140px;
+    }
+
+    .field-toggle-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .field-toggle-row .button {
+      min-height: 34px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .field-toggle-row .button.is-active {
+      border-color: var(--blue);
+      background: #eef4ff;
+      color: var(--blue-dark);
+    }
+
+    .field-checkbox-only {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field-checkbox-only[hidden] {
+      display: none;
+    }
+
+    .field-help-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .field-card-actions {
+      display: grid;
+      gap: 8px;
+      justify-items: end;
+      align-content: start;
+    }
+
+    .field-card-order-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .field-card-order-actions .button,
+    .field-card-order-actions button {
+      min-height: 30px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .field-drag-handle {
+      cursor: grab;
+    }
+
+    .field-empty {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .field-list-wrap {
+      display: grid;
+      gap: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .field-card,
+      .field-grid,
+      .field-grid.secondary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h3 class="panel-title">{{ template_type }}</h3>
+        {% if template_aliases %}
+          <div class="aliases-row">
+            {% for alias in template_aliases %}
+              <span class="badge">{{ alias }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+      <span class="badge">欄編集</span>
+    </div>
+    <div class="panel-body">
+      <p class="fields-note">欄名、種類、大項目、大きさ、必須、その他、順番を編集できます。チェックボックスの選択肢は別ページで編集します。</p>
+
+      <form method="post" data-template-field-editor>
+        {% csrf_token %}
+        <input type="hidden" name="deleted_field_keys" value="{{ deleted_field_keys|default:'' }}" data-deleted-field-keys>
+
+        <div class="field-editor-toolbar">
+          <button type="submit" class="button primary" name="editor_action" value="add_row" formnovalidate data-add-field-row>項目を追加</button>
+        </div>
+
+        <div
+          class="field-list-wrap"
+          data-field-list
+          data-next-row-number="{{ next_row_number }}"
+          data-next-position="{{ next_position }}"
+        >
+        <div
+          class="field-list"
+          data-next-row-number="{{ next_row_number }}"
+          data-next-position="{{ next_position }}"
+        >
+            {% if field_rows %}
+              {% for row in field_rows %}
+                <section
+                  class="field-card{% if row.row_key == newly_added_row_key %} is-newly-added{% endif %}"
+                  data-field-row
+                  data-row-key="{{ row.row_key }}"
+                  data-source-kind="{{ row.source_kind }}"
+                  data-field-key="{{ row.field_key }}"
+                >
+                  <div class="field-card-main">
+                    <div class="field-card-head">
+                      <div>
+                        <h4 class="field-card-title">{{ row.label|default:"新しい欄" }}</h4>
+                        <div class="field-card-meta">
+                          {% if row.source_kind == 'db' %}
+                            <span class="badge">保存済み</span>
+                          {% elif row.source_kind == 'new' %}
+                            <span class="badge">新規</span>
+                          {% else %}
+                            <span class="badge">既定</span>
+                          {% endif %}
+                          <span class="badge" data-role="field-input-type-badge">
+                            {% if row.input_type == 'checkbox_group' %}チェックボックス{% elif row.input_type == 'date' %}日付{% else %}テキスト{% endif %}
+                          </span>
+                          <span class="badge" data-role="field-textarea-rows-badge" {% if row.input_type != 'textarea' %}hidden{% endif %}>{{ row.textarea_rows|default:3 }}行</span>
+                          {% if row.required %}
+                            <span class="badge">必須</span>
+                          {% else %}
+                            <span class="badge">任意</span>
+                          {% endif %}
+                          {% if row.allow_other %}
+                            <span class="badge">その他あり</span>
+                          {% endif %}
+                          {% if row.has_checkbox_options %}
+                            <span class="badge">選択肢 {{ row.option_count }}件</span>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="field-card-body">
+                      {% if row.error %}
+                        <div class="field-error">{{ row.error }}</div>
+                      {% endif %}
+
+                      <div class="field-grid">
+                        <div class="field-block">
+                          <label for="field__{{ row.row_key }}__label">欄名</label>
+                          <input
+                            id="field__{{ row.row_key }}__label"
+                            type="text"
+                            name="field__{{ row.row_key }}__label"
+                            value="{{ row.label }}"
+                            data-role="field-label"
+                            placeholder="欄名を入力"
+                            {% if row.row_key == newly_added_row_key %}autofocus{% endif %}
+                          >
+                        </div>
+                        <div class="field-block">
+                          <label for="field__{{ row.row_key }}__input_type">種類</label>
+                          <select
+                            id="field__{{ row.row_key }}__input_type"
+                            name="field__{{ row.row_key }}__input_type"
+                            data-role="field-input-type"
+                          >
+                            {% for value, label in field_input_type_choices %}
+                              <option value="{{ value }}" {% if row.input_type == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="field-block">
+                          <label for="field__{{ row.row_key }}__section_title">大項目</label>
+                          <input
+                            id="field__{{ row.row_key }}__section_title"
+                            type="text"
+                            name="field__{{ row.row_key }}__section_title"
+                            value="{{ row.section_title }}"
+                            data-role="field-section-title"
+                            placeholder="大項目を入力"
+                          >
+                        </div>
+                        <div class="field-block" data-role="field-textarea-size-block" {% if row.input_type != 'textarea' %}hidden{% endif %}>
+                          <label for="field__{{ row.row_key }}__textarea_rows">大きさ（行数）</label>
+                          <input
+                            id="field__{{ row.row_key }}__textarea_rows"
+                            type="number"
+                            min="1"
+                            step="1"
+                            name="field__{{ row.row_key }}__textarea_rows"
+                            value="{{ row.textarea_rows|default:3 }}"
+                            data-role="field-textarea-rows"
+                            class="field-size-input"
+                          >
+                        </div>
+                      </div>
+
+                      <div class="field-toggle-row">
+                        <button type="button" class="button {% if row.required %}is-active{% endif %}" data-toggle-required>
+                          {% if row.required %}必須{% else %}任意{% endif %}
+                        </button>
+                        <button
+                          type="button"
+                          class="button {% if row.allow_other %}is-active{% endif %}"
+                          data-toggle-other
+                          {% if row.input_type != 'checkbox_group' %}disabled{% endif %}
+                        >
+                          {% if row.input_type == 'checkbox_group' %}
+                            {% if row.allow_other %}その他あり{% else %}その他なし{% endif %}
+                          {% else %}
+                            その他
+                          {% endif %}
+                        </button>
+                        <input type="hidden" name="field__{{ row.row_key }}__required" value="{% if row.required %}1{% else %}0{% endif %}" data-role="field-required">
+                        <input type="hidden" name="field__{{ row.row_key }}__allow_other" value="{% if row.allow_other %}1{% else %}0{% endif %}" data-role="field-allow-other">
+                      </div>
+
+                      <div class="field-checkbox-only" data-checkbox-only {% if row.input_type != 'checkbox_group' %}hidden{% endif %}>
+                        <div class="field-grid secondary">
+                          <div class="field-block">
+                            <label for="field__{{ row.row_key }}__other_label">その他ラベル</label>
+                            <input
+                              id="field__{{ row.row_key }}__other_label"
+                              type="text"
+                              name="field__{{ row.row_key }}__other_label"
+                              value="{{ row.other_label }}"
+                              data-role="field-other-label"
+                              placeholder="その他"
+                            >
+                          </div>
+                          <div class="field-block">
+                            <label for="field__{{ row.row_key }}__other_placeholder">その他入力</label>
+                            <input
+                              id="field__{{ row.row_key }}__other_placeholder"
+                              type="text"
+                              name="field__{{ row.row_key }}__other_placeholder"
+                              value="{{ row.other_placeholder }}"
+                              data-role="field-other-placeholder"
+                              placeholder="自由入力"
+                            >
+                          </div>
+                        </div>
+                        <p class="field-help-note" data-checkbox-note {% if row.input_type != 'checkbox_group' %}hidden{% endif %}>チェックボックスの選択肢は別ページで編集します。</p>
+                      </div>
+
+                      <div class="field-block">
+                        <label for="field__{{ row.row_key }}__help_text">説明</label>
+                        <textarea
+                          id="field__{{ row.row_key }}__help_text"
+                          name="field__{{ row.row_key }}__help_text"
+                          data-role="field-help-text"
+                          rows="2"
+                          placeholder="補足説明を入力"
+                        >{{ row.help_text }}</textarea>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="field-card-actions">
+                    <div class="field-card-order-actions">
+                      <button type="button" class="button field-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                      <button type="button" class="button" data-move-row="top">一番上</button>
+                      <button type="button" class="button" data-move-row="up">上へ</button>
+                      <button type="button" class="button" data-move-row="down">下へ</button>
+                      <button type="button" class="button" data-move-row="bottom">一番下</button>
+                    </div>
+                    <button type="button" class="danger" data-remove-field-row>削除</button>
+                  </div>
+
+                  <input
+                    type="hidden"
+                    name="field__{{ row.row_key }}__field_key"
+                    value="{{ row.field_key }}"
+                    data-role="field-key"
+                  >
+                  <input
+                    type="hidden"
+                    name="field__{{ row.row_key }}__record_id"
+                    value="{{ row.record_id }}"
+                    data-role="field-record-id"
+                  >
+                  <input
+                    type="hidden"
+                    name="field__{{ row.row_key }}__source_kind"
+                    value="{{ row.source_kind }}"
+                    data-role="field-source-kind"
+                  >
+                  <input
+                    type="hidden"
+                    name="field__{{ row.row_key }}__position"
+                    value="{{ row.position }}"
+                    data-role="field-position"
+                  >
+                </section>
+              {% endfor %}
+            {% else %}
+              <p class="field-empty">まだ欄がありません。上の「項目を追加」から登録してください。</p>
+            {% endif %}
+          </div>
+
+          <template data-field-row-template>
+            <section class="field-card is-newly-added" data-field-row data-row-key="new_0" data-source-kind="new" data-field-key="">
+              <div class="field-card-main">
+                <div class="field-card-head">
+                <div>
+                    <h4 class="field-card-title">新しい欄</h4>
+                  <div class="field-card-meta">
+                    <span class="badge">新規</span>
+                    <span class="badge" data-role="field-input-type-badge">テキスト</span>
+                    <span class="badge" data-role="field-textarea-rows-badge">3行</span>
+                    <span class="badge">任意</span>
+                  </div>
+                </div>
+                </div>
+
+                <div class="field-card-body">
+                  <div class="field-grid">
+                    <div class="field-block">
+                      <label data-role="field-label-title" for="field__new_0__label">欄名</label>
+                      <input
+                        id="field__new_0__label"
+                        type="text"
+                        name="field__new_0__label"
+                        value=""
+                        data-role="field-label"
+                        placeholder="欄名を入力"
+                        autofocus
+                      >
+                    </div>
+                    <div class="field-block">
+                      <label data-role="field-input-type-title" for="field__new_0__input_type">種類</label>
+                      <select
+                        id="field__new_0__input_type"
+                        name="field__new_0__input_type"
+                        data-role="field-input-type"
+                      >
+                        {% for value, label in field_input_type_choices %}
+                          <option value="{{ value }}"{% if value == 'textarea' %} selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="field-block">
+                      <label data-role="field-section-title-title" for="field__new_0__section_title">大項目</label>
+                      <input
+                        id="field__new_0__section_title"
+                        type="text"
+                        name="field__new_0__section_title"
+                        value=""
+                        data-role="field-section-title"
+                        placeholder="大項目を入力"
+                      >
+                    </div>
+                    <div class="field-block" data-role="field-textarea-size-block">
+                      <label data-role="field-textarea-rows-title" for="field__new_0__textarea_rows">大きさ（行数）</label>
+                      <input
+                        id="field__new_0__textarea_rows"
+                        type="number"
+                        min="1"
+                        step="1"
+                        name="field__new_0__textarea_rows"
+                        value="3"
+                        data-role="field-textarea-rows"
+                        class="field-size-input"
+                      >
+                    </div>
+                  </div>
+
+                  <div class="field-toggle-row">
+                    <button type="button" class="button" data-toggle-required>任意</button>
+                    <button type="button" class="button" data-toggle-other disabled>その他</button>
+                    <input type="hidden" name="field__new_0__required" value="0" data-role="field-required">
+                    <input type="hidden" name="field__new_0__allow_other" value="0" data-role="field-allow-other">
+                  </div>
+
+                  <div class="field-checkbox-only" data-checkbox-only hidden>
+                    <div class="field-grid secondary">
+                      <div class="field-block">
+                        <label data-role="field-other-label-title" for="field__new_0__other_label">その他ラベル</label>
+                        <input
+                          id="field__new_0__other_label"
+                          type="text"
+                          name="field__new_0__other_label"
+                          value="その他"
+                          data-role="field-other-label"
+                          placeholder="その他"
+                        >
+                      </div>
+                      <div class="field-block">
+                        <label data-role="field-other-placeholder-title" for="field__new_0__other_placeholder">その他入力</label>
+                        <input
+                          id="field__new_0__other_placeholder"
+                          type="text"
+                          name="field__new_0__other_placeholder"
+                          value="自由入力"
+                          data-role="field-other-placeholder"
+                          placeholder="自由入力"
+                        >
+                      </div>
+                    </div>
+                    <p class="field-help-note" data-checkbox-note hidden>チェックボックスの選択肢は別ページで編集します。</p>
+                  </div>
+
+                  <div class="field-block">
+                    <label data-role="field-help-text-title" for="field__new_0__help_text">説明</label>
+                    <textarea
+                      id="field__new_0__help_text"
+                      name="field__new_0__help_text"
+                      data-role="field-help-text"
+                      rows="2"
+                      placeholder="補足説明を入力"
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-card-actions">
+                <div class="field-card-order-actions">
+                  <button type="button" class="button field-drag-handle" data-drag-handle draggable="true" aria-label="ドラッグして並べ替え">ドラッグ</button>
+                  <button type="button" class="button" data-move-row="top">一番上</button>
+                  <button type="button" class="button" data-move-row="up">上へ</button>
+                  <button type="button" class="button" data-move-row="down">下へ</button>
+                  <button type="button" class="button" data-move-row="bottom">一番下</button>
+                </div>
+                <button type="button" class="danger" data-remove-field-row>削除</button>
+              </div>
+
+              <input type="hidden" name="field__new_0__field_key" value="" data-role="field-key">
+              <input type="hidden" name="field__new_0__record_id" value="" data-role="field-record-id">
+              <input type="hidden" name="field__new_0__source_kind" value="new" data-role="field-source-kind">
+              <input type="hidden" name="field__new_0__position" value="0" data-role="field-position">
+            </section>
+          </template>
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+          <button class="primary" type="submit">保存</button>
+          <a class="button" href="{% url 'close_side:templates_list' %}">一覧へ戻る</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const editor = document.querySelector('[data-template-field-editor]');
+      if (!editor) {
+        return;
+      }
+
+      const EMPTY_MESSAGE_TEXT = 'まだ欄がありません。上の「項目を追加」から登録してください。';
+      let draggingRow = null;
+
+      function getList() {
+        return editor.querySelector('.field-list[data-next-row-number]');
+      }
+
+      function getRows() {
+        const list = getList();
+        if (!list) {
+          return [];
+        }
+        return Array.from(list.querySelectorAll('[data-field-row]'));
+      }
+
+      function getDeletedFieldKeysInput() {
+        return editor.querySelector('[data-deleted-field-keys]');
+      }
+
+      function getDeletedFieldKeys() {
+        const input = getDeletedFieldKeysInput();
+        if (!input || !input.value) {
+          return [];
+        }
+        return input.value.split(',').map(function (key) {
+          return key.trim();
+        }).filter(Boolean);
+      }
+
+      function setDeletedFieldKeys(keys) {
+        const input = getDeletedFieldKeysInput();
+        if (!input) {
+          return;
+        }
+        const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+        input.value = uniqueKeys.join(',');
+      }
+
+      function addDeletedFieldKey(fieldKey) {
+        if (!fieldKey) {
+          return;
+        }
+        const keys = getDeletedFieldKeys();
+        if (keys.includes(fieldKey)) {
+          return;
+        }
+        keys.push(fieldKey);
+        setDeletedFieldKeys(keys);
+      }
+
+      function syncEmptyState() {
+        const list = getList();
+        if (!list) {
+          return;
+        }
+
+        const rows = getRows();
+        const emptyMessage = list.querySelector('.field-empty');
+        if (!rows.length) {
+          if (!emptyMessage) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'field-empty';
+            placeholder.textContent = EMPTY_MESSAGE_TEXT;
+            list.appendChild(placeholder);
+          }
+          return;
+        }
+
+        if (emptyMessage) {
+          emptyMessage.remove();
+        }
+      }
+
+      function updateMoveButtonState() {
+        const rows = getRows();
+        rows.forEach(function (row, index) {
+          row.querySelectorAll('[data-move-row]').forEach(function (button) {
+            const moveType = button.dataset.moveRow || '';
+            button.disabled = (
+              (moveType === 'top' && index === 0)
+              || (moveType === 'up' && index === 0)
+              || (moveType === 'down' && index === rows.length - 1)
+              || (moveType === 'bottom' && index === rows.length - 1)
+            );
+          });
+        });
+      }
+
+      function setToggleButtonState(button, active, activeLabel, inactiveLabel) {
+        if (!button) {
+          return;
+        }
+        button.textContent = active ? activeLabel : inactiveLabel;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }
+
+      function normalizeTextareaRows(value, fallback) {
+        const parsed = Number.parseInt(String(value || '').trim(), 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed;
+        }
+        return fallback;
+      }
+
+      function getFieldInputTypeLabel(inputType) {
+        if (inputType === 'checkbox_group') {
+          return 'チェックボックス';
+        }
+        if (inputType === 'date') {
+          return '日付';
+        }
+        return 'テキスト';
+      }
+
+      function syncTextareaRowsState(row) {
+        const typeSelect = row.querySelector('[data-role="field-input-type"]');
+        const rowsInput = row.querySelector('[data-role="field-textarea-rows"]');
+        const badge = row.querySelector('[data-role="field-textarea-rows-badge"]');
+        const sizeBlock = row.querySelector('[data-role="field-textarea-size-block"]');
+        const isTextarea = !typeSelect || typeSelect.value === 'textarea';
+        if (sizeBlock) {
+          sizeBlock.hidden = !isTextarea;
+        }
+        if (badge) {
+          badge.hidden = !isTextarea;
+        }
+        if (!rowsInput) {
+          return;
+        }
+        const rows = normalizeTextareaRows(rowsInput.value, 3);
+        rowsInput.value = String(rows);
+        if (isTextarea && badge) {
+          badge.textContent = `${rows}行`;
+        }
+      }
+
+      function syncRowTypeState(row) {
+        const typeSelect = row.querySelector('[data-role="field-input-type"]');
+        const checkboxOnly = row.querySelector('[data-checkbox-only]');
+        const checkboxNote = row.querySelector('[data-checkbox-note]');
+        const allowOtherInput = row.querySelector('[data-role="field-allow-other"]');
+        const otherButton = row.querySelector('[data-toggle-other]');
+        const typeBadge = row.querySelector('[data-role="field-input-type-badge"]');
+        const inputType = typeSelect ? typeSelect.value : 'textarea';
+        const isCheckbox = inputType === 'checkbox_group';
+
+        if (typeBadge) {
+          typeBadge.textContent = getFieldInputTypeLabel(inputType);
+        }
+
+        if (checkboxOnly) {
+          checkboxOnly.hidden = !isCheckbox;
+        }
+        if (checkboxNote) {
+          checkboxNote.hidden = !isCheckbox;
+        }
+        if (!isCheckbox && allowOtherInput) {
+          allowOtherInput.value = '0';
+          setToggleButtonState(otherButton, false, 'その他あり', 'その他');
+        } else if (isCheckbox) {
+          const otherEnabled = allowOtherInput ? allowOtherInput.value === '1' : false;
+          setToggleButtonState(otherButton, otherEnabled, 'その他あり', 'その他なし');
+        }
+        if (otherButton) {
+          otherButton.disabled = !isCheckbox;
+        }
+        syncTextareaRowsState(row);
+      }
+
+      function syncRequiredState(row) {
+        const requiredInput = row.querySelector('[data-role="field-required"]');
+        const button = row.querySelector('[data-toggle-required]');
+        const requiredEnabled = requiredInput ? requiredInput.value === '1' : false;
+        setToggleButtonState(button, requiredEnabled, '必須', '任意');
+      }
+
+      function syncOtherState(row) {
+        const allowOtherInput = row.querySelector('[data-role="field-allow-other"]');
+        const button = row.querySelector('[data-toggle-other]');
+        const typeSelect = row.querySelector('[data-role="field-input-type"]');
+        const isCheckbox = typeSelect && typeSelect.value === 'checkbox_group';
+        if (!isCheckbox) {
+          setToggleButtonState(button, false, 'その他あり', 'その他');
+          if (button) {
+            button.disabled = true;
+          }
+          return;
+        }
+        const enabled = allowOtherInput ? allowOtherInput.value === '1' : false;
+        setToggleButtonState(button, enabled, 'その他あり', 'その他なし');
+        if (button) {
+          button.disabled = false;
+        }
+      }
+
+      function syncRowState(row) {
+        syncRowTypeState(row);
+        syncRequiredState(row);
+        syncOtherState(row);
+      }
+
+      function syncSection() {
+        const rows = getRows();
+        rows.forEach(function (row, index) {
+          const positionInput = row.querySelector('[data-role="field-position"]');
+          if (positionInput) {
+            positionInput.value = String(index * 10);
+          }
+        });
+        const list = getList();
+        if (list) {
+          list.dataset.nextPosition = String(rows.length * 10);
+        }
+        updateMoveButtonState();
+        syncEmptyState();
+      }
+
+      function focusLabelInput(row) {
+        const labelInput = row ? row.querySelector('[data-role="field-label"]') : null;
+        if (labelInput) {
+          labelInput.focus();
+        }
+      }
+
+      function insertRowAt(row, index) {
+        const list = getList();
+        if (!list || !row) {
+          return;
+        }
+
+        const rows = getRows().filter(function (item) {
+          return item !== row;
+        });
+        const targetRow = rows[index] || null;
+        if (targetRow) {
+          list.insertBefore(row, targetRow);
+        } else {
+          list.appendChild(row);
+        }
+        syncSection();
+        focusLabelInput(row);
+      }
+
+      function moveRow(row, direction) {
+        const rows = getRows();
+        const currentIndex = rows.indexOf(row);
+        if (currentIndex < 0) {
+          return;
+        }
+
+        if (direction === 'top') {
+          insertRowAt(row, 0);
+          return;
+        }
+        if (direction === 'bottom') {
+          insertRowAt(row, rows.length - 1);
+          return;
+        }
+        if (direction === 'up') {
+          insertRowAt(row, Math.max(0, currentIndex - 1));
+          return;
+        }
+        if (direction === 'down') {
+          insertRowAt(row, Math.min(rows.length - 1, currentIndex + 1));
+        }
+      }
+
+      function createRow() {
+        const list = getList();
+        const template = editor.querySelector('template[data-field-row-template]');
+        if (!list || !template) {
+          return;
+        }
+
+        const nextRowNumber = Number(list.dataset.nextRowNumber || getRows().length);
+        const nextPosition = Number(list.dataset.nextPosition || (getRows().length * 10));
+        const rowKey = `new_${nextRowNumber}`;
+        list.dataset.nextRowNumber = String(nextRowNumber + 1);
+        list.dataset.nextPosition = String(nextPosition + 10);
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = template.innerHTML;
+        const row = wrapper.firstElementChild;
+        if (!row) {
+          return;
+        }
+
+        row.dataset.rowKey = rowKey;
+        row.dataset.sourceKind = 'new';
+        row.dataset.fieldKey = '';
+
+        const fieldKeyInput = row.querySelector('[data-role="field-key"]');
+        const recordIdInput = row.querySelector('[data-role="field-record-id"]');
+        const sourceKindInput = row.querySelector('[data-role="field-source-kind"]');
+        const positionInput = row.querySelector('[data-role="field-position"]');
+        const labelInput = row.querySelector('[data-role="field-label"]');
+        const inputTypeSelect = row.querySelector('[data-role="field-input-type"]');
+        const sectionTitleInput = row.querySelector('[data-role="field-section-title"]');
+        const textareaRowsInput = row.querySelector('[data-role="field-textarea-rows"]');
+        const requiredInput = row.querySelector('[data-role="field-required"]');
+        const allowOtherInput = row.querySelector('[data-role="field-allow-other"]');
+        const otherLabelInput = row.querySelector('[data-role="field-other-label"]');
+        const otherPlaceholderInput = row.querySelector('[data-role="field-other-placeholder"]');
+        const helpTextInput = row.querySelector('[data-role="field-help-text"]');
+        const requiredButton = row.querySelector('[data-toggle-required]');
+        const otherButton = row.querySelector('[data-toggle-other]');
+
+        if (fieldKeyInput) {
+          fieldKeyInput.name = `field__${rowKey}__field_key`;
+          fieldKeyInput.value = '';
+        }
+        if (recordIdInput) {
+          recordIdInput.name = `field__${rowKey}__record_id`;
+          recordIdInput.value = '';
+        }
+        if (sourceKindInput) {
+          sourceKindInput.name = `field__${rowKey}__source_kind`;
+          sourceKindInput.value = 'new';
+        }
+        if (positionInput) {
+          positionInput.name = `field__${rowKey}__position`;
+          positionInput.value = String(nextPosition);
+        }
+        if (labelInput) {
+          labelInput.name = `field__${rowKey}__label`;
+          labelInput.id = `field__${rowKey}__label`;
+          labelInput.value = '';
+        }
+        if (inputTypeSelect) {
+          inputTypeSelect.name = `field__${rowKey}__input_type`;
+          inputTypeSelect.id = `field__${rowKey}__input_type`;
+          inputTypeSelect.value = 'textarea';
+        }
+        if (sectionTitleInput) {
+          sectionTitleInput.name = `field__${rowKey}__section_title`;
+          sectionTitleInput.id = `field__${rowKey}__section_title`;
+          sectionTitleInput.value = '';
+        }
+        if (textareaRowsInput) {
+          textareaRowsInput.name = `field__${rowKey}__textarea_rows`;
+          textareaRowsInput.id = `field__${rowKey}__textarea_rows`;
+          textareaRowsInput.value = '3';
+        }
+        if (requiredInput) {
+          requiredInput.name = `field__${rowKey}__required`;
+          requiredInput.value = '0';
+        }
+        if (allowOtherInput) {
+          allowOtherInput.name = `field__${rowKey}__allow_other`;
+          allowOtherInput.value = '0';
+        }
+        if (otherLabelInput) {
+          otherLabelInput.name = `field__${rowKey}__other_label`;
+          otherLabelInput.id = `field__${rowKey}__other_label`;
+          otherLabelInput.value = 'その他';
+        }
+        if (otherPlaceholderInput) {
+          otherPlaceholderInput.name = `field__${rowKey}__other_placeholder`;
+          otherPlaceholderInput.id = `field__${rowKey}__other_placeholder`;
+          otherPlaceholderInput.value = '自由入力';
+        }
+        if (helpTextInput) {
+          helpTextInput.name = `field__${rowKey}__help_text`;
+          helpTextInput.id = `field__${rowKey}__help_text`;
+          helpTextInput.value = '';
+        }
+        if (requiredButton) {
+          setToggleButtonState(requiredButton, false, '必須', '任意');
+        }
+        if (otherButton) {
+          setToggleButtonState(otherButton, false, 'その他あり', 'その他');
+          otherButton.disabled = true;
+        }
+
+        row.classList.add('is-newly-added');
+        list.appendChild(row);
+        syncRowState(row);
+        syncSection();
+        focusLabelInput(row);
+        if (typeof row.scrollIntoView === 'function') {
+          try {
+            row.scrollIntoView({block: 'center', behavior: 'smooth'});
+          } catch (error) {
+            row.scrollIntoView(true);
+          }
+        }
+      }
+
+      function removeRow(row) {
+        if (!row) {
+          return;
+        }
+        const sourceKind = row.dataset.sourceKind || 'new';
+        const fieldKeyInput = row.querySelector('[data-role="field-key"]');
+        const fieldKey = (fieldKeyInput && fieldKeyInput.value.trim()) || row.dataset.fieldKey || row.dataset.rowKey || '';
+        if (sourceKind === 'builtin' || sourceKind === 'db') {
+          addDeletedFieldKey(fieldKey);
+        }
+        row.remove();
+        syncSection();
+      }
+
+      editor.querySelectorAll('[data-field-row]').forEach(function (row) {
+        syncRowState(row);
+      });
+      syncSection();
+
+      const addButton = editor.querySelector('[data-add-field-row]');
+      if (addButton) {
+        addButton.addEventListener('click', function (event) {
+          if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+          }
+          createRow();
+        });
+      }
+
+      editor.addEventListener('change', function (event) {
+        const typeSelect = event.target.closest('[data-role="field-input-type"]');
+        if (!typeSelect) {
+          return;
+        }
+        const row = typeSelect.closest('[data-field-row]');
+        if (row) {
+          syncRowTypeState(row);
+        }
+      });
+
+      editor.addEventListener('input', function (event) {
+        const labelInput = event.target.closest('[data-role="field-label"]');
+        if (labelInput) {
+          const row = labelInput.closest('[data-field-row]');
+          const title = row ? row.querySelector('.field-card-title') : null;
+          if (title) {
+            const value = String(labelInput.value || '').trim();
+            title.textContent = value || '新しい欄';
+          }
+          return;
+        }
+        const textareaRowsInput = event.target.closest('[data-role="field-textarea-rows"]');
+        if (textareaRowsInput) {
+          const row = textareaRowsInput.closest('[data-field-row]');
+          if (row) {
+            syncTextareaRowsState(row);
+          }
+        }
+      });
+
+      editor.addEventListener('click', function (event) {
+        const requiredButton = event.target.closest('[data-toggle-required]');
+        if (requiredButton) {
+          const row = requiredButton.closest('[data-field-row]');
+          const requiredInput = row ? row.querySelector('[data-role="field-required"]') : null;
+          if (requiredInput) {
+            requiredInput.value = requiredInput.value === '1' ? '0' : '1';
+            syncRequiredState(row);
+          }
+          return;
+        }
+
+        const otherButton = event.target.closest('[data-toggle-other]');
+        if (otherButton) {
+          if (otherButton.disabled) {
+            return;
+          }
+          const row = otherButton.closest('[data-field-row]');
+          const allowOtherInput = row ? row.querySelector('[data-role="field-allow-other"]') : null;
+          if (allowOtherInput) {
+            allowOtherInput.value = allowOtherInput.value === '1' ? '0' : '1';
+            syncOtherState(row);
+          }
+          return;
+        }
+
+        const moveButton = event.target.closest('[data-move-row]');
+        if (moveButton) {
+          const row = moveButton.closest('[data-field-row]');
+          if (row) {
+            moveRow(row, moveButton.dataset.moveRow || '');
+          }
+          return;
+        }
+
+        const removeButton = event.target.closest('[data-remove-field-row]');
+        if (removeButton) {
+          const row = removeButton.closest('[data-field-row]');
+          removeRow(row);
+        }
+      });
+
+      editor.addEventListener('dragstart', function (event) {
+        const handle = event.target.closest('[data-drag-handle]');
+        if (!handle || !editor.contains(handle)) {
+          return;
+        }
+        const row = handle.closest('[data-field-row]');
+        if (!row) {
+          return;
+        }
+        draggingRow = row;
+        row.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          try {
+            event.dataTransfer.setData('text/plain', row.dataset.rowKey || '');
+          } catch (error) {
+            // ignore
+          }
+        }
+      });
+
+      editor.addEventListener('dragover', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        const targetRow = event.target.closest('[data-field-row]');
+        const list = getList();
+        if (!list || targetRow === draggingRow) {
+          return;
+        }
+
+        event.preventDefault();
+        if (!targetRow) {
+          list.appendChild(draggingRow);
+          return;
+        }
+
+        const rect = targetRow.getBoundingClientRect();
+        const shouldInsertBefore = event.clientY < rect.top + (rect.height / 2);
+        if (shouldInsertBefore) {
+          list.insertBefore(draggingRow, targetRow);
+        } else {
+          list.insertBefore(draggingRow, targetRow.nextElementSibling);
+        }
+      });
+
+      editor.addEventListener('drop', function (event) {
+        if (!draggingRow) {
+          return;
+        }
+        event.preventDefault();
+        syncSection();
+      });
+
+      editor.addEventListener('dragend', function () {
+        if (draggingRow) {
+          draggingRow.classList.remove('is-dragging');
+          syncSection();
+        }
+        draggingRow = null;
+        editor.querySelectorAll('[data-field-row]').forEach(function (row) {
+          row.classList.remove('is-dragging');
+        });
+      });
+    });
+  </script>
+{% endblock %}

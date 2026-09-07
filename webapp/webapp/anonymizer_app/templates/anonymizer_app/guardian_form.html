@@ -1,0 +1,32 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}{% if create %}後見人マスタ追加{% else %}後見人マスタ編集{% endif %}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{% if create %}後見人マスタ追加{% else %}後見人マスタ編集{% endif %}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">患者IDと枝番で患者に紐づく後見人情報を管理します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{{ back_url }}">一覧へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">後見人マスタ情報</h3>
+      <span class="badge">{% if create %}新規{% else %}編集{% endif %}</span>
+    </div>
+    <div class="panel-body">
+      <p class="muted">CSV取込時は、患者IDと枝番が一致する場合に既存データを更新し、空白項目は上書きしません。</p>
+      <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="error-list">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {{ form.as_p }}
+        <div class="actions">
+          <button class="primary" type="submit">保存</button>
+          <a class="button" href="{{ back_url }}">キャンセル</a>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

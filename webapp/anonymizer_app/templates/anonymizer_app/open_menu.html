@@ -1,0 +1,48 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSideメニュー{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}OpenSideメニュー{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">DMZからプロンプトを取り込み、AI生成結果をCloseSideへ返却します。</p>{% endblock %}
+
+{% block content %}
+  <section class="menu-grid">
+    <article class="card">
+      <h3>プロンプト一覧</h3>
+      <p class="muted">CloseSideからDMZへ送信されたプロンプトを確認します。</p>
+      <a class="button primary" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+    </article>
+    {% if request.user.is_staff or request.user.is_superuser %}
+      <article class="card">
+        <h3>操作ログ</h3>
+        <p class="muted">OpenSideでの取込、生成文章送信、エラー履歴を確認します。</p>
+        <a class="button primary" href="{% url 'open_side:operation_logs' %}">操作ログへ</a>
+      </article>
+    {% endif %}
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="panel-header"><h3 class="panel-title">DMZ上の最新プロンプト</h3></div>
+    <div class="panel-body">
+      {% if dmz_files %}
+        <table>
+          <thead>
+            <tr><th>ファイル名</th><th>source_id</th><th>文書種別</th><th>更新日時</th></tr>
+          </thead>
+          <tbody>
+            {% for file in dmz_files %}
+              <tr>
+                <td>{{ file.name }}</td>
+                <td>{{ file.source_id|default:"-" }}</td>
+                <td>{{ file.template_type|default:"-" }}</td>
+                <td>{{ file.modified }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">取り込み可能なプロンプトはありません。</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

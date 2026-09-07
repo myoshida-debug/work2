@@ -1,0 +1,43 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide ユーザー管理{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}ユーザー管理{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">管理者向けのユーザー確認画面です。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button primary" href="{% url 'admin:auth_user_changelist' %}">Django管理画面</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">ユーザー一覧</h3></div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>ユーザー名</th>
+            <th>氏名</th>
+            <th>管理者</th>
+            <th>有効</th>
+            <th>最終ログイン</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.pk }}</td>
+              <td><strong>{{ user.username }}</strong></td>
+              <td>{{ user.get_full_name|default:"-" }}</td>
+              <td>{% if user.is_staff or user.is_superuser %}はい{% else %}いいえ{% endif %}</td>
+              <td>{% if user.is_active %}はい{% else %}いいえ{% endif %}</td>
+              <td>{{ user.last_login|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6">ユーザーがありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

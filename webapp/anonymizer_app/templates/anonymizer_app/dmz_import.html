@@ -1,0 +1,25 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSide プロンプト取込{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}プロンプト取込{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">DMZのファイル名を指定してプロンプトを取り込みます。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">取込ファイル</h3></div>
+    <div class="panel-body">
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="primary" type="submit">取り込む</button>
+      </form>
+      {% if downloaded_path %}
+        <p class="muted">取り込んだファイル: {{ downloaded_path }}</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

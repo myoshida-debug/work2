@@ -1,0 +1,14 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}エラー{% endblock %}
+{% block brand %}匿名化システム{% endblock %}
+{% block page_title %}エラー{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">処理できませんでした</h3></div>
+    <div class="panel-body">
+      <p class="empty">{{ message }}</p>
+    </div>
+  </section>
+{% endblock %}
