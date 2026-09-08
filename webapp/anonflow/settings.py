@@ -166,5 +166,8 @@ STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_OPEN_MODEL = os.environ.get('OPENAI_OPEN_MODEL', 'gpt-4.1-mini')
+OPENAI_OPEN_MAX_INPUT_CHARS = 30000
+OPENAI_OPEN_MAX_OUTPUT_TOKENS = 4096
 AI_USD_JPY_RATE = float(os.environ.get('USD_JPY_RATE', '160'))
 AI_COMPANY_INTERNAL_STOP_JPY = float(os.environ.get('COMPANY_INTERNAL_STOP_JPY', '29000'))

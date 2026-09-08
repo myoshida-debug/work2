@@ -3,6 +3,8 @@ import datetime
 import re
 from pathlib import Path
 
+from django.conf import settings
+from django.http import JsonResponse
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -302,6 +304,43 @@ def imported_prompt(request, filename):
 
 
 @require_http_methods(["POST"])
+def generate_answer(request, filename):
+    try:
+        imported_path = _logs_dir() / _safe_filename(filename)
+        payload = json.loads(imported_path.read_text(encoding='utf-8'))
+        if not isinstance(payload, dict) or not isinstance(payload.get('metadata', {}), dict):
+            raise ValueError('Invalid payload')
+    except (OSError, ValueError):
+        return JsonResponse({'error': '取り込み済みプロンプトを読み込めません。'}, status=404)
+    if not _payload_visible_to_user(payload, request.user):
+        return JsonResponse({'error': 'このプロンプトを利用する権限がありません。'}, status=403)
+    prompt = request.POST.get('prompt', '').strip()
+    if not prompt:
+        return JsonResponse({'error': 'プロンプトを入力してください。'}, status=400)
+    if len(prompt) > settings.OPENAI_OPEN_MAX_INPUT_CHARS:
+        return JsonResponse({'error': 'プロンプトの文字数が上限を超えています。'}, status=413)
+    if not settings.OPENAI_API_KEY:
+        return JsonResponse({'error': 'OpenAI APIキーが未設定です。管理者にお問い合わせください。'}, status=503)
+    try:
+        from openai import OpenAI
+        with OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=0) as client:
+            response = client.responses.create(
+                model=settings.OPENAI_OPEN_MODEL, input=prompt,
+                max_output_tokens=settings.OPENAI_OPEN_MAX_OUTPUT_TOKENS, store=False,
+            )
+        answer = response.output_text
+        if not answer or response.status != 'completed':
+            raise ValueError('Incomplete response')
+    except Exception as exc:
+        _log_operation(request, 'open_ai_generated', 'Prompt', filename,
+                       result='failure', error_message=type(exc).__name__)
+        return JsonResponse({'error': '回答を生成できませんでした。時間をおいて再度お試しください。'}, status=502)
+    _log_operation(request, 'open_ai_generated', 'Prompt', filename,
+                   {'model': settings.OPENAI_OPEN_MODEL})
+    return JsonResponse({'answer': answer})
+
+
+@require_http_methods(["POST"])
 def create_result(request, filename):
     try:
         filename = _safe_filename(filename)
@@ -365,9 +404,9 @@ def create_result(request, filename):
             source_id,
             {'filename': filename, 'source_id': source_id},
             result='failure',
-            error_message='ChatGPT生成結果が未入力です',
+            error_message='AI生成結果が未入力です',
         )
-        messages.error(request, 'ChatGPT生成結果を入力してください。')
+        messages.error(request, 'AI生成結果を入力してください。')
         return redirect('open_side:imported_prompt', filename=filename)
 
     result_text = form.cleaned_data['result_text']

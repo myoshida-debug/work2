@@ -24,5 +24,6 @@ urlpatterns = [
     path('dmz/import/', open_login_required(views.dmz_import), name='dmz_import'),
     path('imported/<str:filename>/', open_login_required(views.imported_prompt), name='imported_prompt'),
     path('imported/<str:filename>/result/', open_login_required(views.create_result), name='create_result'),
+    path('imported/<str:filename>/generate/', open_login_required(views.generate_answer), name='generate_answer'),
     path('logs/', open_admin_required(views.operation_logs), name='operation_logs'),
 ]

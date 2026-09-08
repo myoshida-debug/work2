@@ -690,6 +690,21 @@ class TemplateInputFieldEditTests(TestCase):
         evaluation_date = next(field for field in response.context['structured_fields'] if field['key'] == 'evaluation_date')
         self.assertEqual(evaluation_date['input_type'], 'date')
 
+    def test_home_renders_separate_voice_input_clear_buttons(self):
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': 'OT評価サマリー',
+                'input_mode': 'voice',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="voice-audio-file-clear"')
+        self.assertContains(response, 'ファイルをクリア')
+        self.assertContains(response, 'id="voice-transcript-clear"')
+        self.assertContains(response, '文字起こし欄をクリア')
+
     def test_home_renders_checkbox_groups_without_main_textarea(self):
         response = self.client.post(
             reverse('close_side:home'),

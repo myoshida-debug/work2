@@ -39,6 +39,7 @@ OPERATION_ACTION_LABELS = {
     'restored_result_deleted': '復元結果削除',
     'restored_result_rerestored': '再復元',
     'result_imported_to_close': '返却JSON取込',
+    'open_ai_generated': 'OpenAI回答生成',
     'result_sent_to_dmz': '返却DMZ送信',
     'template_created': 'テンプレート作成',
     'template_deleted': 'テンプレート削除',
