@@ -3,10 +3,10 @@
 <style>
 .admin-shell{margin-bottom:28px}.admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.admin-top a{text-decoration:none}.admin-brand{font-size:22px;font-weight:700}.admin-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.admin-nav a{display:flex;align-items:center;justify-content:center;min-height:60px;padding:8px 12px;text-decoration:none;font-weight:700;border:1px solid #c9d8e7;border-radius:10px;background:white;color:#123b63;box-shadow:0 2px 5px #123b6308}.admin-nav a:hover{background:#eaf3fc;border-color:#1769aa}.admin-nav a[aria-current=page]{background:#123b63;color:white;border-color:#123b63}.admin-nav a:focus-visible{outline:3px solid #358cdb;outline-offset:3px}@media(max-width:700px){.admin-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-nav a:last-child{grid-column:1/-1}.admin-top{align-items:start;flex-direction:column}}
 </style>
-<section class="admin-shell" aria-label="管理メニュー"><div class="admin-top"><a class="admin-brand" href="{% url 'internal_ai:admin_home' %}">管理画面</a><a href="{% url 'internal_ai:chat' %}">AIチャットへ戻る →</a></div>
+<section class="admin-shell" aria-label="管理メニュー"><div class="admin-top"><a class="admin-brand" href="{% url 'internal_ai:admin_home' %}">統合管理画面</a><span><a href="{% url 'close_side:menu' %}">CloseSideへ戻る</a>　<a href="{% url 'internal_ai:chat' %}">AIチャットへ戻る →</a></span></div>
 {% with current=request.resolver_match.url_name %}<nav class="admin-nav" aria-label="管理機能">
 <a href="{% url 'internal_ai:dashboard' %}" {% if current == 'dashboard' %}aria-current="page"{% endif %}>利用状況</a>
-<a href="{% url 'internal_ai:staff_management' %}" {% if current == 'staff_management' or current == 'staff_create' or current == 'staff_edit' %}aria-current="page"{% endif %}>職員管理</a>
+<a href="{% url 'internal_ai:staff_management' %}" {% if current == 'staff_management' or current == 'staff_create' or current == 'staff_edit' %}aria-current="page"{% endif %}>ユーザー管理</a>
 <a href="{% url 'internal_ai:staff_limits' %}" {% if current == 'staff_limits' or current == 'staff_limit_edit' %}aria-current="page"{% endif %}>制限設定</a>
 <a href="{% url 'internal_ai:ai_settings' %}" {% if current == 'ai_settings' or current == 'ai_model_create' or current == 'ai_model_edit' %}aria-current="page"{% endif %}>AI設定</a>
 <a href="{% url 'internal_ai:log_search' %}" {% if current == 'log_search' %}aria-current="page"{% endif %}>ログ検索</a>

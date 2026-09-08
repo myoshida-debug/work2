@@ -286,9 +286,10 @@ def staff_management(request):
         status = ''
     page = Paginator(users, 25).get_page(request.GET.get('page'))
     for staff in page:
+        staff.management_profile = getattr(staff, 'ai_profile', None) or AIProfile(user=staff)
         staff.can_edit = request.user.is_superuser or not (
             staff.is_staff or staff.is_superuser or
-            getattr(getattr(staff, 'ai_profile', None), 'role', 'USER') in ('ADMIN', 'SUPER_ADMIN')
+            staff.management_profile.role in ('ADMIN', 'SUPER_ADMIN')
         )
     return render(request, 'internal_ai/staff_management.html', {
         'page_obj': page, 'query': query, 'status': status,

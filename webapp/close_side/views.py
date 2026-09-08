@@ -4112,8 +4112,10 @@ def template_delete(request, pk):
 
 
 def user_list(request):
-    users = get_user_model().objects.order_by('username')
-    return render(request, 'anonymizer_app/user_list.html', {'users': users})
+    # CloseSide と社内 AI は同じ Django ユーザーを利用しているため、管理画面も
+    # 社内 AI 側のユーザー管理へ集約する。既存の URL はブックマーク互換のため
+    # 残し、恒久的な入口としてリダイレクトする。
+    return redirect('internal_ai:staff_management')
 
 
 def operation_logs(request):
