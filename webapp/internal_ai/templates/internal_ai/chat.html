@@ -1,1 +1,211 @@
-{% extends 'internal_ai/base.html' %}{% block content %}<div class="card"><h2>AIチャット</h2><form id="chatForm" method="post" action="{% url 'internal_ai:chat_api' %}">{% csrf_token %}<label>質問</label><textarea id="message" name="message" maxlength="{{ profile.max_input_chars }}" required></textarea><label>モデル</label><select name="model">{% for model in models %}<option value="{{ model.model_code }}">{{ model.display_name }}</option>{% endfor %}</select><button id="send">AIへ送信</button></form><p id="error" class="error"></p><h3>AI回答</h3><div id="answer" class="answer">まだ回答はありません。</div><div class="stats"><div class="stat">月額上限<strong>{{ profile.monthly_cost_limit_jpy }}円</strong></div><div class="stat">利用状況<strong><a href="{% url 'internal_ai:usage' %}">確認する</a></strong></div></div></div><script>const f=document.getElementById('chatForm');f.addEventListener('submit',async e=>{e.preventDefault();const b=document.getElementById('send');b.disabled=true;b.textContent='回答作成中…';document.getElementById('answer').textContent='AIが回答を作成しています…';document.getElementById('error').textContent='';try{const r=await fetch(f.action,{method:'POST',body:new FormData(f)}),d=await r.json();if(!r.ok)throw Error(d.error);document.getElementById('answer').textContent=d.answer}catch(x){document.getElementById('error').textContent=x.message;document.getElementById('answer').textContent=''}finally{b.disabled=false;b.textContent='AIへ送信'}});</script>{% endblock %}
+{% extends 'internal_ai/base.html' %}
+{% block content %}
+<div class="card">
+  <h2>AIチャット</h2>
+  {% if can_admin %}<p><a href="{% url 'internal_ai:admin_home' %}">管理画面を開く →</a></p>{% endif %}
+  <form id="chatForm" method="post" enctype="multipart/form-data" action="{% url 'internal_ai:chat_api' %}">
+    {% csrf_token %}
+    <label for="message">質問</label>
+    <textarea id="message" name="message" maxlength="{{ profile.max_input_chars }}" placeholder="質問を入力、またはファイルを添付してください。"></textarea>
+    <label for="files">添付ファイル</label>
+    <input id="files" type="file" name="files" multiple accept=".docx,.xlsx,.pdf,.jpg,.jpeg,.png" aria-describedby="fileHelp">
+    <p id="fileHelp">Word（.docx）、Excel（.xlsx）、PDF、JPEG、PNG。最大5件、各10MB、合計20MBまで。旧形式の.doc・.xlsは.docx・.xlsxに変換してください。Word・Excelは本文と表の文字を読み取ります。PDF・画像には画像入力に対応したモデルを選んでください。</p>
+    <ul id="fileList"></ul>
+    <button type="button" id="clearFiles" hidden>添付をすべて解除</button>
+    <label for="answerType">回答の種類</label>
+    <select id="answerType" name="answer_type">
+      <option value="text">文章で回答</option>
+      <option value="image">画像を生成</option>
+    </select>
+    <p>イラストや図を作る場合は「画像を生成」を選び、作りたい画像を質問欄に入力してください。生成には数分かかる場合があります。</p>
+    <label for="model">モデル</label>
+    <select id="model" name="model">{% for model in models %}<option value="{{ model.model_code }}">{{ model.display_name }}</option>{% endfor %}</select>
+    <button id="send">AIへ送信</button>
+  </form>
+  <p id="error" class="error" role="alert"></p>
+  <h3>AI回答</h3>
+  <div id="generatedImages" aria-live="polite" hidden></div>
+  <p id="imageCostNote" hidden>画像生成料金は社内管理用の概算を利用額に加算しています。</p>
+  <label for="answerFormat">回答の表示形式</label>
+  <select id="answerFormat">
+    <option value="text">テキスト</option><option value="png">PNG</option>
+    <option value="jpeg">JPEG</option><option value="pdf">PDF</option>
+  </select>
+  <p id="previewStatus" role="status"></p>
+  <div id="answerPreview" hidden></div>
+  <div id="previewPages" hidden>
+    <button type="button" id="previousPage">前のページ</button>
+    <span id="pageLabel"></span>
+    <button type="button" id="nextPage">次のページ</button>
+  </div>
+  <div id="answer" class="answer" aria-live="polite">まだ回答はありません。</div>
+  <div id="downloads" hidden>
+    <h4>回答文を保存</h4>
+    <div id="downloadLinks" style="display:flex;flex-wrap:wrap;gap:16px"></div>
+    <p>JPEG・PNGは回答文を画像として保存します。複数ページの場合はZIP形式でダウンロードします。</p>
+  </div>
+  <div class="stats"><div class="stat">月額上限<strong>{{ profile.monthly_cost_limit_jpy }}円</strong></div><div class="stat">利用状況<strong><a href="{% url 'internal_ai:usage' %}">確認する</a></strong></div></div>
+</div>
+<script>
+const f = document.getElementById('chatForm');
+const files = document.getElementById('files');
+const clearFiles = document.getElementById('clearFiles');
+const answerFormat = document.getElementById('answerFormat');
+const preview = document.getElementById('answerPreview');
+const previewStatus = document.getElementById('previewStatus');
+const pageControls = document.getElementById('previewPages');
+let answerDownloads = null;
+let previewURL = null;
+let previewRequest = null;
+let previewPage = 1;
+function clearPreview() {
+  if (previewRequest) previewRequest.abort();
+  previewRequest = null;
+  preview.replaceChildren();
+  preview.hidden = true;
+  pageControls.hidden = true;
+  previewStatus.textContent = '';
+  if (previewURL) URL.revokeObjectURL(previewURL);
+  previewURL = null;
+}
+async function showAnswer() {
+  clearPreview();
+  const format = answerFormat.value;
+  document.getElementById('answer').hidden = false;
+  if (!answerDownloads || format === 'text') return;
+  const controller = new AbortController();
+  previewRequest = controller;
+  previewStatus.textContent = 'プレビューを作成しています…';
+  try {
+    const url = new URL(answerDownloads[format], location.href);
+    url.searchParams.set('preview', '1');
+    url.searchParams.set('page', previewPage);
+    const response = await fetch(url, {signal: controller.signal});
+    if (response.redirected) throw Error('ログインし直してください。');
+    if (!response.ok) throw Error('プレビューを表示できませんでした。表示形式を選び直すと再試行できます。');
+    const expected = format === 'pdf' ? 'application/pdf' : `image/${format}`;
+    if (!(response.headers.get('content-type') || '').startsWith(expected)) throw Error('プレビューの形式が不正です。');
+    const blob = await response.blob();
+    if (controller.signal.aborted) return;
+    previewURL = URL.createObjectURL(blob);
+    if (format === 'pdf') {
+      const frame = document.createElement('iframe');
+      frame.title = 'AI回答のPDFプレビュー';
+      frame.src = previewURL;
+      frame.style.cssText = 'width:100%;height:75vh;min-height:400px;border:1px solid #ddd';
+      preview.append(frame);
+      const fallback = document.createElement('a');
+      fallback.href = answerDownloads.pdf;
+      fallback.textContent = 'PDFが表示されない場合はダウンロードして開く';
+      preview.append(fallback);
+    } else {
+      const img = document.createElement('img');
+      img.alt = `AI回答（${previewPage}ページ）`;
+      img.src = previewURL;
+      img.style.cssText = 'display:block;max-width:100%;height:auto;margin:auto';
+      preview.append(img);
+      const total = Number(response.headers.get('X-Page-Count')) || 1;
+      pageControls.hidden = total <= 1;
+      document.getElementById('pageLabel').textContent = `${previewPage} / ${total}ページ`;
+      document.getElementById('previousPage').disabled = previewPage <= 1;
+      document.getElementById('nextPage').disabled = previewPage >= total;
+    }
+    preview.hidden = false;
+    document.getElementById('answer').hidden = true;
+    previewStatus.textContent = '';
+  } catch (error) {
+    if (error.name !== 'AbortError') previewStatus.textContent = error.message;
+  }
+}
+answerFormat.addEventListener('change', () => { previewPage = 1; showAnswer(); });
+document.getElementById('previousPage').addEventListener('click', () => { previewPage--; showAnswer(); });
+document.getElementById('nextPage').addEventListener('click', () => { previewPage++; showAnswer(); });
+window.addEventListener('pagehide', clearPreview);
+function showFiles() {
+  const list = document.getElementById('fileList');
+  list.replaceChildren();
+  for (const file of files.files) {
+    const item = document.createElement('li');
+    item.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+    list.append(item);
+  }
+  clearFiles.hidden = !files.files.length;
+}
+files.addEventListener('change', showFiles);
+clearFiles.addEventListener('click', () => { files.value = ''; showFiles(); });
+f.addEventListener('submit', async e => {
+  e.preventDefault();
+  const error = document.getElementById('error');
+  error.textContent = '';
+  if (!document.getElementById('message').value.trim() && !files.files.length) {
+    error.textContent = '質問またはファイルを入力してください。'; return;
+  }
+  if (files.files.length > 5 || [...files.files].some(file => !file.size || file.size > 10 * 1024 * 1024) || [...files.files].reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) {
+    error.textContent = '添付は5件、各ファイルは空でない10MB以下、合計20MB以下にしてください。'; return;
+  }
+  const b = document.getElementById('send');
+  b.disabled = true; b.textContent = '回答作成中…';
+  answerDownloads = null;
+  document.getElementById('generatedImages').replaceChildren();
+  document.getElementById('generatedImages').hidden = true;
+  document.getElementById('imageCostNote').hidden = true;
+  clearPreview();
+  document.getElementById('answer').hidden = false;
+  document.getElementById('answer').textContent = 'AIが回答を作成しています…';
+  document.getElementById('downloads').hidden = true;
+  try {
+    const r = await fetch(f.action, {method: 'POST', body: new FormData(f)});
+    if (r.redirected) throw Error('ログインし直してから送信してください。');
+    if (!(r.headers.get('content-type') || '').includes('application/json')) throw Error('送信できませんでした。ファイルサイズや接続を確認してください。');
+    const d = await r.json();
+    if (!r.ok) throw Error(d.error || '送信できませんでした。');
+    document.getElementById('answer').textContent = d.answer;
+    const generated = document.getElementById('generatedImages');
+    for (const [index, image] of (d.images || []).entries()) {
+      const figure = document.createElement('figure');
+      figure.style.margin = '16px 0';
+      const img = document.createElement('img');
+      img.src = image.png;
+      img.alt = `AIが生成した画像 ${index + 1}`;
+      img.style.cssText = 'display:block;max-width:100%;height:auto';
+      img.addEventListener('error', () => {
+        const notice = document.createElement('p');
+        notice.textContent = '画像を表示できませんでした。保存リンクから開くか、ログイン状態を確認してください。';
+        figure.append(notice);
+      });
+      figure.append(img);
+      const caption = document.createElement('figcaption');
+      caption.style.cssText = 'display:flex;gap:16px;margin-top:8px';
+      for (const format of ['png', 'jpeg']) {
+        const link = document.createElement('a');
+        link.href = image[format] + '?download=1';
+        link.textContent = `${format.toUpperCase()}画像を保存`;
+        link.setAttribute('download', '');
+        caption.append(link);
+      }
+      figure.append(caption);
+      generated.append(figure);
+    }
+    generated.hidden = !(d.images || []).length;
+    document.getElementById('imageCostNote').hidden = !d.image_cost_estimated;
+
+    const links = document.getElementById('downloadLinks');
+    links.replaceChildren();
+    const labels = {txt: 'テキスト', docx: 'Word', xlsx: 'Excel', pdf: 'PDF', jpeg: 'JPEG', png: 'PNG'};
+    for (const [format, url] of Object.entries(d.downloads || {})) {
+      const link = document.createElement('a');
+      link.href = url; link.textContent = labels[format]; link.setAttribute('download', ''); links.append(link);
+    }
+    document.getElementById('downloads').hidden = false;
+    answerDownloads = d.downloads;
+    previewPage = 1;
+    showAnswer();
+  } catch (x) {
+    error.textContent = x.message;
+    document.getElementById('answer').textContent = '';
+  } finally {
+    b.disabled = false; b.textContent = 'AIへ送信';
+  }
+});
+</script>
+{% endblock %}

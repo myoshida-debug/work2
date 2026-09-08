@@ -1,0 +1,6 @@
+{% extends 'internal_ai/admin_base.html' %}
+{% block admin_content %}
+<style>.ai-fields{display:grid;grid-template-columns:1fr 1fr;gap:20px}.ai-fields input{margin-bottom:6px}.ai-fields input[type=checkbox]{width:auto}.helptext{font-size:13px;color:#607087}.errorlist{color:#b42318}.ai-actions{display:flex;gap:20px;align-items:center;margin-top:24px}.success{padding:16px;background:#e7f5ef;color:#176548;border-radius:8px}@media(max-width:650px){.ai-fields{grid-template-columns:1fr}}</style>
+<h1>{% if creating %}AIモデルの登録{% else %}AIモデルの設定{% endif %}</h1>{% for message in messages %}<p class="success" role="status">{{ message }}</p>{% endfor %}
+<div class="card"><form method="post">{% csrf_token %}{% if form.errors %}<p class="error" role="alert">入力内容を確認してください。保存されていません。</p>{% endif %}{{ form.non_field_errors }}<div class="ai-fields">{% for field in form %}<div><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<div class="helptext" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}</div>{% endfor %}</div><div class="ai-actions"><button type="submit">設定を保存</button><a href="{% url 'internal_ai:ai_settings' %}">AI設定へ戻る</a></div></form></div>
+{% endblock %}

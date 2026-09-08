@@ -29,6 +29,10 @@ class ModelSetting(models.Model):
 class UsageLog(models.Model):
     STATUS_CHOICES = [('SUCCESS', '成功'), ('FAILED', '失敗'), ('REJECTED_LIMIT', '制限拒否'), ('TIMEOUT', 'タイムアウト')]
     request_id = models.UUIDField(unique=True)
+    prompt_text = models.TextField('質問本文', null=True, blank=True)
+    response_text = models.TextField('回答本文', null=True, blank=True)
+    generated_images = models.JSONField(default=list, blank=True)
+    image_cost_estimated = models.BooleanField(default=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='ai_usage_logs')
     model = models.ForeignKey(ModelSetting, null=True, on_delete=models.SET_NULL)
     input_tokens = models.PositiveIntegerField(default=0)
