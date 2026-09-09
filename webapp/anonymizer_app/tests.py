@@ -765,13 +765,13 @@ class StructuredInputHelperTests(TestCase):
         self.assertIn('### 再発リスク\n・あり', source_text)
         self.assertIn('## 4. 退院後方針', source_text)
 
-    def test_anonymize_text_uses_halfwidth_parentheses_in_time_labels(self):
+    def test_anonymize_text_uses_fullwidth_parentheses_in_time_labels(self):
         result = anonymize_text('2月中旬午後3時に来院した。')
 
-        self.assertIn('午後(時刻1)', result.text)
-        self.assertNotIn('午後（時刻1）', result.text)
-        self.assertIn('午後(時刻1)', result.restore_map)
-        self.assertEqual(result.restore_map['午後(時刻1)'], '午後3時')
+        self.assertIn('午後（時刻1）', result.text)
+        self.assertNotIn('午後(時刻1)', result.text)
+        self.assertIn('午後（時刻1）', result.restore_map)
+        self.assertEqual(result.restore_map['午後（時刻1）'], '午後3時')
 
     def test_anonymize_text_masks_surname_with_honorifics(self):
         result = anonymize_text('山田氏と山田さんが同席した。')
@@ -797,7 +797,7 @@ class StructuredInputHelperTests(TestCase):
 
         self.assertIn('患者A氏', result.text)
         self.assertIn('2026年5月上旬', result.text)
-        self.assertIn('午後(時刻1)', result.text)
+        self.assertIn('午後（時刻1）', result.text)
         self.assertIn('電話番号1', result.text)
         self.assertIn('メール1', result.text)
         self.assertIn('患者ID1', result.text)

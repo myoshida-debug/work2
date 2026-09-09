@@ -130,7 +130,9 @@ class OpenSideGenerationTests(TestCase):
         page = self.client.get(reverse('open_side:imported_prompt', args=['prompt.json']))
         self.assertContains(page, 'プロンプト入力')
         self.assertContains(page, 'id_result_text')
-        self.assertNotContains(page, 'chatgpt.com')
+        self.assertContains(page, 'コピーしてChatGPTを開く')
+        self.assertContains(page, 'https://chatgpt.com/')
+        self.assertContains(page, 'navigator.clipboard.writeText(promptText.value)')
         self.assertEqual(self.client.get(self.url).status_code, 405)
         from django.test import Client
         csrf_client = Client(enforce_csrf_checks=True)

@@ -1860,6 +1860,7 @@ def _restored_result_page_context(
     restored_text: str | None = None,
 ) -> dict[str, object]:
     current_result_text = result_text if result_text is not None else (result_record.result_text or '')
+    editable_result_text = current_result_text
     current_restored_text = restored_text if restored_text is not None else (result_record.restored_text or '')
     current_restore_map = restore_map if restore_map is not None else (metadata.restore_map or {})
     patient_profile = _patient_profile_for_source_id(result_record.source_id, request.user)
@@ -1897,6 +1898,7 @@ def _restored_result_page_context(
         'template_type': result_record.template_type or metadata.template_type,
         'input_mode': input_mode,
         'result_text': current_result_text,
+        'editable_result_text': editable_result_text,
         'restored_text': current_restored_text,
         'result_html': result_html,
         'restored_html': restored_html,
@@ -2564,7 +2566,10 @@ def result_rerestore(request, pk):
         return redirect('close_side:result_detail', pk=pk)
 
     restore_map = _augment_restore_map_with_patient_info(_restore_map_from_rows(rows), _patient_profile_for_source_id(result_record.source_id, request.user))
-    updated_result_text = _apply_restore_label_renames(result_record.result_text or '', rows)
+    edited_result_text = request.POST.get('result_text')
+    if edited_result_text is None:
+        edited_result_text = result_record.result_text or ''
+    updated_result_text = _apply_restore_label_renames(edited_result_text, rows)
     restored_text = restore_text(updated_result_text, restore_map)
     restored_text = _prepend_patient_basic_info_to_restored_text(
         restored_text,
@@ -2596,7 +2601,7 @@ def result_rerestore(request, pk):
             'labels_renamed': renamed_labels,
         },
     )
-    messages.success(request, '匿名ラベルを更新して再復元しました。')
+    messages.success(request, 'AI生成後文書と匿名ラベルを更新して再復元しました。')
     return redirect('close_side:result_detail', pk=pk)
 
 

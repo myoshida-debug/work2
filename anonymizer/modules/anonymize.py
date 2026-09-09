@@ -213,7 +213,7 @@ def generalize_time_text(text: str, restore_map: dict, patterns=None) -> str:
     def anonymized_time_label(period: str, original: str) -> str:
         nonlocal time_index
         time_index += 1
-        label = unique_restore_label(restore_map, f'{period}(時刻{time_index})')
+        label = unique_restore_label(restore_map, f'{period}（時刻{time_index}）')
         record_restore_segment(restore_map, label, original)
         return label
 
