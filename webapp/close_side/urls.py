@@ -1,3 +1,4 @@
+from anonflow.account_views import AccountPasswordChangeView, AccountPasswordChangeDoneView
 from functools import wraps
 
 from django.core.exceptions import PermissionDenied
@@ -21,6 +22,8 @@ def close_admin_required(view_func):
     return close_login_required(_wrapped)
 
 urlpatterns = [
+    path('password/change/', AccountPasswordChangeView.as_view(), name='password_change'),
+    path('password/change/done/', AccountPasswordChangeDoneView.as_view(), name='password_change_done'),
     path('login/', auth_views.LoginView.as_view(
         template_name='anonymizer_app/login.html',
         extra_context={'side_name': 'CloseSide'},

@@ -1,3 +1,4 @@
+from anonflow.account_views import AccountPasswordChangeView, AccountPasswordChangeDoneView
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -12,6 +13,8 @@ open_admin_required = user_passes_test(
 )
 
 urlpatterns = [
+    path('password/change/', AccountPasswordChangeView.as_view(), name='password_change'),
+    path('password/change/done/', AccountPasswordChangeDoneView.as_view(), name='password_change_done'),
     path('login/', auth_views.LoginView.as_view(
         template_name='anonymizer_app/login.html',
         extra_context={'side_name': 'OpenSide'},

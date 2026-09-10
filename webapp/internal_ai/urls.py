@@ -1,8 +1,11 @@
+from anonflow.account_views import AccountPasswordChangeView, AccountPasswordChangeDoneView
 from django.urls import path
 from . import views
 
 app_name = 'internal_ai'
 urlpatterns = [
+    path('password/change/', AccountPasswordChangeView.as_view(), name='password_change'),
+    path('password/change/done/', AccountPasswordChangeDoneView.as_view(), name='password_change_done'),
     path('chat/images/<uuid:request_id>/<int:index>/<str:format>/', views.generated_image, name='generated_image'),
     path('chat/answers/<uuid:request_id>/<str:format>/', views.chat_download, name='chat_download'),
     path('admin/', views.admin_home, name='admin_home'),
