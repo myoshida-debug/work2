@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+from anonflow.account_views import AccountPasswordChangeView, AccountPasswordChangeDoneView
+=======
+>>>>>>> origin/main
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -12,6 +16,11 @@ open_admin_required = user_passes_test(
 )
 
 urlpatterns = [
+<<<<<<< HEAD
+    path('password/change/', AccountPasswordChangeView.as_view(), name='password_change'),
+    path('password/change/done/', AccountPasswordChangeDoneView.as_view(), name='password_change_done'),
+=======
+>>>>>>> origin/main
     path('login/', auth_views.LoginView.as_view(
         template_name='anonymizer_app/login.html',
         extra_context={'side_name': 'OpenSide'},
@@ -24,5 +33,9 @@ urlpatterns = [
     path('dmz/import/', open_login_required(views.dmz_import), name='dmz_import'),
     path('imported/<str:filename>/', open_login_required(views.imported_prompt), name='imported_prompt'),
     path('imported/<str:filename>/result/', open_login_required(views.create_result), name='create_result'),
+<<<<<<< HEAD
+    path('imported/<str:filename>/generate/', open_login_required(views.generate_answer), name='generate_answer'),
+=======
+>>>>>>> origin/main
     path('logs/', open_admin_required(views.operation_logs), name='operation_logs'),
 ]

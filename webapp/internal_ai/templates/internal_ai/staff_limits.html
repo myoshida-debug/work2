@@ -1,0 +1,10 @@
+{% extends 'internal_ai/admin_base.html' %}
+{% block admin_content %}
+<style>.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:14px 10px;text-align:left;border-bottom:1px solid #dbe3ee;white-space:nowrap}th{background:#f4f7fb}.muted{color:#607087;font-size:13px}.search{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.search input{margin-bottom:0}.pagination{display:flex;gap:24px;justify-content:center;margin-top:20px}</style>
+
+<h1>職員の制限設定</h1><p class="muted">職員ごとのAI利用可否と利用上限を管理します。未設定の職員には標準値が適用されます。</p>
+<div class="card"><form method="get" class="search"><div><label for="q">職員ID・氏名</label><input id="q" name="q" value="{{ query }}" maxlength="150" placeholder="職員を検索"></div><button type="submit">検索</button><a href="{% url 'internal_ai:staff_limits' %}">クリア</a></form></div>
+<div class="card"><p>{{ page_obj.paginator.count }}名</p><div class="table-wrap"><table><thead><tr><th>職員</th><th>AI利用</th><th>1日上限</th><th>月額上限</th><th>モデルレベル</th><th>設定</th></tr></thead><tbody>
+{% for staff in page_obj %}<tr><td>{{ staff.get_full_name|default:staff.username }}<div class="muted">{{ staff.username }}</div>{% if not staff.is_active %}<div class="muted">アカウント無効</div>{% endif %}</td><td>{% if staff.limit_profile.enabled %}許可{% else %}停止{% endif %}</td><td>{{ staff.limit_profile.daily_request_limit }}回</td><td>{{ staff.limit_profile.monthly_cost_limit_jpy|floatformat:2 }}円</td><td>{{ staff.limit_profile.allowed_model_level }}以下</td><td><a href="{% url 'internal_ai:staff_limit_edit' staff.pk %}" aria-label="{{ staff.username }}の制限設定を編集">編集 →</a></td></tr>{% empty %}<tr><td colspan="6">該当する職員がいません。</td></tr>{% endfor %}
+</tbody></table></div>{% if page_obj.has_other_pages %}<nav class="pagination" aria-label="職員一覧のページ切り替え">{% if page_obj.has_previous %}<a href="?q={{ query|urlencode }}&amp;page={{ page_obj.previous_page_number }}">← 前へ</a>{% endif %}<span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a href="?q={{ query|urlencode }}&amp;page={{ page_obj.next_page_number }}">次へ →</a>{% endif %}</nav>{% endif %}</div>
+{% endblock %}

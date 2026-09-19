@@ -1,0 +1,93 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}OpenSide AI生成{% endblock %}
+{% block brand %}OpenSide{% endblock %}
+{% block page_title %}AI生成{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">取り込んだプロンプトを使って生成AI処理を行い、生成文章をDMZへ送信します。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">取り込み情報</h3></div>
+      <div class="panel-body">
+        <p><strong>ファイル:</strong> {{ filename }}</p>
+        {% if source_id %}<p><strong>source_id:</strong> {{ source_id }}</p>{% endif %}
+        {% if template_type %}<p><strong>文書種別:</strong> {{ template_type }}</p>{% endif %}
+        <p><strong>入力方式:</strong> {{ input_mode|default:"-" }}</p>
+        <p><strong>保存先:</strong> {{ imported_path }}</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">操作</h3></div>
+      <div class="panel-body">
+        <div class="actions">
+          <button class="primary" type="button" onclick="copyPrompt()">コピー</button>
+          <button type="button" onclick="openChatGPT()">ChatGPTを開く</button>
+          <button class="green" type="button" onclick="copyAndOpen()">コピーして開く</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">ChatGPT貼り付け用プロンプト</h3></div>
+    <div class="panel-body">
+      <textarea id="prompt-text" style="min-height:360px">{{ prompt_text }}</textarea>
+    </div>
+  </section>
+
+  {% if source_id %}
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">生成文章確認 / DMZ送信</h3></div>
+      <div class="panel-body">
+        <form method="post" action="{% url 'open_side:create_result' filename=filename %}">
+          {% csrf_token %}
+          {{ result_form.as_p }}
+          <button class="primary" type="submit">生成文章をDMZへ送信</button>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">取り込み元JSON</h3></div>
+    <div class="panel-body">
+      <details>
+        <summary>JSON / 原文を表示</summary>
+        <pre>{{ raw_text }}</pre>
+      </details>
+    </div>
+  </section>
+
+  <script>
+    const chatgptUrl = 'https://chatgpt.com/';
+
+    async function copyPrompt() {
+      const textarea = document.getElementById('prompt-text');
+      textarea.focus();
+      textarea.select();
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(textarea.value);
+        } else {
+          document.execCommand('copy');
+        }
+        alert('プロンプトをコピーしました。');
+      } catch (err) {
+        alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
+      }
+    }
+
+    function openChatGPT() {
+      window.open(chatgptUrl, '_blank', 'noopener');
+    }
+
+    async function copyAndOpen() {
+      await copyPrompt();
+      openChatGPT();
+    }
+  </script>
+{% endblock %}

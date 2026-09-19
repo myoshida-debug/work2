@@ -1,0 +1,69 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 返却DMZから取り込み{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}返却DMZから取り込み{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">返却ファイル一覧から取り込み、復元を行います。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:result_history_list' %}">取り込み済み結果履歴へ</a>
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">返却DMZから取り込み</h3>
+      <span class="badge">DMZ: {{ dmz_path }}</span>
+    </div>
+    <div class="panel-body">
+      <div class="stacked-panels">
+        <div class="card">
+          <h3>返却ファイル一覧</h3>
+          <p class="muted">返却ファイルを選んで、そのまま取り込みと復元を実行します。</p>
+
+          {% if files %}
+            <div class="table-scroll compact">
+              <div class="stacked-panels">
+                {% for file in files %}
+                  <article class="history-doc-card">
+                    <div class="history-doc-header">
+                      <div>
+                        <h4 class="history-doc-title">{{ file.name }}</h4>
+                        <p class="history-doc-subtitle">更新日時 {{ file.modified }}</p>
+                      </div>
+                      <span class="badge">{{ file.size }} bytes</span>
+                    </div>
+                    <div class="history-doc-body">
+                      <dl class="meta-list">
+                        <dt>source_id</dt><dd>{{ file.source_id|default:"-" }}</dd>
+                        <dt>作成者</dt><dd>{{ file.owner_username|default:"-" }}</dd>
+                        <dt>入力方式</dt><dd>{{ file.input_mode|default:"-" }}</dd>
+                      </dl>
+                      <form class="inline-form history-preview-actions" method="post" action="{% url 'close_side:result_import' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="filename" value="{{ file.name }}">
+                        <button class="primary" type="submit">取り込んで復元</button>
+                      </form>
+                    </div>
+                  </article>
+                {% endfor %}
+              </div>
+            </div>
+          {% else %}
+            <p class="empty">返却ファイルはまだありません。</p>
+          {% endif %}
+        </div>
+
+        <div class="card">
+          <h3>ファイル名指定取込</h3>
+          <p class="muted">ファイル名が分かっている場合は直接指定できます。</p>
+          <form method="post" action="{% url 'close_side:result_import' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="primary" type="submit">取り込んで復元</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

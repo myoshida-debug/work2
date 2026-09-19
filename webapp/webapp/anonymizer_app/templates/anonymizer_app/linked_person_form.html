@@ -1,0 +1,40 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}{% if create %}{{ page_title }}{% else %}{{ page_title }}{% endif %}{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ page_subtitle }}</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{{ back_url }}">一覧へ戻る</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">{{ entity_label }}情報</h3>
+      <span class="badge">{% if create %}新規{% else %}編集{% endif %}</span>
+      {% if relation_kind_filter_label %}
+        <span class="badge">{{ relation_kind_filter_label }}</span>
+      {% endif %}
+      {% if form.instance.linked_person_code %}
+        <span class="badge">個別コード {{ form.instance.linked_person_code }}</span>
+      {% else %}
+        <span class="badge">個別コードは自動採番</span>
+      {% endif %}
+    </div>
+    <div class="panel-body">
+      <p class="muted">個別コードは保存時に自動採番されます。枝番は患者内の整理用として残しています。CSV取込時は、患者IDと枝番が一致する場合に既存データを更新し、空白項目は上書きしません。</p>
+      <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="error-list">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {{ form.as_p }}
+        <div class="actions">
+          <button class="primary" type="submit">保存</button>
+          <a class="button" href="{{ back_url }}">キャンセル</a>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

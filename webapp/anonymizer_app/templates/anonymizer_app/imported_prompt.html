@@ -3,7 +3,11 @@
 {% block title %}OpenSide AI生成{% endblock %}
 {% block brand %}OpenSide{% endblock %}
 {% block page_title %}AI生成{% endblock %}
+<<<<<<< HEAD
+{% block page_subtitle %}<p class="page-subtitle">APIで回答を生成するか、プロンプトをコピーしてChatGPTで回答を作成し、生成文章をDMZへ送信します。</p>{% endblock %}
+=======
 {% block page_subtitle %}<p class="page-subtitle">取り込んだプロンプトを使って生成AI処理を行い、生成文章をDMZへ送信します。</p>{% endblock %}
+>>>>>>> origin/main
 {% block page_actions %}
   <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
 {% endblock %}
@@ -20,6 +24,42 @@
         <p><strong>保存先:</strong> {{ imported_path }}</p>
       </div>
     </div>
+<<<<<<< HEAD
+  </section>
+
+  <section class="grid" style="margin-top:18px">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">プロンプト入力</h3></div>
+      <div class="panel-body">
+        <form id="generate-form" action="{% url 'open_side:generate_answer' filename=filename %}" method="post">
+          {% csrf_token %}
+          <label for="prompt-text">生成AIへ送信するプロンプト</label>
+          <textarea id="prompt-text" name="prompt" required maxlength="30000" style="min-height:360px">{{ prompt_text }}</textarea>
+          <div class="actions">
+            <button id="generate-button" class="primary" type="submit">APIで回答を生成</button>
+            <button id="open-chatgpt-button" class="button" type="button">コピーしてChatGPTを開く</button>
+          </div>
+          <p class="muted">ChatGPTを利用する場合は、開いた画面へコピー済みのプロンプトを貼り付け、得られた回答を右側の回答欄へ貼り付けてください。</p>
+          <p id="generation-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">回答 / DMZ送信</h3></div>
+      <div class="panel-body">
+        <p class="muted">回答を確認・編集してから、CloseSideへ返却してください。</p>
+        <form id="result-form" method="post" action="{% url 'open_side:create_result' filename=filename %}">
+          {% csrf_token %}
+          {{ result_form.as_p }}
+          {% if source_id %}
+            <button id="return-button" class="primary" type="submit">生成文章をDMZへ送信</button>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </section>
+
+=======
     <div class="panel">
       <div class="panel-header"><h3 class="panel-title">操作</h3></div>
       <div class="panel-body">
@@ -52,6 +92,7 @@
     </section>
   {% endif %}
 
+>>>>>>> origin/main
   <section class="panel">
     <div class="panel-header"><h3 class="panel-title">取り込み元JSON</h3></div>
     <div class="panel-body">
@@ -63,6 +104,83 @@
   </section>
 
   <script>
+<<<<<<< HEAD
+    const form = document.getElementById('generate-form');
+    const generateButton = document.getElementById('generate-button');
+    const openChatGPTButton = document.getElementById('open-chatgpt-button');
+    const promptText = document.getElementById('prompt-text');
+    const returnButton = document.getElementById('return-button');
+    const answer = document.getElementById('id_result_text');
+    const status = document.getElementById('generation-status');
+    let generating = false;
+
+    async function copyPromptToClipboard() {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(promptText.value);
+        return;
+      }
+
+      promptText.focus();
+      promptText.select();
+      if (!document.execCommand('copy')) {
+        throw new Error('プロンプトをコピーできませんでした。');
+      }
+      promptText.setSelectionRange(0, 0);
+    }
+
+    openChatGPTButton.addEventListener('click', async () => {
+      const copyOperation = copyPromptToClipboard();
+      const chatGPTWindow = window.open('https://chatgpt.com/', '_blank');
+      if (chatGPTWindow) {
+        chatGPTWindow.opener = null;
+      }
+      try {
+        await copyOperation;
+        status.textContent = 'プロンプトをコピーしました。ChatGPTの入力欄へ貼り付けてください。';
+      } catch (error) {
+        status.textContent = 'コピーできませんでした。プロンプトを手動でコピーしてください。';
+      }
+      if (!chatGPTWindow) {
+        status.textContent += ' ChatGPTが開かない場合は、ブラウザのポップアップを許可してください。';
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (generating) return;
+      if (answer.value.trim() && !window.confirm('現在の回答を新しい回答で置き換えますか？')) return;
+      generating = true;
+      generateButton.disabled = true;
+      if (returnButton) returnButton.disabled = true;
+      answer.readOnly = true;
+      answer.setAttribute('aria-busy', 'true');
+      generateButton.textContent = '生成中…';
+      status.textContent = '回答を生成しています。しばらくお待ちください。';
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST', body: new FormData(form), credentials: 'same-origin',
+          headers: {'Accept': 'application/json'},
+        });
+        if (response.redirected) throw new Error('ログイン状態を確認し、再度ログインしてください。');
+        if (!(response.headers.get('content-type') || '').includes('application/json')) {
+          throw new Error('通信に失敗しました。ログイン状態と接続を確認してください。');
+        }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '回答を生成できませんでした。');
+        answer.value = data.answer;
+        status.textContent = '回答を生成しました。内容を確認してください。';
+      } catch (error) {
+        status.textContent = error.message || '通信に失敗しました。再度お試しください。';
+      } finally {
+        generating = false;
+        generateButton.disabled = false;
+        if (returnButton) returnButton.disabled = false;
+        answer.readOnly = false;
+        answer.setAttribute('aria-busy', 'false');
+        generateButton.textContent = 'APIで回答を生成';
+      }
+    });
+=======
     const chatgptUrl = 'https://chatgpt.com/';
 
     async function copyPrompt() {
@@ -89,5 +207,6 @@
       await copyPrompt();
       openChatGPT();
     }
+>>>>>>> origin/main
   </script>
 {% endblock %}

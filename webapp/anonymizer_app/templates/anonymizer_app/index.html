@@ -394,6 +394,22 @@
       min-height: 220px;
     }
 
+<<<<<<< HEAD
+    .voice-field-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .voice-field-header .field-label {
+      margin-bottom: 0;
+    }
+
+=======
+>>>>>>> origin/main
     .voice-status {
       min-height: 22px;
       color: var(--muted);
@@ -1022,7 +1038,14 @@
                         <button class="plain-button" type="button" id="voice-transcribe">文字起こし実行</button>
                       </div>
                       <div class="voice-upload">
+<<<<<<< HEAD
+                        <div class="voice-field-header">
+                          <label class="field-label" for="voice-audio-file">音声ファイルアップロード</label>
+                          <button class="plain-button" type="button" id="voice-audio-file-clear">ファイルをクリア</button>
+                        </div>
+=======
                         <label class="field-label" for="voice-audio-file">音声ファイルアップロード</label>
+>>>>>>> origin/main
                         <input id="voice-audio-file" type="file" accept="audio/*">
                       </div>
                       <div class="voice-preview">
@@ -1030,7 +1053,14 @@
                         <audio id="voice-audio-preview" controls hidden preload="none"></audio>
                       </div>
                       <div class="voice-transcript">
+<<<<<<< HEAD
+                        <div class="voice-field-header">
+                          <label class="field-label" for="{{ form.transcript_text.id_for_label }}">文字起こし結果</label>
+                          <button class="plain-button" type="button" id="voice-transcript-clear">文字起こし欄をクリア</button>
+                        </div>
+=======
                         <label class="field-label" for="{{ form.transcript_text.id_for_label }}">文字起こし結果</label>
+>>>>>>> origin/main
                         {{ form.transcript_text }}
                       </div>
                       <p class="schema-note">この文字起こし結果を匿名化前文章として使用します。</p>
@@ -1174,7 +1204,13 @@
     const voiceTranscribeButton = document.getElementById('voice-transcribe');
     const voiceTranscribeButtonLabel = voiceTranscribeButton ? voiceTranscribeButton.textContent : '文字起こし実行';
     const voiceAudioFileInput = document.getElementById('voice-audio-file');
+<<<<<<< HEAD
+    const voiceAudioFileClearButton = document.getElementById('voice-audio-file-clear');
     const voiceAudioPreview = document.getElementById('voice-audio-preview');
+    const voiceTranscriptClearButton = document.getElementById('voice-transcript-clear');
+=======
+    const voiceAudioPreview = document.getElementById('voice-audio-preview');
+>>>>>>> origin/main
     const voiceStatusArea = document.getElementById('voice-status');
     const patientPanel = document.getElementById('patient-panel');
     const patientLookupMessage = document.getElementById('patient-lookup-message');
@@ -2633,6 +2669,38 @@
       });
     }
 
+<<<<<<< HEAD
+    if (voiceAudioFileClearButton) {
+      voiceAudioFileClearButton.addEventListener('click', () => {
+        if (voiceAudioFileInput) {
+          voiceAudioFileInput.value = '';
+        }
+        if (voiceRecordedBlob) {
+          setVoicePreviewSource(URL.createObjectURL(voiceRecordedBlob));
+          setVoiceStatus('アップロードした音声ファイルをクリアしました。録音音声を使用できます。');
+        } else {
+          setVoicePreviewSource('');
+          setVoiceStatus('アップロードした音声ファイルをクリアしました');
+        }
+        markEdited();
+      });
+    }
+
+    if (voiceTranscriptClearButton) {
+      voiceTranscriptClearButton.addEventListener('click', () => {
+        if (transcriptTextArea) {
+          transcriptTextArea.value = '';
+          transcriptTextArea.dispatchEvent(new Event('input', { bubbles: true }));
+          transcriptTextArea.focus();
+        }
+        setTranscriptSource('manual_input');
+        setVoiceStatus('文字起こし欄をクリアしました');
+        setStatus('文字起こし欄をクリアしました');
+      });
+    }
+
+=======
+>>>>>>> origin/main
     if (voiceTranscribeButton) {
       voiceTranscribeButton.addEventListener('click', async () => {
         const source = getVoiceTranscribeSource();

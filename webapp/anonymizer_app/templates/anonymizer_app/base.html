@@ -605,6 +605,10 @@
             <a class="nav-link" href="{% url 'open_side:operation_logs' %}">操作ログ</a>
           {% endif %}
           <a class="nav-link" href="{% url 'close_side:menu' %}">CloseSide</a>
+<<<<<<< HEAD
+          {% if user.is_authenticated %}<a class="nav-link" href="{% url 'open_side:password_change' %}">パスワード変更</a>{% endif %}
+=======
+>>>>>>> origin/main
           <form method="post" action="{% url 'open_side:logout' %}">
             {% csrf_token %}
             <button type="submit">{{ request.user.username }} / ログアウト</button>
@@ -620,6 +624,10 @@
             <a class="nav-link" href="{% url 'close_side:operation_logs' %}">操作ログ</a>
           {% endif %}
           <a class="nav-link" href="{% url 'open_side:menu' %}">OpenSide</a>
+<<<<<<< HEAD
+          {% if user.is_authenticated %}<a class="nav-link" href="{% url 'close_side:password_change' %}">パスワード変更</a>{% endif %}
+=======
+>>>>>>> origin/main
           <form method="post" action="{% url 'close_side:logout' %}">
             {% csrf_token %}
             <button type="submit">{{ request.user.username }} / ログアウト</button>

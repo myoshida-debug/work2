@@ -6,6 +6,15 @@ from urllib.parse import unquote, urlparse
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
 
+<<<<<<< HEAD
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
+
+=======
+>>>>>>> origin/main
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
@@ -25,6 +34,10 @@ INSTALLED_APPS = [
     'anonymizer_app',
     'close_side',
     'open_side',
+<<<<<<< HEAD
+    'internal_ai',
+=======
+>>>>>>> origin/main
 ]
 
 MIDDLEWARE = [
@@ -132,6 +145,23 @@ DATABASES = _build_database_config()
 
 AUTH_PASSWORD_VALIDATORS = []
 
+<<<<<<< HEAD
+try:
+    import argon2  # noqa: F401
+except ImportError:
+    # argon2-cffi未導入の開発環境でもログイン可能にする。
+    # 本番環境ではargon2-cffiをインストールし、Argon2を先頭にする。
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    ]
+else:
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.Argon2PasswordHasher',
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    ]
+
+=======
+>>>>>>> origin/main
 LANGUAGE_CODE = 'ja'
 
 TIME_ZONE = 'Asia/Tokyo'
@@ -143,3 +173,13 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+<<<<<<< HEAD
+
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_OPEN_MODEL = os.environ.get('OPENAI_OPEN_MODEL', 'gpt-4.1-mini')
+OPENAI_OPEN_MAX_INPUT_CHARS = 30000
+OPENAI_OPEN_MAX_OUTPUT_TOKENS = 4096
+AI_USD_JPY_RATE = float(os.environ.get('USD_JPY_RATE', '160'))
+AI_COMPANY_INTERNAL_STOP_JPY = float(os.environ.get('COMPANY_INTERNAL_STOP_JPY', '29000'))
+=======
+>>>>>>> origin/main

@@ -690,6 +690,24 @@ class TemplateInputFieldEditTests(TestCase):
         evaluation_date = next(field for field in response.context['structured_fields'] if field['key'] == 'evaluation_date')
         self.assertEqual(evaluation_date['input_type'], 'date')
 
+<<<<<<< HEAD
+    def test_home_renders_separate_voice_input_clear_buttons(self):
+        response = self.client.post(
+            reverse('close_side:home'),
+            {
+                'template': 'OT評価サマリー',
+                'input_mode': 'voice',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="voice-audio-file-clear"')
+        self.assertContains(response, 'ファイルをクリア')
+        self.assertContains(response, 'id="voice-transcript-clear"')
+        self.assertContains(response, '文字起こし欄をクリア')
+
+=======
+>>>>>>> origin/main
     def test_home_renders_checkbox_groups_without_main_textarea(self):
         response = self.client.post(
             reverse('close_side:home'),
@@ -875,6 +893,10 @@ class RestoredResultEditTests(TestCase):
         response = self.client.post(
             reverse('close_side:result_rerestore', args=[result.pk]),
             {
+<<<<<<< HEAD
+                'result_text': '患者Aと看護師Aが電話で対応した。',
+=======
+>>>>>>> origin/main
                 'restore_rows_json': json.dumps([
                     {'old_label': '患者A', 'label': '患者B', 'original': '山田太郎'},
                     {'old_label': '', 'label': '家族A', 'original': '田中花子'},
@@ -891,10 +913,19 @@ class RestoredResultEditTests(TestCase):
             '患者B': '山田太郎',
             '家族A': '田中花子',
         })
+<<<<<<< HEAD
+        self.assertEqual(result.result_text, '患者Bと看護師Aが電話で対応した。')
+        self.assertEqual(result.restored_text, '山田太郎と看護師Aが電話で対応した。')
+        self.assertContains(response, '匿名ラベル追加')
+        self.assertContains(response, '再復元する')
+        self.assertContains(response, 'AI生成後文書')
+        self.assertContains(response, '患者Bと看護師Aが電話で対応した。')
+=======
         self.assertEqual(result.result_text, '患者Bと看護師Aが対応した。')
         self.assertEqual(result.restored_text, '山田太郎と看護師Aが対応した。')
         self.assertContains(response, '匿名ラベル追加')
         self.assertContains(response, '再復元する')
+>>>>>>> origin/main
         self.assertContains(response, '患者B')
         self.assertContains(response, '家族A')
 

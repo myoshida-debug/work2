@@ -1,0 +1,76 @@
+{% extends "anonymizer_app/base.html" %}
+
+{% block title %}CloseSide 匿名化結果確認{% endblock %}
+{% block brand %}CloseSide{% endblock %}
+{% block page_title %}匿名化結果確認{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">匿名化前後の変更箇所を確認し、プロンプト作成へ進みます。</p>{% endblock %}
+{% block page_actions %}
+  <a class="button" href="{% url 'close_side:home' %}">匿名化画面へ</a>
+  <a class="button primary" href="{% url 'close_side:dmz_export' %}?source_id={{ source_id }}">DMZ送信へ</a>
+  <a class="button" href="{% url 'open_side:dmz_list' %}">OpenSideへ</a>
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-header">
+      <h3 class="panel-title">入力情報</h3>
+      <span class="badge">{{ source_id }}</span>
+    </div>
+    <div class="panel-body">
+      <dl class="meta-list">
+        <dt>テンプレート</dt><dd>{{ template_type }}</dd>
+        <dt>source_id</dt><dd>{{ source_id }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="grid">
+    {% if text_items %}
+      {% for item in text_items %}
+        <div class="panel">
+          <div class="panel-header"><h3 class="panel-title">匿名化前文書</h3></div>
+          <div class="panel-body"><pre>{{ item.original_html|safe }}</pre></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3 class="panel-title">匿名化後文書</h3></div>
+          <div class="panel-body"><pre>{{ item.anonymized_html|safe }}</pre></div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="panel"><div class="panel-body"><p class="empty">入力テキストがありません。</p></div></div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">匿名化ラベル一覧</h3></div>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>匿名化ラベル</th><th>元文言</th></tr></thead>
+        <tbody>
+          {% for label, original in restore_map_items %}
+            <tr><td><strong>{{ label }}</strong></td><td>{{ original }}</td></tr>
+          {% empty %}
+            <tr><td colspan="2">匿名化された箇所はありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">プロンプトJSON</h3></div>
+      <div class="panel-body">
+        <pre>{{ prompt_json }}</pre>
+        <a class="button" href="{% url 'close_side:download_prompt' source_id=source_id %}">ダウンロード</a>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">復元用JSON</h3></div>
+      <div class="panel-body">
+        <pre>{{ restore_json }}</pre>
+        <a class="button" href="{% url 'close_side:download_restore' source_id=source_id %}">ダウンロード</a>
+      </div>
+    </div>
+  </section>
+{% endblock %}
