@@ -3,7 +3,11 @@
 {% block title %}OpenSide AI生成{% endblock %}
 {% block brand %}OpenSide{% endblock %}
 {% block page_title %}AI生成{% endblock %}
+<<<<<<< HEAD
 {% block page_subtitle %}<p class="page-subtitle">APIで回答を生成するか、プロンプトをコピーしてChatGPTで回答を作成し、生成文章をDMZへ送信します。</p>{% endblock %}
+=======
+{% block page_subtitle %}<p class="page-subtitle">取り込んだプロンプトを使って生成AI処理を行い、生成文章をDMZへ送信します。</p>{% endblock %}
+>>>>>>> origin/main
 {% block page_actions %}
   <a class="button" href="{% url 'open_side:dmz_list' %}">プロンプト一覧へ</a>
 {% endblock %}
@@ -20,6 +24,7 @@
         <p><strong>保存先:</strong> {{ imported_path }}</p>
       </div>
     </div>
+<<<<<<< HEAD
   </section>
 
   <section class="grid" style="margin-top:18px">
@@ -54,6 +59,40 @@
     </div>
   </section>
 
+=======
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">操作</h3></div>
+      <div class="panel-body">
+        <div class="actions">
+          <button class="primary" type="button" onclick="copyPrompt()">コピー</button>
+          <button type="button" onclick="openChatGPT()">ChatGPTを開く</button>
+          <button class="green" type="button" onclick="copyAndOpen()">コピーして開く</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h3 class="panel-title">ChatGPT貼り付け用プロンプト</h3></div>
+    <div class="panel-body">
+      <textarea id="prompt-text" style="min-height:360px">{{ prompt_text }}</textarea>
+    </div>
+  </section>
+
+  {% if source_id %}
+    <section class="panel">
+      <div class="panel-header"><h3 class="panel-title">生成文章確認 / DMZ送信</h3></div>
+      <div class="panel-body">
+        <form method="post" action="{% url 'open_side:create_result' filename=filename %}">
+          {% csrf_token %}
+          {{ result_form.as_p }}
+          <button class="primary" type="submit">生成文章をDMZへ送信</button>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+>>>>>>> origin/main
   <section class="panel">
     <div class="panel-header"><h3 class="panel-title">取り込み元JSON</h3></div>
     <div class="panel-body">
@@ -65,6 +104,7 @@
   </section>
 
   <script>
+<<<<<<< HEAD
     const form = document.getElementById('generate-form');
     const generateButton = document.getElementById('generate-button');
     const openChatGPTButton = document.getElementById('open-chatgpt-button');
@@ -140,5 +180,33 @@
         generateButton.textContent = 'APIで回答を生成';
       }
     });
+=======
+    const chatgptUrl = 'https://chatgpt.com/';
+
+    async function copyPrompt() {
+      const textarea = document.getElementById('prompt-text');
+      textarea.focus();
+      textarea.select();
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(textarea.value);
+        } else {
+          document.execCommand('copy');
+        }
+        alert('プロンプトをコピーしました。');
+      } catch (err) {
+        alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
+      }
+    }
+
+    function openChatGPT() {
+      window.open(chatgptUrl, '_blank', 'noopener');
+    }
+
+    async function copyAndOpen() {
+      await copyPrompt();
+      openChatGPT();
+    }
+>>>>>>> origin/main
   </script>
 {% endblock %}

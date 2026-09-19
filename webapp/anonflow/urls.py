@@ -7,5 +7,8 @@ urlpatterns = [
     path('', lambda request: redirect('close_side:menu'), name='home'),
     path('close/', include('close_side.urls', namespace='close_side')),
     path('open/', include('open_side.urls', namespace='open_side')),
+<<<<<<< HEAD
     path('ai/', include('internal_ai.urls', namespace='internal_ai')),
+=======
+>>>>>>> origin/main
 ]

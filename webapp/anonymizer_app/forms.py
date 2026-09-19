@@ -361,7 +361,11 @@ class DMZExportForm(forms.Form):
 
 class ChatGPTResultForm(forms.Form):
     result_text = forms.CharField(
+<<<<<<< HEAD
         label='AIの回答（確認・編集できます）',
+=======
+        label='ChatGPT 生成結果',
+>>>>>>> origin/main
         widget=forms.Textarea(attrs={'rows': 14}),
         required=True,
     )

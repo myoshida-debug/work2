@@ -3,8 +3,11 @@ import datetime
 import re
 from pathlib import Path
 
+<<<<<<< HEAD
 from django.conf import settings
 from django.http import JsonResponse
+=======
+>>>>>>> origin/main
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -304,6 +307,7 @@ def imported_prompt(request, filename):
 
 
 @require_http_methods(["POST"])
+<<<<<<< HEAD
 def generate_answer(request, filename):
     try:
         imported_path = _logs_dir() / _safe_filename(filename)
@@ -341,6 +345,8 @@ def generate_answer(request, filename):
 
 
 @require_http_methods(["POST"])
+=======
+>>>>>>> origin/main
 def create_result(request, filename):
     try:
         filename = _safe_filename(filename)
@@ -404,9 +410,15 @@ def create_result(request, filename):
             source_id,
             {'filename': filename, 'source_id': source_id},
             result='failure',
+<<<<<<< HEAD
             error_message='AI生成結果が未入力です',
         )
         messages.error(request, 'AI生成結果を入力してください。')
+=======
+            error_message='ChatGPT生成結果が未入力です',
+        )
+        messages.error(request, 'ChatGPT生成結果を入力してください。')
+>>>>>>> origin/main
         return redirect('open_side:imported_prompt', filename=filename)
 
     result_text = form.cleaned_data['result_text']

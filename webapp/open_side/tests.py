@@ -73,6 +73,7 @@ class OpenSideResultExportTests(TestCase):
             self.assertEqual(payload['anonymized_patient_id'], '9900P001')
             self.assertEqual(payload['source_id'], 'prompt_test')
             self.assertEqual(payload['result_text'], '患者は安静を保っている。')
+<<<<<<< HEAD
 
 
 @override_settings(ALLOWED_HOSTS=['testserver'], NETWORK_POLICY_ENFORCED=False,
@@ -140,3 +141,5 @@ class OpenSideGenerationTests(TestCase):
         self.assertEqual(csrf_client.post(self.url, {'prompt': 'test'}).status_code, 403)
         self.client.logout()
         self.assertEqual(self.client.post(self.url, {'prompt': 'test'}).status_code, 302)
+=======
+>>>>>>> origin/main

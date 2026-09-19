@@ -1,6 +1,14 @@
 .venv/
+<<<<<<< HEAD
 __pycache__/
 *.pyc
 models/
 webapp/.env
 webapp/db.sqlite3
+=======
+models/
+__pycache__/
+*.pyc
+*.bin
+*.incomplete
+>>>>>>> origin/main
